@@ -18,13 +18,11 @@ enum class NodeKind {
     FunctionDecl,
     VariableDecl,
     StructDecl,
-    TypeAlias,
     TemplateDecl,
 
     // --- Types ---
     PrimitiveType,
     PointerType,
-    ArrayType,
     StructType,
     NamedType,
 
@@ -56,8 +54,6 @@ enum class NodeKind {
     PreInc,
     PreDec,
     Cast,
-    SizeOfExpr,
-    SizeOfType,
 
     // --- Primary ---
     Identifier,
@@ -73,7 +69,6 @@ enum class NodeKind {
     FreeStmt,
 
     // --- Other ---
-    InitList,
     Parameter,
     Capture,
     TemplateParam,
@@ -116,11 +111,6 @@ struct StructDecl : ASTNode {
     vector<ASTNode*> members;       // VariableDecl nodes
 };
 
-struct TypeAlias : ASTNode {
-    string name;
-    ASTNode* underlying_type;
-};
-
 // ──────────────────────────────────────────
 // Types
 // ──────────────────────────────────────────
@@ -134,17 +124,12 @@ struct PointerType : ASTNode {
     ASTNode* base;                  // type being pointed to
 };
 
-struct ArrayType : ASTNode {
-    ASTNode* base;                  // element type
-    vector<ASTNode*> sizes;         // dimension sizes (can be null for incomplete)
-};
-
 struct StructType : ASTNode {
     string name;                    // name of the struct
 };
 
 struct NamedType : ASTNode {
-    string name;                    // for typedef'd or template type names
+    string name;
 };
 
 // ──────────────────────────────────────────
@@ -220,8 +205,6 @@ struct ReturnStmt : ASTNode {
 struct BinaryOp : ASTNode {
     enum class Op {
         ADD, SUB, MUL, DIV, MOD,
-        BIT_AND, BIT_OR, BIT_XOR,
-        SHL, SHR,
         EQ, NE, LT, GT, LE, GE,
         LOG_AND, LOG_OR,
         COMMA
@@ -232,15 +215,14 @@ struct BinaryOp : ASTNode {
 };
 
 struct UnaryOp : ASTNode {
-    enum class Op { ADDR, DEREF, PLUS, MINUS, BIT_NOT, LOG_NOT };
+    enum class Op { ADDR, DEREF, MINUS, LOG_NOT };
     Op op;
     ASTNode* operand;
 };
 
 struct Assignment : ASTNode {
     enum class Op {
-        ASSIGN, ADD_ASSIGN, SUB_ASSIGN, MUL_ASSIGN, DIV_ASSIGN, MOD_ASSIGN,
-        SHL_ASSIGN, SHR_ASSIGN, AND_ASSIGN, XOR_ASSIGN, OR_ASSIGN
+        ASSIGN, ADD_ASSIGN, SUB_ASSIGN, MUL_ASSIGN, DIV_ASSIGN
     };
     Op op;
     ASTNode* target;
@@ -294,14 +276,6 @@ struct Cast : ASTNode {
     ASTNode* expr;
 };
 
-struct SizeOfExpr : ASTNode {
-    ASTNode* expr;
-};
-
-struct SizeOfType : ASTNode {
-    ASTNode* target_type;
-};
-
 // ──────────────────────────────────────────
 // Primary Expressions
 // ──────────────────────────────────────────
@@ -312,8 +286,6 @@ struct Identifier : ASTNode {
 
 struct IntegerLiteral : ASTNode {
     long long value;
-    bool is_hex;         // for repr
-    bool is_octal;
 };
 
 struct FloatLiteral : ASTNode {
@@ -344,9 +316,9 @@ struct LambdaExpr : ASTNode {
 };
 
 struct Capture : ASTNode {
-    enum class Mode { BY_VALUE, BY_REF, THIS };
+    enum class Mode { BY_VALUE, BY_REF };
     Mode mode;
-    string name;                    // optional (for this or default capture)
+    string name;                    // optional (for default capture)
 };
 
 struct MallocExpr : ASTNode {
@@ -395,10 +367,6 @@ Program
 ├── TemplateDecl
 │   ├── TemplateParam (×N)
 │   └── FunctionDecl / StructDecl
-│
-└── TypeAlias
-    ├── name
-    └── underlying_type
 
 Statements
 ├── IfStmt ── condition, then_branch, [else_branch]
@@ -422,7 +390,6 @@ Expressions
 ├── ArrowAccess ── pointer->member
 ├── Cast ── (type)expr
 ├── PostInc/PostDec/PreInc/PreDec
-├── SizeOfExpr / SizeOfType
 ├── LambdaExpr ── captures[], params[], return_type, body
 ├── MallocExpr ── size
 └── Primary ── Identifier / Literal / String / (expr)
@@ -441,23 +408,48 @@ public:
     virtual void visit(FunctionDecl*) = 0;
     virtual void visit(VariableDecl*) = 0;
     virtual void visit(StructDecl*) = 0;
+    virtual void visit(TemplateDecl*) = 0;
+    virtual void visit(TemplateParam*) = 0;
     virtual void visit(PrimitiveType*) = 0;
     virtual void visit(PointerType*) = 0;
-    virtual void visit(ArrayType*) = 0;
+    virtual void visit(StructType*) = 0;
+    virtual void visit(NamedType*) = 0;
+    virtual void visit(Parameter*) = 0;
     virtual void visit(CompoundStmt*) = 0;
+    virtual void visit(ExprStmt*) = 0;
     virtual void visit(IfStmt*) = 0;
     virtual void visit(WhileStmt*) = 0;
+    virtual void visit(DoWhileStmt*) = 0;
     virtual void visit(ForStmt*) = 0;
+    virtual void visit(SwitchStmt*) = 0;
+    virtual void visit(CaseClause*) = 0;
+    virtual void visit(DefaultClause*) = 0;
+    virtual void visit(BreakStmt*) = 0;
+    virtual void visit(ContinueStmt*) = 0;
     virtual void visit(ReturnStmt*) = 0;
     virtual void visit(BinaryOp*) = 0;
     virtual void visit(UnaryOp*) = 0;
     virtual void visit(Assignment*) = 0;
+    virtual void visit(TernaryOp*) = 0;
     virtual void visit(Call*) = 0;
+    virtual void visit(Subscript*) = 0;
+    virtual void visit(MemberAccess*) = 0;
+    virtual void visit(ArrowAccess*) = 0;
+    virtual void visit(PostInc*) = 0;
+    virtual void visit(PostDec*) = 0;
+    virtual void visit(PreInc*) = 0;
+    virtual void visit(PreDec*) = 0;
+    virtual void visit(Cast*) = 0;
     virtual void visit(Identifier*) = 0;
     virtual void visit(IntegerLiteral*) = 0;
     virtual void visit(FloatLiteral*) = 0;
+    virtual void visit(CharLiteral*) = 0;
     virtual void visit(StringLiteral*) = 0;
-    // ... one virtual per node kind
+    virtual void visit(ParenthesizedExpr*) = 0;
+    virtual void visit(LambdaExpr*) = 0;
+    virtual void visit(Capture*) = 0;
+    virtual void visit(MallocExpr*) = 0;
+    virtual void visit(FreeStmt*) = 0;
 };
 ```
 
