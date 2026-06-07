@@ -1,36 +1,39 @@
-var float total;
-var bool ready;
-fun float adjust(float x, bool pass)
-    var float local;
-    var bool small;
+float total;
+bool ready;
+
+float adjust(float x, bool pass) {
+    float local;
+    bool small;
     local = x + 1.25;
     small = local < 10.0;
-    if ((small) and pass)
-        local = local + 2.0
-    endif;
-    return(local)
-endfun
-fun bool gate(float base, float limit)
-    var bool ok;
-    var float shifted;
+    if ((small) && pass) {
+        local = local + 2.0;
+    }
+    return local;
+}
+
+bool gate(float base, float limit) {
+    bool ok;
+    float shifted;
     shifted = base + 0.5;
     ok = shifted < limit;
     print(ok);
-    return(ok)
-endfun
-fun int main()
-    var float a;
-    var float b;
-    var bool flag;
-    var bool check;
+    return ok;
+}
+
+int main() {
+    float a;
+    float b;
+    bool flag;
+    bool check;
     a = 2.5;
     b = 7.5;
     flag = true;
-    check = gate(a,b);
-    if (check)
-        total = adjust(a,flag)
-    endif;
+    check = gate(a, b);
+    if (check) {
+        total = adjust(a, flag);
+    }
     ready = total;
     print(ready);
-    return(0)
-endfun
+    return 0;
+}

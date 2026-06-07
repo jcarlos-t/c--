@@ -9,49 +9,45 @@
 
 using namespace std;
 
-class BinaryExp;
-class NumberExp;
-class Program;
-class PrintStm;
-class AssignStm;
-class FunDec;
-class ReturnStm;
-class WhileStm;
-class IfStm;
-class Body;
-class VarDec;
-class FcallExp;
-class BoolExp;
-
 class TypeVisitor {
 public:
-
-    // --- Nodos de nivel superior ---
     virtual void visit(Program* p) = 0;
-    virtual void visit(Body* b) = 0;
-    virtual void visit(VarDec* v) = 0;
-    virtual void visit(FunDec* f) = 0;
+    virtual void visit(FunDecl* f) = 0;
+    virtual void visit(VarDecl* v) = 0;
+    virtual void visit(StructDecl* s) = 0;
+    virtual void visit(CompoundStmt* b) = 0;
 
-    // --- Sentencias ---
-    virtual void visit(PrintStm* stm) = 0;
-    virtual void visit(AssignStm* stm) = 0;
-    virtual void visit(ReturnStm* stm) = 0;
-    virtual void visit(WhileStm* stm) = 0;
-    virtual void visit(IfStm* stm) = 0;
+    virtual void visit(ExprStmtNode* s) = 0;
+    virtual void visit(IfStmt* s) = 0;
+    virtual void visit(WhileStmt* s) = 0;
+    virtual void visit(DoWhileStmt* s) = 0;
+    virtual void visit(ForStmt* s) = 0;
+    virtual void visit(SwitchStmt* s) = 0;
+    virtual void visit(BreakStmt* s) = 0;
+    virtual void visit(ContinueStmt* s) = 0;
+    virtual void visit(ReturnStmt* s) = 0;
 
-    // --- Expresiones ---
-    virtual Type* visit(BinaryExp* e) = 0;
-    virtual Type* visit(NumberExp* e) = 0;
-    virtual Type* visit(IdExp* e) = 0;
-    virtual Type* visit(BoolExp* e) = 0;
-    virtual Type* visit(FcallExp* e) = 0;
+    virtual Type* visit(BinaryOpNode* e) = 0;
+    virtual Type* visit(UnaryOpNode* e) = 0;
+    virtual Type* visit(AssignmentNode* e) = 0;
+    virtual Type* visit(TernaryOpNode* e) = 0;
+    virtual Type* visit(CallNode* e) = 0;
+    virtual Type* visit(SubscriptNode* e) = 0;
+    virtual Type* visit(MemberAccessNode* e) = 0;
+    virtual Type* visit(ArrowAccessNode* e) = 0;
+    virtual Type* visit(CastNode* e) = 0;
+    virtual Type* visit(IdentifierNode* e) = 0;
+    virtual Type* visit(IntegerLiteralNode* e) = 0;
+    virtual Type* visit(FloatLiteralNode* e) = 0;
+    virtual Type* visit(BoolLiteralNode* e) = 0;
+    virtual Type* visit(CharLiteralNode* e) = 0;
+    virtual Type* visit(StringLiteralNode* e) = 0;
+    virtual Type* visit(ParenthesizedExprNode* e) = 0;
+    virtual Type* visit(PrimitiveTypeNode* e) = 0;
+    virtual Type* visit(PointerTypeNode* e) = 0;
+    virtual Type* visit(StructTypeNode* e) = 0;
+    virtual Type* visit(NamedTypeNode* e) = 0;
 };
-
-
-
-// ──────────────────────────────────────────────
-//   CLASE TYPECHECKER
-// ──────────────────────────────────────────────
 
 struct FuncInfo {
     Type* returnType;
@@ -60,43 +56,59 @@ struct FuncInfo {
 
 class TypeChecker : public TypeVisitor {
 private:
-    Environment<Type*> env;                 // Entorno de variables y sus tipos
-    unordered_map<string, FuncInfo> functions; // Entorno de funciones
+    Environment<Type*> env;
+    unordered_map<string, FuncInfo> functions;
+    Type* retornodefuncion;
 
-    // Tipos básicos
     Type* intType;
     Type* boolType;
     Type* voidType;
     Type* floatType;
-    Type* retornodefuncion;
-    // Registro de funciones
-    void add_function(FunDec* fd);
+    Type* charType;
+
+    void add_function(FunDecl* fd);
+    Type* type_from_ast(Exp* t);
 
 public:
     TypeChecker();
-
-    // Método principal de verificación
     void typecheck(Program* program);
 
-    // --- Visitas de alto nivel ---
     void visit(Program* p) override;
-    void visit(Body* b) override;
-    void visit(VarDec* v) override;
-    void visit(FunDec* f) override;
+    void visit(FunDecl* f) override;
+    void visit(VarDecl* v) override;
+    void visit(StructDecl* s) override;
+    void visit(CompoundStmt* b) override;
 
-    // --- Sentencias ---
-    void visit(PrintStm* stm) override;
-    void visit(AssignStm* stm) override;
-    void visit(ReturnStm* stm) override;
-    void visit(WhileStm* stm) override;
-    void visit(IfStm* stm) override;
+    void visit(ExprStmtNode* s) override;
+    void visit(IfStmt* s) override;
+    void visit(WhileStmt* s) override;
+    void visit(DoWhileStmt* s) override;
+    void visit(ForStmt* s) override;
+    void visit(SwitchStmt* s) override;
+    void visit(BreakStmt* s) override;
+    void visit(ContinueStmt* s) override;
+    void visit(ReturnStmt* s) override;
 
-    // --- Expresiones ---
-    Type* visit(BinaryExp* e) override;
-    Type* visit(NumberExp* e) override;
-    Type* visit(IdExp* e) override;
-    Type* visit(BoolExp* e) override;
-    Type* visit(FcallExp* e) override;
+    Type* visit(BinaryOpNode* e) override;
+    Type* visit(UnaryOpNode* e) override;
+    Type* visit(AssignmentNode* e) override;
+    Type* visit(TernaryOpNode* e) override;
+    Type* visit(CallNode* e) override;
+    Type* visit(SubscriptNode* e) override;
+    Type* visit(MemberAccessNode* e) override;
+    Type* visit(ArrowAccessNode* e) override;
+    Type* visit(CastNode* e) override;
+    Type* visit(IdentifierNode* e) override;
+    Type* visit(IntegerLiteralNode* e) override;
+    Type* visit(FloatLiteralNode* e) override;
+    Type* visit(BoolLiteralNode* e) override;
+    Type* visit(CharLiteralNode* e) override;
+    Type* visit(StringLiteralNode* e) override;
+    Type* visit(ParenthesizedExprNode* e) override;
+    Type* visit(PrimitiveTypeNode* e) override;
+    Type* visit(PointerTypeNode* e) override;
+    Type* visit(StructTypeNode* e) override;
+    Type* visit(NamedTypeNode* e) override;
 };
 
-#endif // TYPECHECKER_H
+#endif

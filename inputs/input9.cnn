@@ -1,36 +1,17 @@
-var float energy;
-fun float curve(float base, float exponent, bool bonus)
-    var float value;
-    var bool small;
-    value = base ** exponent;
-    small = value < 30.0;
-    if ((small) and bonus)
-        value = value + 2.25
-    endif;
-    return(value)
-endfun
-fun int main()
-    var int i;
-    var float base;
-    var float total;
-    var bool bonus;
-    var bool active;
-    i = 0;
-    base = 2.0;
-    total = 0.0;
-    bonus = true;
-    active = total < 50.0;
-    while (i < 3)
-        energy = curve(base,2.0,bonus);
-        total = total + energy;
-        active = total < 25.0;
-        if (active)
-            base = base + 1.0
-        endif;
-        i = i + 1
-    endwhile;
-    print(total);
-    print(base);
-    print(active);
-    return(0)
-endfun
+bool is_odd(int n) {
+    bool result;
+    result = (n % 2) == 1;
+    return result;
+}
+
+int main() {
+    int i;
+    i = 1;
+    while (i <= 10) {
+        if (is_odd(i)) {
+            print(i);
+        }
+        i = i + 1;
+    }
+    return 0;
+}

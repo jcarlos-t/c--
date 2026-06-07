@@ -1,32 +1,70 @@
-#ifndef PARSER_H       
+#ifndef PARSER_H
 #define PARSER_H
 
-#include "scanner.h"    // Incluye la definición del escáner (provee tokens al parser)
-#include "ast.h"        // Incluye las definiciones para construir el Árbol de Sintaxis Abstracta (AST)
+#include "scanner.h"
+#include "ast.h"
 
 class Parser {
 private:
-    Scanner* scanner;       // Puntero al escáner, de donde se leen los tokens
-    Token *current, *previous; // Punteros al token actual y al anterior
-    bool match(Token::Type ttype);   // Verifica si el token actual coincide con un tipo esperado y avanza si es así
-    bool check(Token::Type ttype);   // Comprueba si el token actual es de cierto tipo, sin avanzar
-    bool advance();                  // Avanza al siguiente token
-    bool isAtEnd();                  // Comprueba si ya se llegó al final de la entrada
+    Scanner* scanner;
+    Token *current, *previous;
+    int current_line, current_column;
+
+    bool match(Token::Type ttype);
+    bool check(Token::Type ttype) const;
+    bool advance();
+    bool isAtEnd() const;
+    Token* consume(Token::Type ttype, const string& msg);
+    void sync_error(const string& msg);
+
+    // Types
+    TypeNode* parse_type();
+    TypeNode* parse_basic_type();
+
+    // Declarations
+    Program* parse_program();
+    void parse_declaration(Program* p);
+    FunDecl* parse_function_decl(Exp* ret_type, const string& name);
+    VarDecl* parse_variable_decl(Exp* type, const string& name);
+    StructDecl* parse_struct_decl();
+
+    // Parameters
+    VarDecl* parse_parameter();
+
+    // Statements
+    Stm* parse_statement();
+    Stm* parse_compound_statement();
+    Stm* parse_if_statement();
+    Stm* parse_while_statement();
+    Stm* parse_do_while_statement();
+    Stm* parse_for_statement();
+    Stm* parse_switch_statement();
+    Stm* parse_return_statement();
+
+    // Expressions (precedence climbing per grammar.md §6)
+    Exp* parse_expression();
+    Exp* parse_assignment();
+    Exp* parse_conditional();
+    Exp* parse_logical_or();
+    Exp* parse_logical_and();
+    Exp* parse_equality();
+    Exp* parse_relational();
+    Exp* parse_additive();
+    Exp* parse_multiplicative();
+    Exp* parse_cast();
+    Exp* parse_unary();
+    Exp* parse_postfix();
+    Exp* parse_primary();
+    Exp* parse_constant();
+
+    // Helpers
+    Exp* parse_argument_list();
+    bool is_type_start() const;
+    VarDecl* parse_local_var_decl();
+
 public:
-    Parser(Scanner* scanner);       
-    Program* parseProgram();             // Punto de entrada: analiza un programa completo
-    VarDec* parseVarDec();
-    FunDec* parseFunDec();
-    Body* parseBody();
-    Stm* parseStm();
-    Stm* parseWhileStm();
-    Stm* parseIfStm();
-    Exp* parseCE();
-    Exp* parseAE();
-    Exp* parseBE();
-    Exp* parseE();                   // Regla gramatical E
-    Exp* parseT();                   // Regla gramatical T
-    Exp* parseF();                   // Regla gramatical F
+    Parser(Scanner* scanner);
+    Program* parseProgram();
 };
 
-#endif // PARSER_H      
+#endif

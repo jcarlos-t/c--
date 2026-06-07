@@ -3,6 +3,7 @@
 
 #include <string>
 #include "token.h"
+
 using namespace std;
 
 class Scanner {
@@ -11,19 +12,23 @@ private:
     int first;
     int current;
 
+    char peek() const;
+    char advance();
+    bool match_advance(char expected);
+    void skip_whitespace();
+    Token* make_token(Token::Type type) const;
+    Token* make_token(Token::Type type, char c) const;
+    Token* identifier_or_keyword();
+    Token* number();
+    Token* char_literal();
+    Token* string_literal();
+
 public:
-    // Constructor
     Scanner(const char* in_s);
-
-    // Retorna el siguiente token
     Token* nextToken();
-
-    // Destructor
     ~Scanner();
-
 };
 
-// Ejecutar scanner
-void ejecutar_scanner(Scanner* scanner,const string& InputFile);
+void ejecutar_scanner(Scanner* scanner, const string& InputFile);
 
-#endif // SCANNER_H
+#endif

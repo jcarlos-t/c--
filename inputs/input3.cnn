@@ -1,33 +1,35 @@
-var float score;
-var bool active;
-fun float weight(float base, float factor)
-    var float result;
-    var bool light;
+float score;
+bool active;
+
+float weight(float base, float factor) {
+    float result;
+    bool light;
     result = base * factor;
     light = result < 20.0;
-    if (light)
-        result = result + 0.5
-    endif;
-    return(result)
-endfun
-fun void logger(bool status, float value)
-    var bool visible;
-    var float copy;
+    if (light) {
+        result = result + 0.5;
+    }
+    return result;
+}
+
+void logger(bool status, float value) {
+    bool visible;
+    float copy;
     visible = status;
     copy = value + 1.0;
-    if (visible)
-        print(copy)
-    endif;
-    return(copy)
-endfun
-fun int main()
-    var float local;
-    var bool ok;
+    if (visible) {
+        print(copy);
+    }
+}
+
+int main() {
+    float local;
+    bool ok;
     score = 3.0;
     active = true;
-    local = weight(score,2.5);
+    local = weight(score, 2.5);
     ok = local < 10.0;
     print(ok);
     print(active);
-    return(0)
-endfun
+    return 0;
+}

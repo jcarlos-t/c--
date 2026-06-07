@@ -1,32 +1,35 @@
-var bool ready;
-fun float blend(float a, float b, bool take)
-    var float mixed;
-    var bool small;
+bool ready;
+
+float blend(float a, float b, bool take) {
+    float mixed;
+    bool small;
     mixed = a + b / 2.0;
     small = mixed < 9.0;
-    if ((small) and take)
-        mixed = mixed + 1.5
-    endif;
-    return(mixed)
-endfun
-fun bool below(float value, float cap)
-    var bool answer;
-    var float shifted;
+    if ((small) && take) {
+        mixed = mixed + 1.5;
+    }
+    return mixed;
+}
+
+bool below(float value, float cap) {
+    bool answer;
+    float shifted;
     shifted = value + 0.25;
     answer = shifted < cap;
     print(answer);
-    return(answer)
-endfun
-fun int main()
-    var float x;
-    var float y;
-    var float z;
-    var bool flag;
+    return answer;
+}
+
+int main() {
+    float x;
+    float y;
+    float z;
+    bool flag;
     x = 1.5;
     y = 4.0;
-    flag = below(x,10.0);
+    flag = below(x, 10.0);
     ready = flag;
-    z = blend(x,y);
+    z = blend(x, y, true);
     print(z);
-    return(0)
-endfun
+    return 0;
+}

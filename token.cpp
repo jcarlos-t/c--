@@ -3,55 +3,94 @@
 
 using namespace std;
 
-// -----------------------------
-// Constructores
-// -----------------------------
-
-Token::Token(Type type) 
+Token::Token(Type type)
     : type(type), text("") { }
 
-Token::Token(Type type, char c) 
+Token::Token(Type type, char c)
     : type(type), text(string(1, c)) { }
 
-Token::Token(Type type, const string& source, int first, int last) 
+Token::Token(Type type, const string& source, int first, int last)
     : type(type), text(source.substr(first, last)) { }
 
-// -----------------------------
-// Sobrecarga de operador <<
-// -----------------------------
-
-// Para Token por referencia
-ostream& operator<<(ostream& outs, const Token& tok) {
-    switch (tok.type) {
-        case Token::PLUS:   outs << "TOKEN(PLUS, \""   << tok.text << "\")"; break;
-        case Token::MINUS:  outs << "TOKEN(MINUS, \""  << tok.text << "\")"; break;
-        case Token::MUL:    outs << "TOKEN(MUL, \""    << tok.text << "\")"; break;
-        case Token::DIV:    outs << "TOKEN(DIV, \""    << tok.text << "\")"; break;
-        case Token::LPAREN:    outs << "TOKEN(LPAREN, \""    << tok.text << "\")"; break;
-        case Token::RPAREN:    outs << "TOKEN(RPAREN, \""    << tok.text << "\")"; break;
-        case Token::POW:    outs << "TOKEN(POW, \""    << tok.text << "\")"; break;
-        case Token::ID:    outs << "TOKEN(ID, \""    << tok.text << "\")"; break;
-        case Token::NUM:    outs << "TOKEN(NUM, \""    << tok.text << "\")"; break;
-        case Token::ERR:    outs << "TOKEN(ERR, \""    << tok.text << "\")"; break;
-        case Token::PRINT:    outs << "TOKEN(PRINT, \""    << tok.text << "\")"; break;
-        case Token::SEMICOL:    outs << "TOKEN(SEMICOL, \""    << tok.text << "\")"; break;
-        case Token::ASSIGN:    outs << "TOKEN(ASSIGN, \""    << tok.text << "\")"; break;
-        case Token::FUN:    outs << "TOKEN(FUN, \""    << tok.text << "\")"; break;
-        case Token::ENDFUN:    outs << "TOKEN(ENDFUN, \""    << tok.text << "\")"; break;
-        case Token::RETURN:    outs << "TOKEN(RETURN, \""    << tok.text << "\")"; break;
-        case Token::COMA:    outs << "TOKEN(COMA, \""    << tok.text << "\")"; break;
-        case Token::VAR:    outs << "TOKEN(VAR, \""    << tok.text << "\")"; break;
-        case Token::LE:    outs << "TOKEN(LE, \""    << tok.text << "\")"; break;
-        case Token::AND:    outs << "TOKEN(AND, \""    << tok.text << "\")"; break;
-        case Token::TRUE:    outs << "TOKEN(TRUE, \""    << tok.text << "\")"; break;
-        case Token::FALSE:    outs << "TOKEN(FALSE, \""    << tok.text << "\")"; break;                    
-        case Token::END:    outs << "TOKEN(END)"; break;
+static const char* token_name(Token::Type t) {
+    switch (t) {
+        case Token::VOID:   return "VOID";
+        case Token::INT:    return "INT";
+        case Token::CHAR:   return "CHAR";
+        case Token::FLOAT:  return "FLOAT";
+        case Token::DOUBLE: return "DOUBLE";
+        case Token::BOOL:   return "BOOL";
+        case Token::AUTO:   return "AUTO";
+        case Token::STRUCT:   return "STRUCT";
+        case Token::IF:     return "IF";
+        case Token::ELSE:   return "ELSE";
+        case Token::WHILE:  return "WHILE";
+        case Token::DO:     return "DO";
+        case Token::FOR:    return "FOR";
+        case Token::SWITCH: return "SWITCH";
+        case Token::CASE:   return "CASE";
+        case Token::DEFAULT:return "DEFAULT";
+        case Token::BREAK:  return "BREAK";
+        case Token::CONTINUE:return "CONTINUE";
+        case Token::RETURN: return "RETURN";
+        case Token::SIZEOF: return "SIZEOF";
+        case Token::MALLOC: return "MALLOC";
+        case Token::FREE:   return "FREE";
+        case Token::TEMPLATE:return "TEMPLATE";
+        case Token::TYPENAME:return "TYPENAME";
+        case Token::LPAREN: return "LPAREN";
+        case Token::RPAREN: return "RPAREN";
+        case Token::LBRACE: return "LBRACE";
+        case Token::RBRACE: return "RBRACE";
+        case Token::LBRACKET:return "LBRACKET";
+        case Token::RBRACKET:return "RBRACKET";
+        case Token::SEMICOL:return "SEMICOL";
+        case Token::COMA:   return "COMA";
+        case Token::COLON:  return "COLON";
+        case Token::QUESTION:return "QUESTION";
+        case Token::PLUS:   return "PLUS";
+        case Token::MINUS:  return "MINUS";
+        case Token::STAR:   return "STAR";
+        case Token::DIV:    return "DIV";
+        case Token::MOD:    return "MOD";
+        case Token::POW:    return "POW";
+        case Token::ASSIGN: return "ASSIGN";
+        case Token::ADD_ASSIGN: return "ADD_ASSIGN";
+        case Token::SUB_ASSIGN: return "SUB_ASSIGN";
+        case Token::MUL_ASSIGN: return "MUL_ASSIGN";
+        case Token::DIV_ASSIGN: return "DIV_ASSIGN";
+        case Token::EQ:     return "EQ";
+        case Token::NE:     return "NE";
+        case Token::LT:     return "LT";
+        case Token::GT:     return "GT";
+        case Token::LE:     return "LE";
+        case Token::GE:     return "GE";
+        case Token::AND:    return "AND";
+        case Token::OR:     return "OR";
+        case Token::NOT:    return "NOT";
+        case Token::INC:    return "INC";
+        case Token::DEC:    return "DEC";
+        case Token::AMPERSAND:return "AMPERSAND";
+        case Token::ARROW:  return "ARROW";
+        case Token::DOT:    return "DOT";
+        case Token::NUM:    return "NUM";
+        case Token::CHAR_LIT:return "CHAR_LIT";
+        case Token::STRING_LIT:return "STRING_LIT";
+        case Token::TRUE:   return "TRUE";
+        case Token::FALSE:  return "FALSE";
+        case Token::ID:     return "ID";
+        case Token::END:    return "END";
+        case Token::ERR:    return "ERR";
+        default:            return "UNKNOWN";
     }
+}
+
+ostream& operator<<(ostream& outs, const Token& tok) {
+    outs << "TOKEN(" << token_name(tok.type) << ", \"" << tok.text << "\")";
     return outs;
 }
 
-// Para Token puntero
 ostream& operator<<(ostream& outs, const Token* tok) {
     if (!tok) return outs << "TOKEN(NULL)";
-    return outs << *tok;  // delega al otro
+    return outs << *tok;
 }

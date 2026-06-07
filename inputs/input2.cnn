@@ -1,32 +1,35 @@
-var float limit;
-fun bool compare(float value, float cap)
-    var bool under;
-    var float shifted;
+float limit;
+
+bool compare(float value, float cap) {
+    bool under;
+    float shifted;
     shifted = value + 0.75;
     under = shifted < cap;
-    if (under)
-        shifted = shifted + 1.25
-    endif;
-    return(under)
-endfun
-fun float confused(float seed, bool enabled)
-    var float acc;
-    var bool result;
+    if (under) {
+        shifted = shifted + 1.25;
+    }
+    return under;
+}
+
+float confused(float seed, bool enabled) {
+    float acc;
+    bool result;
     acc = seed * 2.0;
     result = acc < limit;
-    if ((result) and enabled)
-        acc = acc + 3.5
-    endif;
+    if ((result) && enabled) {
+        acc = acc + 3.5;
+    }
     print(acc);
-    return(result)
-endfun
-fun int main()
-    var float start;
-    var bool flag;
+    return acc;
+}
+
+int main() {
+    float start;
+    bool flag;
     limit = 12.0;
     start = 4.5;
-    flag = compare(start,limit);
+    flag = compare(start, limit);
     print(flag);
-    print(confused(start,flag));
-    return(0)
-endfun
+    print(confused(start, flag));
+    return 0;
+}
