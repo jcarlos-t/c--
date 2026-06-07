@@ -1,0 +1,34 @@
+var float base;
+fun bool valid(float amount, bool switcher)
+    var bool low;
+    var float adjusted;
+    adjusted = amount + 2.0;
+    low = adjusted < 15.0;
+    if ((low) and switcher)
+        adjusted = adjusted + 1.0
+    endif;
+    print(adjusted);
+    return(low)
+endfun
+fun float calc(float x, float y, bool enabled)
+    var float result;
+    var bool under;
+    result = x * y;
+    under = result < 30.0;
+    if ((under) and enabled)
+        result = result + 4.5
+    endif;
+    return(result)
+endfun
+fun int main()
+    var float first;
+    var bool gate;
+    var float answer;
+    base = 3.5;
+    first = 2.0;
+    gate = true;
+    answer = calc(first,gate,valid(base,gate));
+    print(answer);
+    print(gate);
+    return(0)
+endfun

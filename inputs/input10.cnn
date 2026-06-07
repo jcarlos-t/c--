@@ -1,0 +1,38 @@
+var bool finished;
+fun float adjust(float value, bool add)
+    var float result;
+    var bool tiny;
+    result = value / 2.0;
+    tiny = result < 5.0;
+    if ((tiny) and add)
+        result = result + 0.75
+    endif;
+    return(result)
+endfun
+fun int main()
+    var int i;
+    var float raw;
+    var float acc;
+    var bool add;
+    var bool small;
+    i = 0;
+    raw = 3.0;
+    acc = 0.0;
+    add = true;
+    finished = false;
+    small = raw < 10.0;
+    while (i < 5)
+        acc = acc + adjust(raw,add);
+        raw = raw + 1.5;
+        small = acc < 18.0;
+        if (small)
+            finished = false
+        endif;
+        i = i + 1
+    endwhile;
+    finished = small;
+    print(acc);
+    print(raw);
+    print(finished);
+    return(0)
+endfun

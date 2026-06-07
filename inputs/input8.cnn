@@ -1,0 +1,35 @@
+var bool stable;
+fun bool inside(float value, float low, float high)
+    var bool aboveLow;
+    var bool belowHigh;
+    var bool result;
+    aboveLow = low < value;
+    belowHigh = value < high;
+    result = aboveLow and belowHigh;
+    return(result)
+endfun
+fun int main()
+    var int i;
+    var float probe;
+    var float high;
+    var bool last;
+    var bool gate;
+    i = 0;
+    probe = 1.25;
+    high = 5.0;
+    stable = true;
+    gate = true;
+    last = inside(probe,1.0,high);
+    while (i < 4)
+        last = inside(probe,1.0,high);
+        if ((last) and gate)
+            probe = probe + 1.10
+        endif;
+        i = i + 1
+    endwhile;
+    stable = last and gate;
+    print(probe);
+    print(last);
+    print(stable);
+    return(0)
+endfun
