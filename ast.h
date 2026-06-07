@@ -34,7 +34,7 @@ enum class NodeKind {
     BreakStmt, ContinueStmt, ReturnStmt,
     BinaryOp, UnaryOp, Assignment, TernaryOp, Call,
     Subscript, MemberAccess, ArrowAccess,
-    PostInc, PostDec, PreInc, PreDec, Cast,
+    PostInc, PostDec, PreInc, PreDec, Cast, SizeOf,
     Identifier,
     IntegerLiteral, FloatLiteral, BoolLiteral,
     CharLiteral, StringLiteral, ParenthesizedExpr,
@@ -162,6 +162,15 @@ public:
     Exp* expr;
     CastNode(Exp* t, Exp* e);
     ~CastNode();
+    double accept(Visitor* visitor);
+    Type* accept(TypeVisitor* visitor);
+};
+
+class SizeOfNode : public Exp {
+public:
+    Exp* target_type;
+    SizeOfNode(Exp* t);
+    ~SizeOfNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
 };

@@ -26,6 +26,7 @@ public:
     virtual double visit(MemberAccessNode* e) = 0;
     virtual double visit(ArrowAccessNode* e) = 0;
     virtual double visit(CastNode* e) = 0;
+    virtual double visit(SizeOfNode* e) = 0;
     virtual double visit(IdentifierNode* e) = 0;
     virtual double visit(IntegerLiteralNode* e) = 0;
     virtual double visit(FloatLiteralNode* e) = 0;
@@ -65,6 +66,7 @@ public:
     void print_indent();
 
     double visit(BinaryOpNode* e) override;
+    double visit(SizeOfNode* e) override;
     double visit(UnaryOpNode* e) override;
     double visit(AssignmentNode* e) override;
     double visit(TernaryOpNode* e) override;
@@ -113,8 +115,10 @@ public:
     Environment<string> typeEnv;
     unordered_map<string, FunDecl*> envfun;
     unordered_map<string, string> funReturnTypes;
+    string last_string;
 
     double visit(BinaryOpNode* e) override;
+    double visit(SizeOfNode* e) override;
     double visit(UnaryOpNode* e) override;
     double visit(AssignmentNode* e) override;
     double visit(TernaryOpNode* e) override;

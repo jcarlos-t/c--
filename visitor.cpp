@@ -18,6 +18,7 @@ double SubscriptNode::accept(Visitor* v) { return v->visit(this); }
 double MemberAccessNode::accept(Visitor* v) { return v->visit(this); }
 double ArrowAccessNode::accept(Visitor* v) { return v->visit(this); }
 double CastNode::accept(Visitor* v) { return v->visit(this); }
+double SizeOfNode::accept(Visitor* v) { return v->visit(this); }
 double IdentifierNode::accept(Visitor* v) { return v->visit(this); }
 double IntegerLiteralNode::accept(Visitor* v) { return v->visit(this); }
 double FloatLiteralNode::accept(Visitor* v) { return v->visit(this); }
@@ -158,6 +159,13 @@ double PrintVisitor::visit(CastNode* e) {
     e->target_type->accept(this);
     cout << ")";
     e->expr->accept(this);
+    return 0;
+}
+
+double PrintVisitor::visit(SizeOfNode* e) {
+    cout << "sizeof(";
+    e->target_type->accept(this);
+    cout << ")";
     return 0;
 }
 
@@ -436,7 +444,7 @@ double EVALVisitor::visit(CharLiteralNode* e) {
 }
 
 double EVALVisitor::visit(StringLiteralNode* e) {
-    cerr << "Error: string literales no soportados en evaluación" << endl;
+    last_string = e->value;
     return 0;
 }
 
@@ -557,12 +565,17 @@ double EVALVisitor::visit(CallNode* e) {
         string fname = id->name;
         if (fname == "print" || fname == "printf") {
             for (auto a : e->args) {
-                double val = a->accept(this);
-                string type = getType(a);
-                if (type == "bool")
-                    cout << (val != 0 ? "true" : "false");
-                else
-                    cout << val;
+                if (dynamic_cast<StringLiteralNode*>(a)) {
+                    a->accept(this);
+                    cout << last_string;
+                } else {
+                    double val = a->accept(this);
+                    string type = getType(a);
+                    if (type == "bool")
+                        cout << (val != 0 ? "true" : "false");
+                    else
+                        cout << val;
+                }
             }
             cout << endl;
             return 0;
@@ -626,6 +639,22 @@ double EVALVisitor::visit(CastNode* e) {
         if (pt->prim == PrimitiveTypeNode::BOOL) return val != 0 ? 1.0 : 0.0;
     }
     return val;
+}
+
+double EVALVisitor::visit(SizeOfNode* e) {
+    if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(e->target_type)) {
+        switch (pt->prim) {
+            case PrimitiveTypeNode::VOID: return 1;
+            case PrimitiveTypeNode::CHAR: return 1;
+            case PrimitiveTypeNode::BOOL: return 1;
+            case PrimitiveTypeNode::INT: return 4;
+            case PrimitiveTypeNode::FLOAT: return 4;
+            case PrimitiveTypeNode::DOUBLE: return 8;
+            case PrimitiveTypeNode::AUTO: return 0;
+        }
+    }
+    if (dynamic_cast<PointerTypeNode*>(e->target_type)) return 8;
+    return 0;
 }
 
 double EVALVisitor::visit(ParenthesizedExprNode* e) {
@@ -795,6 +824,7 @@ string EVALVisitor::getType(Exp* e) {
     if (dynamic_cast<IntegerLiteralNode*>(e)) return "int";
     if (dynamic_cast<FloatLiteralNode*>(e)) return "float";
     if (dynamic_cast<CharLiteralNode*>(e)) return "char";
+    if (dynamic_cast<StringLiteralNode*>(e)) return "string";
     if (auto* id = dynamic_cast<IdentifierNode*>(e)) return typeEnv.lookup(id->name);
     if (auto* be = dynamic_cast<BinaryOpNode*>(e)) {
         if (be->op == BinaryOp::EQ || be->op == BinaryOp::NE ||

@@ -748,9 +748,9 @@ Exp* Parser::parse_primary() {
     }
     if (match(Token::SIZEOF)) {
         consume(Token::LPAREN, "Se esperaba '(' después de sizeof");
-        parse_type(); // discard
+        TypeNode* t = parse_type();
         consume(Token::RPAREN, "Se esperaba ')'");
-        return new IntegerLiteralNode(0); // placeholder
+        return new SizeOfNode(t);
     }
     sync_error("Se esperaba una expresión");
     return nullptr;

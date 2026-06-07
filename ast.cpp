@@ -49,6 +49,10 @@ CastNode::CastNode(Exp* t, Exp* e)
     : Exp(NodeKind::Cast), target_type(t), expr(e) {}
 CastNode::~CastNode() { delete target_type; delete expr; }
 
+// ===================== SizeOfNode =====================
+SizeOfNode::SizeOfNode(Exp* t) : Exp(NodeKind::SizeOf), target_type(t) {}
+SizeOfNode::~SizeOfNode() { delete target_type; }
+
 // ===================== IdentifierNode =====================
 IdentifierNode::IdentifierNode(const string& n)
     : Exp(NodeKind::Identifier), name(n) {}

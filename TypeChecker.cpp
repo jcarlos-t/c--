@@ -16,6 +16,7 @@ Type* SubscriptNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* MemberAccessNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* ArrowAccessNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* CastNode::accept(TypeVisitor* v) { return v->visit(this); }
+Type* SizeOfNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* IdentifierNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* IntegerLiteralNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* FloatLiteralNode::accept(TypeVisitor* v) { return v->visit(this); }
@@ -370,6 +371,10 @@ Type* TypeChecker::visit(ArrowAccessNode* e) { return intType; }
 
 Type* TypeChecker::visit(CastNode* e) {
     return type_from_ast(e->target_type);
+}
+
+Type* TypeChecker::visit(SizeOfNode* e) {
+    return intType;
 }
 
 Type* TypeChecker::visit(IdentifierNode* e) {

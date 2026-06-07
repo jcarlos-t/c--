@@ -39,6 +39,7 @@ public:
     virtual Type* visit(MemberAccessNode* e) = 0;
     virtual Type* visit(ArrowAccessNode* e) = 0;
     virtual Type* visit(CastNode* e) = 0;
+    virtual Type* visit(SizeOfNode* e) = 0;
     virtual Type* visit(IdentifierNode* e) = 0;
     virtual Type* visit(IntegerLiteralNode* e) = 0;
     virtual Type* visit(FloatLiteralNode* e) = 0;
@@ -104,6 +105,7 @@ public:
     Type* visit(MemberAccessNode* e) override;
     Type* visit(ArrowAccessNode* e) override;
     Type* visit(CastNode* e) override;
+    Type* visit(SizeOfNode* e) override;
     Type* visit(IdentifierNode* e) override;
     Type* visit(IntegerLiteralNode* e) override;
     Type* visit(FloatLiteralNode* e) override;
