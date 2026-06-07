@@ -10,6 +10,7 @@ using namespace std;
 class Visitor;
 class TypeVisitor;
 class VarDecl;
+class DeclStmt;
 
 // ============================================================
 // Location (ast.md §2)
@@ -255,6 +256,15 @@ public:
     void accept(TypeVisitor* visitor);
 };
 
+class DeclStmt : public Stm {
+public:
+    VarDecl* decl;
+    DeclStmt(VarDecl* d);
+    ~DeclStmt();
+    int accept(Visitor* visitor);
+    void accept(TypeVisitor* visitor);
+};
+
 class IfStmt : public Stm {
 public:
     Exp* condition;
@@ -304,6 +314,25 @@ public:
     vector<Stm*> cases;
     SwitchStmt(Exp* e);
     ~SwitchStmt();
+    int accept(Visitor* visitor);
+    void accept(TypeVisitor* visitor);
+};
+
+class CaseClause : public Stm {
+public:
+    Exp* value;
+    vector<Stm*> body;
+    CaseClause(Exp* v);
+    ~CaseClause();
+    int accept(Visitor* visitor);
+    void accept(TypeVisitor* visitor);
+};
+
+class DefaultClause : public Stm {
+public:
+    vector<Stm*> body;
+    DefaultClause();
+    ~DefaultClause();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
 };

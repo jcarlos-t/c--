@@ -18,11 +18,14 @@ public:
     virtual void visit(CompoundStmt* b) = 0;
 
     virtual void visit(ExprStmtNode* s) = 0;
+    virtual void visit(DeclStmt* s) = 0;
     virtual void visit(IfStmt* s) = 0;
     virtual void visit(WhileStmt* s) = 0;
     virtual void visit(DoWhileStmt* s) = 0;
     virtual void visit(ForStmt* s) = 0;
     virtual void visit(SwitchStmt* s) = 0;
+    virtual void visit(CaseClause* s) = 0;
+    virtual void visit(DefaultClause* s) = 0;
     virtual void visit(BreakStmt* s) = 0;
     virtual void visit(ContinueStmt* s) = 0;
     virtual void visit(ReturnStmt* s) = 0;
@@ -80,11 +83,14 @@ public:
     void visit(CompoundStmt* b) override;
 
     void visit(ExprStmtNode* s) override;
+    void visit(DeclStmt* s) override;
     void visit(IfStmt* s) override;
     void visit(WhileStmt* s) override;
     void visit(DoWhileStmt* s) override;
     void visit(ForStmt* s) override;
     void visit(SwitchStmt* s) override;
+    void visit(CaseClause* s) override;
+    void visit(DefaultClause* s) override;
     void visit(BreakStmt* s) override;
     void visit(ContinueStmt* s) override;
     void visit(ReturnStmt* s) override;

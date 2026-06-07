@@ -36,11 +36,14 @@ double NamedTypeNode::accept(Visitor* v) { return v->visit(this); }
 // ============================================================
 int CompoundStmt::accept(Visitor* v) { return v->visit(this); }
 int ExprStmtNode::accept(Visitor* v) { return v->visit(this); }
+int DeclStmt::accept(Visitor* v) { return v->visit(this); }
 int IfStmt::accept(Visitor* v) { return v->visit(this); }
 int WhileStmt::accept(Visitor* v) { return v->visit(this); }
 int DoWhileStmt::accept(Visitor* v) { return v->visit(this); }
 int ForStmt::accept(Visitor* v) { return v->visit(this); }
 int SwitchStmt::accept(Visitor* v) { return v->visit(this); }
+int CaseClause::accept(Visitor* v) { return v->visit(this); }
+int DefaultClause::accept(Visitor* v) { return v->visit(this); }
 int BreakStmt::accept(Visitor* v) { return v->visit(this); }
 int ContinueStmt::accept(Visitor* v) { return v->visit(this); }
 int ReturnStmt::accept(Visitor* v) { return v->visit(this); }
@@ -245,6 +248,11 @@ int PrintVisitor::visit(ExprStmtNode* s) {
     return 0;
 }
 
+int PrintVisitor::visit(DeclStmt* s) {
+    s->decl->accept(this);
+    return 0;
+}
+
 int PrintVisitor::visit(IfStmt* s) {
     print_indent();
     cout << "if (";
@@ -296,7 +304,32 @@ int PrintVisitor::visit(SwitchStmt* s) {
     print_indent();
     cout << "switch (";
     s->expr->accept(this);
-    cout << ") { ... }\n";
+    cout << ") {\n";
+    indent++;
+    for (auto c : s->cases) c->accept(this);
+    indent--;
+    print_indent();
+    cout << "}\n";
+    return 0;
+}
+
+int PrintVisitor::visit(CaseClause* s) {
+    print_indent();
+    cout << "case ";
+    s->value->accept(this);
+    cout << ":\n";
+    indent++;
+    for (auto st : s->body) st->accept(this);
+    indent--;
+    return 0;
+}
+
+int PrintVisitor::visit(DefaultClause* s) {
+    print_indent();
+    cout << "default:\n";
+    indent++;
+    for (auto st : s->body) st->accept(this);
+    indent--;
     return 0;
 }
 
@@ -625,6 +658,10 @@ int EVALVisitor::visit(ExprStmtNode* s) {
     return 0;
 }
 
+int EVALVisitor::visit(DeclStmt* s) {
+    return s->decl->accept(this);
+}
+
 int EVALVisitor::visit(IfStmt* s) {
     double cond = s->condition->accept(this);
     if (cond != 0) s->then_branch->accept(this);
@@ -661,6 +698,8 @@ int EVALVisitor::visit(DoWhileStmt* s) {
 }
 
 int EVALVisitor::visit(ForStmt* s) {
+    env.add_level();
+    typeEnv.add_level();
     if (s->init) s->init->accept(this);
     while (true) {
         if (s->condition && s->condition->accept(this) == 0) break;
@@ -674,13 +713,37 @@ int EVALVisitor::visit(ForStmt* s) {
         }
         if (s->increment) s->increment->accept(this);
     }
+    typeEnv.remove_level();
+    env.remove_level();
     return 0;
 }
 
 int EVALVisitor::visit(SwitchStmt* s) {
-    cerr << "Error: switch no soportado en evaluación" << endl;
+    double val = s->expr->accept(this);
+    bool matched = false;
+    for (auto c : s->cases) {
+        if (auto* cc = dynamic_cast<CaseClause*>(c)) {
+            double case_val = cc->value->accept(this);
+            if (matched || val == case_val) {
+                matched = true;
+                for (auto st : cc->body) {
+                    try { st->accept(this); } catch (BreakException&) { return 0; }
+                }
+            }
+        } else if (auto* dc = dynamic_cast<DefaultClause*>(c)) {
+            if (!matched) {
+                for (auto st : dc->body) {
+                    try { st->accept(this); } catch (BreakException&) { return 0; }
+                }
+            }
+            matched = true;
+        }
+    }
     return 0;
 }
+
+int EVALVisitor::visit(CaseClause* s) { return 0; }
+int EVALVisitor::visit(DefaultClause* s) { return 0; }
 
 int EVALVisitor::visit(BreakStmt* s) { throw BreakException(); }
 int EVALVisitor::visit(ContinueStmt* s) { throw ContinueException(); }

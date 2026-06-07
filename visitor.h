@@ -40,11 +40,14 @@ public:
 
     virtual int visit(CompoundStmt* s) = 0;
     virtual int visit(ExprStmtNode* s) = 0;
+    virtual int visit(DeclStmt* s) = 0;
     virtual int visit(IfStmt* s) = 0;
     virtual int visit(WhileStmt* s) = 0;
     virtual int visit(DoWhileStmt* s) = 0;
     virtual int visit(ForStmt* s) = 0;
     virtual int visit(SwitchStmt* s) = 0;
+    virtual int visit(CaseClause* s) = 0;
+    virtual int visit(DefaultClause* s) = 0;
     virtual int visit(BreakStmt* s) = 0;
     virtual int visit(ContinueStmt* s) = 0;
     virtual int visit(ReturnStmt* s) = 0;
@@ -84,11 +87,14 @@ public:
 
     int visit(CompoundStmt* s) override;
     int visit(ExprStmtNode* s) override;
+    int visit(DeclStmt* s) override;
     int visit(IfStmt* s) override;
     int visit(WhileStmt* s) override;
     int visit(DoWhileStmt* s) override;
     int visit(ForStmt* s) override;
     int visit(SwitchStmt* s) override;
+    int visit(CaseClause* s) override;
+    int visit(DefaultClause* s) override;
     int visit(BreakStmt* s) override;
     int visit(ContinueStmt* s) override;
     int visit(ReturnStmt* s) override;
@@ -131,11 +137,14 @@ public:
 
     int visit(CompoundStmt* s) override;
     int visit(ExprStmtNode* s) override;
+    int visit(DeclStmt* s) override;
     int visit(IfStmt* s) override;
     int visit(WhileStmt* s) override;
     int visit(DoWhileStmt* s) override;
     int visit(ForStmt* s) override;
     int visit(SwitchStmt* s) override;
+    int visit(CaseClause* s) override;
+    int visit(DefaultClause* s) override;
     int visit(BreakStmt* s) override;
     int visit(ContinueStmt* s) override;
     int visit(ReturnStmt* s) override;

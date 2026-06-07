@@ -374,8 +374,19 @@ Stm* Parser::parse_for_statement() {
     Stm* init = nullptr;
     if (!check(Token::SEMICOL)) {
         if (is_type_start()) {
-            VarDecl* vd = parse_local_var_decl();
-            // Variable declaration in for init — skip for now
+            // Variable declaration in for-init
+            TypeNode* vtype = parse_type();
+            Token* vname = consume(Token::ID, "Se esperaba identificador en for-init");
+            VarDecl* vd = new VarDecl(vtype, vname->text);
+            while (match(Token::LBRACKET)) {
+                if (!check(Token::RBRACKET))
+                    vd->array_sizes.push_back(parse_expression());
+                consume(Token::RBRACKET, "Se esperaba ']'");
+            }
+            if (match(Token::ASSIGN))
+                vd->initializer = parse_expression();
+            // Do NOT consume semicolon — it belongs to the for-loop header
+            init = new DeclStmt(vd);
         } else {
             Exp* e = parse_expression();
             init = new ExprStmtNode(e);
@@ -411,12 +422,17 @@ Stm* Parser::parse_switch_statement() {
         if (match(Token::CASE)) {
             Exp* val = parse_expression();
             consume(Token::COLON, "Se esperaba ':' después de case");
-            BreakStmt* bs = new BreakStmt(); // placeholder
-            ss->cases.push_back(bs);
+            CaseClause* cc = new CaseClause(val);
+            // Parse statements until next case/default or }
+            while (!check(Token::CASE) && !check(Token::DEFAULT) && !check(Token::RBRACE) && !isAtEnd())
+                cc->body.push_back(parse_statement());
+            ss->cases.push_back(cc);
         } else if (match(Token::DEFAULT)) {
             consume(Token::COLON, "Se esperaba ':' después de default");
-            BreakStmt* bs = new BreakStmt(); // placeholder
-            ss->cases.push_back(bs);
+            DefaultClause* dc = new DefaultClause();
+            while (!check(Token::CASE) && !check(Token::DEFAULT) && !check(Token::RBRACE) && !isAtEnd())
+                dc->body.push_back(parse_statement());
+            ss->cases.push_back(dc);
         }
     }
     consume(Token::RBRACE, "Se esperaba '}'");

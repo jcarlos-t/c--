@@ -90,6 +90,10 @@ CompoundStmt::~CompoundStmt() { for (auto s : stmts) delete s; for (auto v : vdl
 ExprStmtNode::ExprStmtNode(Exp* e) : Stm(NodeKind::ExprStmt), expr(e) {}
 ExprStmtNode::~ExprStmtNode() { delete expr; }
 
+// ===================== DeclStmt =====================
+DeclStmt::DeclStmt(VarDecl* d) : Stm(NodeKind::VariableDecl), decl(d) {}
+DeclStmt::~DeclStmt() { delete decl; }
+
 // ===================== IfStmt =====================
 IfStmt::IfStmt(Exp* c, Stm* t, Stm* e)
     : Stm(NodeKind::IfStmt), condition(c), then_branch(t), else_branch(e) {}
@@ -113,6 +117,14 @@ ForStmt::~ForStmt() { delete init; delete condition; delete increment; delete bo
 // ===================== SwitchStmt =====================
 SwitchStmt::SwitchStmt(Exp* e) : Stm(NodeKind::SwitchStmt), expr(e) {}
 SwitchStmt::~SwitchStmt() { delete expr; for (auto c : cases) delete c; }
+
+// ===================== CaseClause =====================
+CaseClause::CaseClause(Exp* v) : Stm(NodeKind::CaseClause), value(v) {}
+CaseClause::~CaseClause() { delete value; for (auto s : body) delete s; }
+
+// ===================== DefaultClause =====================
+DefaultClause::DefaultClause() : Stm(NodeKind::DefaultClause) {}
+DefaultClause::~DefaultClause() { for (auto s : body) delete s; }
 
 // ===================== BreakStmt =====================
 BreakStmt::BreakStmt() : Stm(NodeKind::BreakStmt) {}

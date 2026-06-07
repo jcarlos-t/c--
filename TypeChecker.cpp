@@ -29,11 +29,14 @@ Type* StructTypeNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* NamedTypeNode::accept(TypeVisitor* v) { return v->visit(this); }
 
 void ExprStmtNode::accept(TypeVisitor* v) { v->visit(this); }
+void DeclStmt::accept(TypeVisitor* v) { v->visit(this); }
 void IfStmt::accept(TypeVisitor* v) { v->visit(this); }
 void WhileStmt::accept(TypeVisitor* v) { v->visit(this); }
 void DoWhileStmt::accept(TypeVisitor* v) { v->visit(this); }
 void ForStmt::accept(TypeVisitor* v) { v->visit(this); }
 void SwitchStmt::accept(TypeVisitor* v) { v->visit(this); }
+void CaseClause::accept(TypeVisitor* v) { v->visit(this); }
+void DefaultClause::accept(TypeVisitor* v) { v->visit(this); }
 void BreakStmt::accept(TypeVisitor* v) { v->visit(this); }
 void ContinueStmt::accept(TypeVisitor* v) { v->visit(this); }
 void ReturnStmt::accept(TypeVisitor* v) { v->visit(this); }
@@ -168,6 +171,10 @@ void TypeChecker::visit(ExprStmtNode* s) {
     if (s->expr) s->expr->accept(this);
 }
 
+void TypeChecker::visit(DeclStmt* s) {
+    s->decl->accept(this);
+}
+
 void TypeChecker::visit(IfStmt* s) {
     Type* t = s->condition->accept(this);
     if (!t->match(boolType)) {
@@ -212,6 +219,15 @@ void TypeChecker::visit(ForStmt* s) {
 void TypeChecker::visit(SwitchStmt* s) {
     s->expr->accept(this);
     for (auto c : s->cases) c->accept(this);
+}
+
+void TypeChecker::visit(CaseClause* s) {
+    s->value->accept(this);
+    for (auto st : s->body) st->accept(this);
+}
+
+void TypeChecker::visit(DefaultClause* s) {
+    for (auto st : s->body) st->accept(this);
 }
 
 void TypeChecker::visit(BreakStmt* s) {}
