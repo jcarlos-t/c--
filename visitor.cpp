@@ -518,6 +518,41 @@ double EVALVisitor::visit(UnaryOpNode* e) {
 }
 
 double EVALVisitor::visit(AssignmentNode* e) {
+    // Handle struct member assignment: obj.member = expr
+    if (auto* ma = dynamic_cast<MemberAccessNode*>(e->target)) {
+        if (auto* id = dynamic_cast<IdentifierNode*>(ma->object)) {
+            double val = e->value->accept(this);
+            auto it = struct_instances.find(id->name);
+            if (it != struct_instances.end()) {
+                it->second[ma->member] = val;
+                return val;
+            }
+        }
+        return 0;
+    }
+    // Handle array element assignment: arr[idx] = expr
+    if (auto* sub = dynamic_cast<SubscriptNode*>(e->target)) {
+        if (auto* id = dynamic_cast<IdentifierNode*>(sub->base)) {
+            int idx = (int)sub->index->accept(this);
+            double val = e->value->accept(this);
+            auto it = array_data.find(id->name);
+            if (it == array_data.end() || idx < 0 || (size_t)idx >= it->second.size()) {
+                cerr << "Error: índice de arreglo fuera de rango" << endl;
+                return 0;
+            }
+            switch (e->op) {
+                case AssignOp::ASSIGN: it->second[idx] = val; return val;
+                case AssignOp::ADD_ASSIGN: it->second[idx] += val; return it->second[idx];
+                case AssignOp::SUB_ASSIGN: it->second[idx] -= val; return it->second[idx];
+                case AssignOp::MUL_ASSIGN: it->second[idx] *= val; return it->second[idx];
+                case AssignOp::DIV_ASSIGN:
+                    if (val == 0) { cerr << "Error: división por cero" << endl; return 0; }
+                    it->second[idx] /= val;
+                    return it->second[idx];
+            }
+        }
+        return 0;
+    }
     if (auto* id = dynamic_cast<IdentifierNode*>(e->target)) {
         double val = e->value->accept(this);
         switch (e->op) {
@@ -615,16 +650,40 @@ double EVALVisitor::visit(CallNode* e) {
 }
 
 double EVALVisitor::visit(SubscriptNode* e) {
+    if (auto* id = dynamic_cast<IdentifierNode*>(e->base)) {
+        int idx = (int)e->index->accept(this);
+        auto it = array_data.find(id->name);
+        if (it != array_data.end() && idx >= 0 && (size_t)idx < it->second.size())
+            return it->second[idx];
+        cerr << "Error: índice de arreglo fuera de rango" << endl;
+        return 0;
+    }
     cerr << "Error: subíndices no soportados en evaluación" << endl;
     return 0;
 }
 
 double EVALVisitor::visit(MemberAccessNode* e) {
+    if (auto* id = dynamic_cast<IdentifierNode*>(e->object)) {
+        auto it = struct_instances.find(id->name);
+        if (it != struct_instances.end()) {
+            auto mit = it->second.find(e->member);
+            if (mit != it->second.end()) return mit->second;
+        }
+    }
     cerr << "Error: acceso a miembros no soportado en evaluación" << endl;
     return 0;
 }
 
 double EVALVisitor::visit(ArrowAccessNode* e) {
+    if (auto* id = dynamic_cast<IdentifierNode*>(e->pointer)) {
+        // Arrow dereferences a pointer: ptr->member
+        // For simplicity, treat it like dot access on the named variable
+        auto it = struct_instances.find(id->name);
+        if (it != struct_instances.end()) {
+            auto mit = it->second.find(e->member);
+            if (mit != it->second.end()) return mit->second;
+        }
+    }
     cerr << "Error: acceso por flecha no soportado en evaluación" << endl;
     return 0;
 }
@@ -783,10 +842,21 @@ int EVALVisitor::visit(ReturnStmt* s) {
 }
 
 int EVALVisitor::visit(VarDecl* d) {
-    for (auto& a : d->array_sizes) (void)a;
     env.add_var(d->name);
     typeEnv.add_var(d->name, "");
-    if (d->initializer) {
+    if (auto* st = dynamic_cast<StructTypeNode*>(d->type)) {
+        unordered_map<string, double> members;
+        auto it = struct_defs.find(st->name);
+        if (it != struct_defs.end()) {
+            for (auto& m : it->second) members[m] = 0;
+        }
+        struct_instances[d->name] = members;
+        env.update(d->name, 0);
+    } else if (!d->array_sizes.empty()) {
+        int size = 1;
+        for (auto s : d->array_sizes) size *= (int)s->accept(this);
+        array_data[d->name] = vector<double>(size, 0);
+    } else if (d->initializer) {
         env.update(d->name, d->initializer->accept(this));
     }
     return 0;
@@ -798,7 +868,12 @@ int EVALVisitor::visit(FunDecl* d) {
     return 0;
 }
 
-int EVALVisitor::visit(StructDecl* d) { return 0; }
+int EVALVisitor::visit(StructDecl* d) {
+    vector<string> members;
+    for (auto m : d->members) members.push_back(m->name);
+    struct_defs[d->name] = members;
+    return 0;
+}
 
 int EVALVisitor::visit(Program* p) {
     env.add_level();

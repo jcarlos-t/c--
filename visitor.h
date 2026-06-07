@@ -116,6 +116,9 @@ public:
     unordered_map<string, FunDecl*> envfun;
     unordered_map<string, string> funReturnTypes;
     string last_string;
+    unordered_map<string, vector<double>> array_data;
+    unordered_map<string, unordered_map<string, double>> struct_instances;
+    unordered_map<string, vector<string>> struct_defs;
 
     double visit(BinaryOpNode* e) override;
     double visit(SizeOfNode* e) override;

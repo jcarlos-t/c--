@@ -270,7 +270,8 @@ VarDecl* Parser::parse_parameter() {
 
 bool Parser::is_type_start() const {
     return check(Token::VOID) || check(Token::INT) || check(Token::CHAR) ||
-           check(Token::FLOAT) || check(Token::DOUBLE) || check(Token::BOOL) || check(Token::AUTO);
+           check(Token::FLOAT) || check(Token::DOUBLE) || check(Token::BOOL) ||
+           check(Token::AUTO) || check(Token::STRUCT);
 }
 
 // =============================
