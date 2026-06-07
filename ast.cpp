@@ -29,6 +29,10 @@ TernaryOpNode::~TernaryOpNode() { delete condition; delete then_expr; delete els
 // ===================== CallNode =====================
 CallNode::~CallNode() { delete callee; for (auto a : args) delete a; }
 
+// ===================== MallocNode =====================
+MallocNode::MallocNode(Exp* s) : Exp(NodeKind::Malloc), size(s) {}
+MallocNode::~MallocNode() { delete size; }
+
 // ===================== SubscriptNode =====================
 SubscriptNode::SubscriptNode(Exp* b, Exp* i)
     : Exp(NodeKind::Subscript), base(b), index(i) {}
@@ -139,6 +143,10 @@ ContinueStmt::ContinueStmt() : Stm(NodeKind::ContinueStmt) {}
 // ===================== ReturnStmt =====================
 ReturnStmt::ReturnStmt(Exp* e) : Stm(NodeKind::ReturnStmt), expr(e) {}
 ReturnStmt::~ReturnStmt() { delete expr; }
+
+// ===================== FreeStmt =====================
+FreeStmt::FreeStmt(Exp* e) : Stm(NodeKind::FreeStmt), expr(e) {}
+FreeStmt::~FreeStmt() { delete expr; }
 
 // ===================== VarDecl =====================
 VarDecl::VarDecl(Exp* t, const string& n)

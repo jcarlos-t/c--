@@ -12,6 +12,7 @@ Type* UnaryOpNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* AssignmentNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* TernaryOpNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* CallNode::accept(TypeVisitor* v) { return v->visit(this); }
+Type* MallocNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* SubscriptNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* MemberAccessNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* ArrowAccessNode::accept(TypeVisitor* v) { return v->visit(this); }
@@ -41,6 +42,7 @@ void DefaultClause::accept(TypeVisitor* v) { v->visit(this); }
 void BreakStmt::accept(TypeVisitor* v) { v->visit(this); }
 void ContinueStmt::accept(TypeVisitor* v) { v->visit(this); }
 void ReturnStmt::accept(TypeVisitor* v) { v->visit(this); }
+void FreeStmt::accept(TypeVisitor* v) { v->visit(this); }
 void VarDecl::accept(TypeVisitor* v) { v->visit(this); }
 void FunDecl::accept(TypeVisitor* v) { v->visit(this); }
 void StructDecl::accept(TypeVisitor* v) { v->visit(this); }
@@ -234,6 +236,10 @@ void TypeChecker::visit(DefaultClause* s) {
 void TypeChecker::visit(BreakStmt* s) {}
 void TypeChecker::visit(ContinueStmt* s) {}
 
+void TypeChecker::visit(FreeStmt* s) {
+    s->expr->accept(this);
+}
+
 void TypeChecker::visit(ReturnStmt* s) {
     if (retornodefuncion->match(voidType) && s->expr) {
         cerr << "Error: función void no debe retornar valor." << endl;
@@ -331,6 +337,11 @@ Type* TypeChecker::visit(TernaryOpNode* e) {
         exit(0);
     }
     return thenType;
+}
+
+Type* TypeChecker::visit(MallocNode* e) {
+    e->size->accept(this);
+    return intType; // returns int* (simplified)
 }
 
 Type* TypeChecker::visit(CallNode* e) {

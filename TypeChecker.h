@@ -29,12 +29,14 @@ public:
     virtual void visit(BreakStmt* s) = 0;
     virtual void visit(ContinueStmt* s) = 0;
     virtual void visit(ReturnStmt* s) = 0;
+    virtual void visit(FreeStmt* s) = 0;
 
     virtual Type* visit(BinaryOpNode* e) = 0;
     virtual Type* visit(UnaryOpNode* e) = 0;
     virtual Type* visit(AssignmentNode* e) = 0;
     virtual Type* visit(TernaryOpNode* e) = 0;
     virtual Type* visit(CallNode* e) = 0;
+    virtual Type* visit(MallocNode* e) = 0;
     virtual Type* visit(SubscriptNode* e) = 0;
     virtual Type* visit(MemberAccessNode* e) = 0;
     virtual Type* visit(ArrowAccessNode* e) = 0;
@@ -95,12 +97,14 @@ public:
     void visit(BreakStmt* s) override;
     void visit(ContinueStmt* s) override;
     void visit(ReturnStmt* s) override;
+    void visit(FreeStmt* s) override;
 
     Type* visit(BinaryOpNode* e) override;
     Type* visit(UnaryOpNode* e) override;
     Type* visit(AssignmentNode* e) override;
     Type* visit(TernaryOpNode* e) override;
     Type* visit(CallNode* e) override;
+    Type* visit(MallocNode* e) override;
     Type* visit(SubscriptNode* e) override;
     Type* visit(MemberAccessNode* e) override;
     Type* visit(ArrowAccessNode* e) override;

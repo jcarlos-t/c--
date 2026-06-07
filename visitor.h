@@ -22,6 +22,7 @@ public:
     virtual double visit(AssignmentNode* e) = 0;
     virtual double visit(TernaryOpNode* e) = 0;
     virtual double visit(CallNode* e) = 0;
+    virtual double visit(MallocNode* e) = 0;
     virtual double visit(SubscriptNode* e) = 0;
     virtual double visit(MemberAccessNode* e) = 0;
     virtual double visit(ArrowAccessNode* e) = 0;
@@ -52,6 +53,7 @@ public:
     virtual int visit(BreakStmt* s) = 0;
     virtual int visit(ContinueStmt* s) = 0;
     virtual int visit(ReturnStmt* s) = 0;
+    virtual int visit(FreeStmt* s) = 0;
 
     virtual int visit(VarDecl* d) = 0;
     virtual int visit(FunDecl* d) = 0;
@@ -66,6 +68,7 @@ public:
     void print_indent();
 
     double visit(BinaryOpNode* e) override;
+    double visit(MallocNode* e) override;
     double visit(SizeOfNode* e) override;
     double visit(UnaryOpNode* e) override;
     double visit(AssignmentNode* e) override;
@@ -100,6 +103,7 @@ public:
     int visit(BreakStmt* s) override;
     int visit(ContinueStmt* s) override;
     int visit(ReturnStmt* s) override;
+    int visit(FreeStmt* s) override;
 
     int visit(VarDecl* d) override;
     int visit(FunDecl* d) override;
@@ -119,8 +123,11 @@ public:
     unordered_map<string, vector<double>> array_data;
     unordered_map<string, unordered_map<string, double>> struct_instances;
     unordered_map<string, vector<string>> struct_defs;
+    unordered_map<int, vector<double>> heap;
+    int next_addr = 1;
 
     double visit(BinaryOpNode* e) override;
+    double visit(MallocNode* e) override;
     double visit(SizeOfNode* e) override;
     double visit(UnaryOpNode* e) override;
     double visit(AssignmentNode* e) override;
@@ -155,6 +162,7 @@ public:
     int visit(BreakStmt* s) override;
     int visit(ContinueStmt* s) override;
     int visit(ReturnStmt* s) override;
+    int visit(FreeStmt* s) override;
 
     int visit(VarDecl* d) override;
     int visit(FunDecl* d) override;

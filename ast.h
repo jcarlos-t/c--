@@ -31,8 +31,8 @@ enum class NodeKind {
     CompoundStmt, ExprStmt,
     IfStmt, WhileStmt, DoWhileStmt, ForStmt,
     SwitchStmt, CaseClause, DefaultClause,
-    BreakStmt, ContinueStmt, ReturnStmt,
-    BinaryOp, UnaryOp, Assignment, TernaryOp, Call,
+    BreakStmt, ContinueStmt, ReturnStmt, FreeStmt,
+    BinaryOp, UnaryOp, Assignment, TernaryOp, Call, Malloc,
     Subscript, MemberAccess, ArrowAccess,
     PostInc, PostDec, PreInc, PreDec, Cast, SizeOf,
     Identifier,
@@ -152,6 +152,15 @@ public:
     string member;
     ArrowAccessNode(Exp* p, const string& m);
     ~ArrowAccessNode();
+    double accept(Visitor* visitor);
+    Type* accept(TypeVisitor* visitor);
+};
+
+class MallocNode : public Exp {
+public:
+    Exp* size;
+    MallocNode(Exp* s);
+    ~MallocNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
 };
@@ -365,6 +374,15 @@ public:
     Exp* expr;
     ReturnStmt(Exp* e = nullptr);
     ~ReturnStmt();
+    int accept(Visitor* visitor);
+    void accept(TypeVisitor* visitor);
+};
+
+class FreeStmt : public Stm {
+public:
+    Exp* expr;
+    FreeStmt(Exp* e);
+    ~FreeStmt();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
 };

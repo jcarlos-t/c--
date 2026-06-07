@@ -14,6 +14,7 @@ double UnaryOpNode::accept(Visitor* v) { return v->visit(this); }
 double AssignmentNode::accept(Visitor* v) { return v->visit(this); }
 double TernaryOpNode::accept(Visitor* v) { return v->visit(this); }
 double CallNode::accept(Visitor* v) { return v->visit(this); }
+double MallocNode::accept(Visitor* v) { return v->visit(this); }
 double SubscriptNode::accept(Visitor* v) { return v->visit(this); }
 double MemberAccessNode::accept(Visitor* v) { return v->visit(this); }
 double ArrowAccessNode::accept(Visitor* v) { return v->visit(this); }
@@ -48,6 +49,7 @@ int DefaultClause::accept(Visitor* v) { return v->visit(this); }
 int BreakStmt::accept(Visitor* v) { return v->visit(this); }
 int ContinueStmt::accept(Visitor* v) { return v->visit(this); }
 int ReturnStmt::accept(Visitor* v) { return v->visit(this); }
+int FreeStmt::accept(Visitor* v) { return v->visit(this); }
 int VarDecl::accept(Visitor* v) { return v->visit(this); }
 int FunDecl::accept(Visitor* v) { return v->visit(this); }
 int StructDecl::accept(Visitor* v) { return v->visit(this); }
@@ -120,6 +122,13 @@ double PrintVisitor::visit(TernaryOpNode* e) {
     e->then_expr->accept(this);
     cout << " : ";
     e->else_expr->accept(this);
+    return 0;
+}
+
+double PrintVisitor::visit(MallocNode* e) {
+    cout << "malloc(";
+    e->size->accept(this);
+    cout << ")";
     return 0;
 }
 
@@ -361,6 +370,14 @@ int PrintVisitor::visit(ReturnStmt* s) {
         s->expr->accept(this);
     }
     cout << ";\n";
+    return 0;
+}
+
+int PrintVisitor::visit(FreeStmt* s) {
+    print_indent();
+    cout << "free(";
+    s->expr->accept(this);
+    cout << ");\n";
     return 0;
 }
 
@@ -649,6 +666,13 @@ double EVALVisitor::visit(CallNode* e) {
     return 0;
 }
 
+double EVALVisitor::visit(MallocNode* e) {
+    int size = (int)e->size->accept(this);
+    int addr = next_addr++;
+    heap[addr] = vector<double>(size, 0);
+    return (double)addr;
+}
+
 double EVALVisitor::visit(SubscriptNode* e) {
     if (auto* id = dynamic_cast<IdentifierNode*>(e->base)) {
         int idx = (int)e->index->accept(this);
@@ -839,6 +863,13 @@ int EVALVisitor::visit(ContinueStmt* s) { throw ContinueException(); }
 int EVALVisitor::visit(ReturnStmt* s) {
     if (s->expr) throw ReturnException(s->expr->accept(this));
     throw ReturnException(0);
+}
+
+int EVALVisitor::visit(FreeStmt* s) {
+    double ptr = s->expr->accept(this);
+    int addr = (int)ptr;
+    heap.erase(addr);
+    return 0;
 }
 
 int EVALVisitor::visit(VarDecl* d) {

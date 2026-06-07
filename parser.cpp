@@ -304,6 +304,14 @@ Stm* Parser::parse_statement() {
     if (check(Token::RETURN))
         return parse_return_statement();
 
+    if (match(Token::FREE)) {
+        consume(Token::LPAREN, "Se esperaba '(' después de free");
+        Exp* fexpr = parse_expression();
+        consume(Token::RPAREN, "Se esperaba ')'");
+        consume(Token::SEMICOL, "Se esperaba ';' después de free");
+        return new FreeStmt(fexpr);
+    }
+
     // expression_statement: [ expression ] ";"
     if (check(Token::SEMICOL)) {
         advance();
@@ -752,6 +760,12 @@ Exp* Parser::parse_primary() {
         TypeNode* t = parse_type();
         consume(Token::RPAREN, "Se esperaba ')'");
         return new SizeOfNode(t);
+    }
+    if (match(Token::MALLOC)) {
+        consume(Token::LPAREN, "Se esperaba '(' después de malloc");
+        Exp* size = parse_expression();
+        consume(Token::RPAREN, "Se esperaba ')'");
+        return new MallocNode(size);
     }
     sync_error("Se esperaba una expresión");
     return nullptr;
