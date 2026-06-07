@@ -584,7 +584,15 @@ double EVALVisitor::visit(ArrowAccessNode* e) {
 }
 
 double EVALVisitor::visit(CastNode* e) {
-    return e->expr->accept(this);
+    double val = e->expr->accept(this);
+    if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(e->target_type)) {
+        if (pt->prim == PrimitiveTypeNode::INT) return (int)val;
+        if (pt->prim == PrimitiveTypeNode::FLOAT) return (float)val;
+        if (pt->prim == PrimitiveTypeNode::DOUBLE) return (double)val;
+        if (pt->prim == PrimitiveTypeNode::CHAR) return (char)val;
+        if (pt->prim == PrimitiveTypeNode::BOOL) return val != 0 ? 1.0 : 0.0;
+    }
+    return val;
 }
 
 double EVALVisitor::visit(ParenthesizedExprNode* e) {

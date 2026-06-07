@@ -24,8 +24,14 @@ private:
     Token* string_literal();
 
 public:
+    struct Pos {
+        int first, current;
+    };
+
     Scanner(const char* in_s);
     Token* nextToken();
+    Pos getPos() const;
+    void setPos(Pos p);
     ~Scanner();
 };
 

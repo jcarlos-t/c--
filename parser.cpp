@@ -124,21 +124,37 @@ Program* Parser::parseProgram() {
 }
 
 void Parser::parse_declaration(Program* p) {
-    // struct declaration is special: starts with "struct"
+    // Struct declaration: "struct" ID "{" { variable_declaration } "}" ";"
+    // Check by looking ahead without consuming: STRUCT ID LBRACE
     if (check(Token::STRUCT)) {
-        // Peek ahead: if followed by ID { it's a struct decl,
-        // otherwise treat as type for variable/function decl
-        Token* next = scanner->nextToken();
-        bool is_struct_decl = false;
-        if (next->type == Token::ID) {
-            Token* after_id = scanner->nextToken();
-            if (after_id->type == Token::LBRACE) {
-                is_struct_decl = true;
+        Scanner::Pos saved = scanner->getPos();
+        advance(); // consume STRUCT
+        if (check(Token::ID)) {
+            string sname = current->text;
+            advance(); // consume ID
+            if (check(Token::LBRACE)) {
+                // Struct declaration
+                StructDecl* sd = new StructDecl(sname);
+                consume(Token::LBRACE, "Se esperaba '{'");
+                while (!check(Token::RBRACE) && !isAtEnd()) {
+                    TypeNode* mt = parse_type();
+                    Token* mn = consume(Token::ID, "Se esperaba nombre del miembro");
+                    VarDecl* member = parse_variable_decl(mt, mn->text);
+                    sd->members.push_back(member);
+                }
+                consume(Token::RBRACE, "Se esperaba '}'");
+                consume(Token::SEMICOL, "Se esperaba ';' después de struct");
+                p->structs.push_back(sd);
+                return;
             }
-            // Put tokens back — we need to reconstruct
-            // This is messy. Instead, let's parse differently.
         }
-        // Simple approach: try struct_decl, if it fails, handle as type
+        // Not a struct declaration — restore scanner and fall through to parse_type
+        // Note: parser state (current/previous) is corrupt, so we rebuild by re-scanning
+        scanner->setPos(saved);
+        delete current;
+        delete previous;
+        previous = nullptr;
+        current = scanner->nextToken();
     }
 
     // Parse type first
@@ -549,9 +565,59 @@ Exp* Parser::parse_multiplicative() {
 }
 
 Exp* Parser::parse_cast() {
-    // For now, just handle parenthesized expressions.
-    // Cast (type)expr will be added later with proper lookahead.
-    if (match(Token::LPAREN)) {
+    // C-style cast: (type) expr
+    // Check by looking at what follows '('
+    if (check(Token::LPAREN)) {
+        Scanner::Pos saved = scanner->getPos();
+        advance(); // consume '('
+
+        bool is_cast = false;
+        TypeNode* cast_type = nullptr;
+
+        if (check(Token::VOID) || check(Token::INT) || check(Token::CHAR) ||
+            check(Token::FLOAT) || check(Token::DOUBLE) || check(Token::BOOL) ||
+            check(Token::AUTO)) {
+            // Could be cast like (int)expr
+            advance(); // consume type keyword
+            if (check(Token::RPAREN)) {
+                is_cast = true;
+                cast_type = new PrimitiveTypeNode(
+                    previous->type == Token::VOID ? PrimitiveTypeNode::VOID :
+                    previous->type == Token::INT ? PrimitiveTypeNode::INT :
+                    previous->type == Token::CHAR ? PrimitiveTypeNode::CHAR :
+                    previous->type == Token::FLOAT ? PrimitiveTypeNode::FLOAT :
+                    previous->type == Token::DOUBLE ? PrimitiveTypeNode::DOUBLE :
+                    previous->type == Token::BOOL ? PrimitiveTypeNode::BOOL :
+                    PrimitiveTypeNode::AUTO);
+                advance(); // consume ')'
+            }
+        } else if (check(Token::STRUCT)) {
+            // Possibly struct type cast: (struct id) expr
+            advance(); // consume STRUCT
+            if (check(Token::ID)) {
+                string sname = current->text;
+                advance(); // consume ID
+                if (check(Token::RPAREN)) {
+                    is_cast = true;
+                    cast_type = new StructTypeNode(sname);
+                    advance(); // consume ')'
+                }
+            }
+        }
+
+        if (is_cast) {
+            Exp* operand = parse_cast();
+            return new CastNode(cast_type, operand);
+        }
+
+        // Not a cast — restore and parse as parenthesized expression
+        scanner->setPos(saved);
+        delete current;
+        delete previous;
+        previous = nullptr;
+        current = scanner->nextToken();
+
+        advance(); // consume '('
         Exp* expr = parse_expression();
         consume(Token::RPAREN, "Se esperaba ')'");
         return new ParenthesizedExprNode(expr);

@@ -11,6 +11,15 @@ Scanner::Scanner(const char* s) : input(s), first(0), current(0) {}
 
 Scanner::~Scanner() {}
 
+Scanner::Pos Scanner::getPos() const {
+    return {first, current};
+}
+
+void Scanner::setPos(Pos p) {
+    first = p.first;
+    current = p.current;
+}
+
 char Scanner::peek() const {
     if (current >= (int)input.length()) return '\0';
     return input[current];
