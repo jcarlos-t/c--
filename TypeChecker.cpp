@@ -188,6 +188,7 @@ void TypeChecker::visit(Program* p) {
     env.add_level();
     for (auto g : p->globals) g->accept(this);
     for (auto s : p->structs) s->accept(this);
+    for (auto t : p->templates) t->accept(this);
     for (auto f : p->functions) f->accept(this);
     env.remove_level();
 }
@@ -204,6 +205,13 @@ void TypeChecker::visit(FunDecl* f) {
 
 void TypeChecker::visit(VarDecl* v) {
     Type* t = type_from_ast(v->type);
+
+    // Wrap en ArrayType si tiene dimensiones de arreglo
+    for (auto s : v->array_sizes) {
+        ArrayType* at = new ArrayType(t, -1);
+        typeCache.push_back(at);
+        t = at;
+    }
 
     // Inferencia auto: usar tipo del inicializador
     if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(v->type)) {
@@ -329,6 +337,14 @@ void TypeChecker::visit(CaseClause* s) {
 
 void TypeChecker::visit(DefaultClause* s) {
     for (auto st : s->body) st->accept(this);
+}
+
+void TypeChecker::visit(TemplateDecl* d) {
+    // Por ahora no se verifica el template en sí; se podría instanciar
+}
+
+void TypeChecker::visit(FreeStmt* s) {
+    s->expr->accept(this);
 }
 
 void TypeChecker::visit(BreakStmt* s) {
@@ -586,3 +602,19 @@ Type* TypeChecker::visit(PrimitiveTypeNode* e) { return type_from_ast(e); }
 Type* TypeChecker::visit(PointerTypeNode* e) { return type_from_ast(e); }
 Type* TypeChecker::visit(StructTypeNode* e) { return type_from_ast(e); }
 Type* TypeChecker::visit(NamedTypeNode* e) { return type_from_ast(e); }
+
+Type* TypeChecker::visit(SizeOfNode* e) {
+    e->target_type->accept(this);
+    return intType;
+}
+
+Type* TypeChecker::visit(LambdaExprNode* e) {
+    for (auto p : e->params) p->accept(this);
+    if (e->return_type) type_from_ast(e->return_type);
+    if (e->body) e->body->accept(this);
+    return intType; // tipo de lambda no especificado
+}
+
+Type* TypeChecker::visit(CaptureNode* e) {
+    return intType;
+}
