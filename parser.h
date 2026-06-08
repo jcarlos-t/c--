@@ -3,6 +3,7 @@
 
 #include "scanner.h"
 #include "ast.h"
+#include <unordered_set>
 
 class Parser {
 private:
@@ -61,6 +62,8 @@ private:
     Exp* parse_argument_list();
     bool is_type_start() const;
     VarDecl* parse_local_var_decl();
+
+    unordered_set<string> struct_names;
 
 public:
     Parser(Scanner* scanner);

@@ -101,6 +101,11 @@ TypeNode* Parser::parse_basic_type() {
         Token* name = consume(Token::ID, "Se esperaba nombre de struct");
         return new StructTypeNode(name->text);
     }
+    if (check(Token::ID) && struct_names.count(current->text)) {
+        string sname = current->text;
+        advance();
+        return new StructTypeNode(sname);
+    }
     sync_error("Se esperaba un tipo (int, float, void, char, double, auto, struct)");
     return nullptr;
 }
@@ -144,6 +149,7 @@ void Parser::parse_declaration(Program* p) {
                 }
                 consume(Token::RBRACE, "Se esperaba '}'");
                 consume(Token::SEMICOL, "Se esperaba ';' después de struct");
+                struct_names.insert(sname);
                 p->structs.push_back(sd);
                 return;
             }
@@ -271,7 +277,8 @@ VarDecl* Parser::parse_parameter() {
 bool Parser::is_type_start() const {
     return check(Token::VOID) || check(Token::INT) || check(Token::CHAR) ||
            check(Token::FLOAT) || check(Token::DOUBLE) || check(Token::BOOL) ||
-           check(Token::AUTO) || check(Token::STRUCT);
+           check(Token::AUTO) || check(Token::STRUCT) ||
+           (check(Token::ID) && struct_names.count(current->text));
 }
 
 // =============================
