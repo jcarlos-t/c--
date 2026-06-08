@@ -101,11 +101,6 @@ TypeNode* Parser::parse_basic_type() {
         Token* name = consume(Token::ID, "Se esperaba nombre de struct");
         return new StructTypeNode(name->text);
     }
-    if (check(Token::ID) && struct_names.count(current->text)) {
-        string sname = current->text;
-        advance();
-        return new StructTypeNode(sname);
-    }
     sync_error("Se esperaba un tipo (int, float, void, char, double, auto, struct)");
     return nullptr;
 }
@@ -129,6 +124,34 @@ Program* Parser::parseProgram() {
 }
 
 void Parser::parse_declaration(Program* p) {
+    // Template declaration: "template" "<" template_parameter_list ">"
+    //                      ( function_declaration | struct_declaration )
+    if (match(Token::TEMPLATE)) {
+        consume(Token::LT, "Se esperaba '<' después de template");
+        vector<TemplateParam*> tparams;
+        do {
+            consume(Token::TYPENAME, "Se esperaba 'typename'");
+            Token* tname = consume(Token::ID, "Se esperaba nombre del parámetro de template");
+            tparams.push_back(new TemplateParam(tname->text));
+        } while (match(Token::COMA));
+        consume(Token::GT, "Se esperaba '>' después de template");
+
+        // Parse inner declaration (function or struct)
+        if (check(Token::STRUCT)) {
+            StructDecl* sd = parse_struct_decl();
+            TemplateDecl* td = new TemplateDecl(tparams, sd);
+            p->templates.push_back(td);
+        } else {
+            TypeNode* ttype = parse_type();
+            Token* tname = consume(Token::ID, "Se esperaba nombre de función");
+            FunDecl* fd = parse_function_decl(ttype, tname->text);
+            fd->is_template = true;
+            TemplateDecl* td = new TemplateDecl(tparams, fd);
+            p->templates.push_back(td);
+        }
+        return;
+    }
+
     // Struct declaration: "struct" ID "{" { variable_declaration } "}" ";"
     // Check by looking ahead without consuming: STRUCT ID LBRACE
     if (check(Token::STRUCT)) {
@@ -149,7 +172,6 @@ void Parser::parse_declaration(Program* p) {
                 }
                 consume(Token::RBRACE, "Se esperaba '}'");
                 consume(Token::SEMICOL, "Se esperaba ';' después de struct");
-                struct_names.insert(sname);
                 p->structs.push_back(sd);
                 return;
             }
@@ -277,8 +299,7 @@ VarDecl* Parser::parse_parameter() {
 bool Parser::is_type_start() const {
     return check(Token::VOID) || check(Token::INT) || check(Token::CHAR) ||
            check(Token::FLOAT) || check(Token::DOUBLE) || check(Token::BOOL) ||
-           check(Token::AUTO) || check(Token::STRUCT) ||
-           (check(Token::ID) && struct_names.count(current->text));
+           check(Token::AUTO) || check(Token::STRUCT);
 }
 
 // =============================
@@ -286,6 +307,9 @@ bool Parser::is_type_start() const {
 // =============================
 
 Stm* Parser::parse_statement() {
+    if (is_type_start()) {
+        return new DeclStmt(parse_local_var_decl());
+    }
     if (check(Token::LBRACE))
         return parse_compound_statement();
     if (check(Token::IF))
@@ -340,11 +364,7 @@ Stm* Parser::parse_compound_statement() {
     CompoundStmt* cs = new CompoundStmt();
     consume(Token::LBRACE, "Se esperaba '{'");
     while (!check(Token::RBRACE) && !isAtEnd()) {
-        if (is_type_start()) {
-            cs->vdlist.push_back(parse_local_var_decl());
-        } else {
-            cs->stmts.push_back(parse_statement());
-        }
+        cs->stmts.push_back(parse_statement());
     }
     consume(Token::RBRACE, "Se esperaba '}'");
     return cs;
@@ -389,24 +409,8 @@ Stm* Parser::parse_for_statement() {
 
     Stm* init = nullptr;
     if (!check(Token::SEMICOL)) {
-        if (is_type_start()) {
-            // Variable declaration in for-init
-            TypeNode* vtype = parse_type();
-            Token* vname = consume(Token::ID, "Se esperaba identificador en for-init");
-            VarDecl* vd = new VarDecl(vtype, vname->text);
-            while (match(Token::LBRACKET)) {
-                if (!check(Token::RBRACKET))
-                    vd->array_sizes.push_back(parse_expression());
-                consume(Token::RBRACKET, "Se esperaba ']'");
-            }
-            if (match(Token::ASSIGN))
-                vd->initializer = parse_expression();
-            // Do NOT consume semicolon — it belongs to the for-loop header
-            init = new DeclStmt(vd);
-        } else {
-            Exp* e = parse_expression();
-            init = new ExprStmtNode(e);
-        }
+        Exp* e = parse_expression();
+        init = new ExprStmtNode(e);
     }
     consume(Token::SEMICOL, "Se esperaba ';' en for");
 
@@ -588,9 +592,6 @@ Exp* Parser::parse_multiplicative() {
         } else if (match(Token::MOD)) {
             Exp* r = parse_cast();
             l = new BinaryOpNode(l, r, BinaryOp::MOD);
-        } else if (match(Token::POW)) {
-            Exp* r = parse_cast();
-            l = new BinaryOpNode(l, r, BinaryOp::POW);
         } else break;
     }
     return l;
@@ -642,14 +643,8 @@ Exp* Parser::parse_cast() {
             return new CastNode(cast_type, operand);
         }
 
-        // Not a cast — restore and parse as parenthesized expression
-        scanner->setPos(saved);
-        delete current;
-        delete previous;
-        previous = nullptr;
-        current = scanner->nextToken();
-
-        advance(); // consume '('
+        // Not a cast — parse as parenthesized expression.
+        // current already points to the first token after '('
         Exp* expr = parse_expression();
         consume(Token::RPAREN, "Se esperaba ')'");
         return new ParenthesizedExprNode(expr);
@@ -757,16 +752,50 @@ Exp* Parser::parse_primary() {
     if (match(Token::STRING_LIT)) {
         return new StringLiteralNode(previous->text.substr(1, previous->text.size() - 2));
     }
+    // Lambda expression: "[" [ capture_list ] "]" "(" parameter_list ")" "->" type compound_statement
+    if (match(Token::LBRACKET)) {
+        vector<CaptureNode*> captures;
+        if (!check(Token::RBRACKET)) {
+            do {
+                if (match(Token::AMPERSAND)) {
+                    if (check(Token::ID)) {
+                        string cname = current->text;
+                        advance();
+                        captures.push_back(new CaptureNode(CaptureNode::BY_REF, cname));
+                    } else {
+                        captures.push_back(new CaptureNode(CaptureNode::BY_REF, ""));
+                    }
+                } else if (match(Token::ASSIGN)) {
+                    captures.push_back(new CaptureNode(CaptureNode::BY_VALUE, ""));
+                } else if (check(Token::ID)) {
+                    string cname = current->text;
+                    advance();
+                    captures.push_back(new CaptureNode(CaptureNode::BY_VALUE, cname));
+                } else {
+                    sync_error("Se esperaba captura en lambda");
+                }
+            } while (match(Token::COMA));
+        }
+        consume(Token::RBRACKET, "Se esperaba ']' en lambda");
+        consume(Token::LPAREN, "Se esperaba '(' en lambda");
+        vector<VarDecl*> lparams;
+        if (!check(Token::RPAREN)) {
+            lparams.push_back(parse_parameter());
+            while (match(Token::COMA)) {
+                lparams.push_back(parse_parameter());
+            }
+        }
+        consume(Token::RPAREN, "Se esperaba ')' en lambda");
+        consume(Token::ARROW, "Se esperaba '->' en lambda");
+        TypeNode* lret = parse_type();
+        CompoundStmt* lbody = dynamic_cast<CompoundStmt*>(parse_compound_statement());
+        if (!lbody) sync_error("Se esperaba cuerpo compuesto en lambda");
+        return new LambdaExprNode(captures, lparams, lret, lbody);
+    }
     if (match(Token::LPAREN)) {
         Exp* expr = parse_expression();
         consume(Token::RPAREN, "Se esperaba ')'");
         return new ParenthesizedExprNode(expr);
-    }
-    if (match(Token::SIZEOF)) {
-        consume(Token::LPAREN, "Se esperaba '(' después de sizeof");
-        TypeNode* t = parse_type();
-        consume(Token::RPAREN, "Se esperaba ')'");
-        return new SizeOfNode(t);
     }
     if (match(Token::MALLOC)) {
         consume(Token::LPAREN, "Se esperaba '(' después de malloc");

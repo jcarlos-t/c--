@@ -1,35 +1,22 @@
-float limit;
-
-bool compare(float value, float cap) {
-    bool under;
-    float shifted;
-    shifted = value + 0.75;
-    under = shifted < cap;
-    if (under) {
-        shifted = shifted + 1.25;
-    }
-    return under;
-}
-
-float confused(float seed, bool enabled) {
-    float acc;
-    bool result;
-    acc = seed * 2.0;
-    result = acc < limit;
-    if ((result) && enabled) {
-        acc = acc + 3.5;
-    }
-    print(acc);
-    return acc;
-}
-
 int main() {
-    float start;
-    bool flag;
-    limit = 12.0;
-    start = 4.5;
-    flag = compare(start, limit);
-    print(flag);
-    print(confused(start, flag));
+    int i;
+    int sum;
+    i = 0;
+    sum = 0;
+    do {
+        sum = sum + i;
+        i = i + 1;
+    } while (i <= 5);
+
+    for (i = 6; i <= 10; i = i + 1) {
+        if (i > 8) {
+            break;
+        }
+        if (i == 7) {
+            continue;
+        }
+        sum = sum + i;
+    }
+    print(sum);
     return 0;
 }

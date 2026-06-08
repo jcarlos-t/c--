@@ -20,6 +20,8 @@ double MemberAccessNode::accept(Visitor* v) { return v->visit(this); }
 double ArrowAccessNode::accept(Visitor* v) { return v->visit(this); }
 double CastNode::accept(Visitor* v) { return v->visit(this); }
 double SizeOfNode::accept(Visitor* v) { return v->visit(this); }
+double LambdaExprNode::accept(Visitor* v) { return v->visit(this); }
+double CaptureNode::accept(Visitor* v) { return v->visit(this); }
 double IdentifierNode::accept(Visitor* v) { return v->visit(this); }
 double IntegerLiteralNode::accept(Visitor* v) { return v->visit(this); }
 double FloatLiteralNode::accept(Visitor* v) { return v->visit(this); }
@@ -53,6 +55,7 @@ int FreeStmt::accept(Visitor* v) { return v->visit(this); }
 int VarDecl::accept(Visitor* v) { return v->visit(this); }
 int FunDecl::accept(Visitor* v) { return v->visit(this); }
 int StructDecl::accept(Visitor* v) { return v->visit(this); }
+int TemplateDecl::accept(Visitor* v) { return v->visit(this); }
 int Program::accept(Visitor* v) { return v->visit(this); }
 
 // ============================================================
@@ -426,7 +429,42 @@ int PrintVisitor::visit(StructDecl* d) {
     return 0;
 }
 
+double PrintVisitor::visit(LambdaExprNode* e) {
+    print_indent();
+    cout << "LambdaExpr\n";
+    indent++;
+    for (auto cap : e->captures) cap->accept(this);
+    for (auto p : e->params) p->accept(this);
+    if (e->return_type) e->return_type->accept(this);
+    if (e->body) e->body->accept(this);
+    indent--;
+    return 0;
+}
+
+double PrintVisitor::visit(CaptureNode* e) {
+    print_indent();
+    cout << "Capture " << (e->mode == CaptureNode::BY_REF ? "by_ref" : "by_value");
+    if (!e->name.empty()) cout << " " << e->name;
+    cout << "\n";
+    return 0;
+}
+
+int PrintVisitor::visit(TemplateDecl* d) {
+    print_indent();
+    cout << "TemplateDecl\n";
+    indent++;
+    for (auto p : d->params) {
+        print_indent();
+        cout << "Param " << p->name << "\n";
+    }
+    if (d->func) d->func->accept(this);
+    if (d->struct_decl) d->struct_decl->accept(this);
+    indent--;
+    return 0;
+}
+
 int PrintVisitor::visit(Program* p) {
+    for (auto t : p->templates) t->accept(this);
     for (auto s : p->structs) s->accept(this);
     for (auto g : p->globals) g->accept(this);
     for (auto f : p->functions) f->accept(this);
@@ -905,6 +943,12 @@ int EVALVisitor::visit(StructDecl* d) {
     struct_defs[d->name] = members;
     return 0;
 }
+
+double EVALVisitor::visit(LambdaExprNode* e) { return 0; }
+
+double EVALVisitor::visit(CaptureNode* e) { return 0; }
+
+int EVALVisitor::visit(TemplateDecl* d) { return 0; }
 
 int EVALVisitor::visit(Program* p) {
     env.add_level();

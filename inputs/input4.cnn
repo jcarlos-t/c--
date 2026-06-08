@@ -1,35 +1,24 @@
-bool ready;
-
-float blend(float a, float b, bool take) {
-    float mixed;
-    bool small;
-    mixed = a + b / 2.0;
-    small = mixed < 9.0;
-    if ((small) && take) {
-        mixed = mixed + 1.5;
-    }
-    return mixed;
-}
-
-bool below(float value, float cap) {
-    bool answer;
-    float shifted;
-    shifted = value + 0.25;
-    answer = shifted < cap;
-    print(answer);
-    return answer;
-}
-
 int main() {
-    float x;
-    float y;
-    float z;
-    bool flag;
-    x = 1.5;
-    y = 4.0;
-    flag = below(x, 10.0);
-    ready = flag;
-    z = blend(x, y, true);
-    print(z);
+    int a;
+    int b;
+    int c;
+    a = 0;
+    b = 5;
+    c = 0;
+
+    a = ++b;
+    print(a);
+    print(b);
+
+    c = b--;
+    print(c);
+    print(b);
+
+    if (!(a == 0) && (b < 10 || c > 0)) {
+        print(1);
+    } else {
+        print(0);
+    }
+
     return 0;
 }

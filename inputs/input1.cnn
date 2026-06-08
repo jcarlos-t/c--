@@ -1,39 +1,23 @@
-float total;
-bool ready;
-
-float adjust(float x, bool pass) {
-    float local;
-    bool small;
-    local = x + 1.25;
-    small = local < 10.0;
-    if ((small) && pass) {
-        local = local + 2.0;
+int factorial(int n) {
+    int result;
+    result = 1;
+    while (n > 1) {
+        result = result * n;
+        n = n - 1;
     }
-    return local;
-}
-
-bool gate(float base, float limit) {
-    bool ok;
-    float shifted;
-    shifted = base + 0.5;
-    ok = shifted < limit;
-    print(ok);
-    return ok;
+    return result;
 }
 
 int main() {
-    float a;
-    float b;
-    bool flag;
-    bool check;
-    a = 2.5;
-    b = 7.5;
-    flag = true;
-    check = gate(a, b);
-    if (check) {
-        total = adjust(a, flag);
+    int i;
+    int sum;
+    sum = 0;
+    i = 1;
+    while (i <= 10) {
+        sum = sum + i;
+        i = i + 1;
     }
-    ready = total;
-    print(ready);
+    print(sum);
+    print(factorial(5));
     return 0;
 }

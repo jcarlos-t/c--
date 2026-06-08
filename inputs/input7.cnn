@@ -1,16 +1,21 @@
-int factorial(int n) {
-    int result;
-    result = 1;
-    while (n > 1) {
-        result = result * n;
-        n = n - 1;
-    }
-    return result;
-}
-
 int main() {
-    int val;
-    val = factorial(5);
-    print(val);
+    int arr[5];
+    int i;
+    int sum;
+
+    i = 0;
+    while (i < 5) {
+        arr[i] = i * 10;
+        i = i + 1;
+    }
+
+    sum = 0;
+    i = 0;
+    while (i < 5) {
+        sum = sum + arr[i];
+        i = i + 1;
+    }
+    print(sum);
+
     return 0;
 }

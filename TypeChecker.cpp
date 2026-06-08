@@ -18,6 +18,8 @@ Type* MemberAccessNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* ArrowAccessNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* CastNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* SizeOfNode::accept(TypeVisitor* v) { return v->visit(this); }
+Type* LambdaExprNode::accept(TypeVisitor* v) { return v->visit(this); }
+Type* CaptureNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* IdentifierNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* IntegerLiteralNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* FloatLiteralNode::accept(TypeVisitor* v) { return v->visit(this); }
@@ -46,6 +48,7 @@ void FreeStmt::accept(TypeVisitor* v) { v->visit(this); }
 void VarDecl::accept(TypeVisitor* v) { v->visit(this); }
 void FunDecl::accept(TypeVisitor* v) { v->visit(this); }
 void StructDecl::accept(TypeVisitor* v) { v->visit(this); }
+void TemplateDecl::accept(TypeVisitor* v) { v->visit(this); }
 void CompoundStmt::accept(TypeVisitor* v) { v->visit(this); }
 void Program::accept(TypeVisitor* v) { v->visit(this); }
 
@@ -406,3 +409,12 @@ Type* TypeChecker::visit(PrimitiveTypeNode* e) { return type_from_ast(e); }
 Type* TypeChecker::visit(PointerTypeNode* e) { return intType; }
 Type* TypeChecker::visit(StructTypeNode* e) { return intType; }
 Type* TypeChecker::visit(NamedTypeNode* e) { return intType; }
+
+Type* TypeChecker::visit(LambdaExprNode* e) { return intType; }
+
+Type* TypeChecker::visit(CaptureNode* e) { return intType; }
+
+void TypeChecker::visit(TemplateDecl* d) {
+    if (d->func) d->func->accept(this);
+    if (d->struct_decl) d->struct_decl->accept(this);
+}

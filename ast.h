@@ -11,6 +11,7 @@ class Visitor;
 class TypeVisitor;
 class VarDecl;
 class DeclStmt;
+class TemplateDecl;
 
 // ============================================================
 // Location (ast.md §2)
@@ -26,7 +27,7 @@ struct Location {
 // ============================================================
 enum class NodeKind {
     Program,
-    FunctionDecl, VariableDecl, StructDecl,
+    FunctionDecl, VariableDecl, StructDecl, TemplateDecl,
     PrimitiveType, PointerType, StructType, NamedType,
     CompoundStmt, ExprStmt,
     IfStmt, WhileStmt, DoWhileStmt, ForStmt,
@@ -35,10 +36,10 @@ enum class NodeKind {
     BinaryOp, UnaryOp, Assignment, TernaryOp, Call, Malloc,
     Subscript, MemberAccess, ArrowAccess,
     PostInc, PostDec, PreInc, PreDec, Cast, SizeOf,
-    Identifier,
+    Identifier, LambdaExpr, Capture,
     IntegerLiteral, FloatLiteral, BoolLiteral,
     CharLiteral, StringLiteral, ParenthesizedExpr,
-    Parameter
+    Parameter, TemplateParam
 };
 
 // ============================================================
@@ -441,6 +442,7 @@ public:
     vector<FunDecl*> functions;
     vector<VarDecl*> globals;
     vector<StructDecl*> structs;
+    vector<TemplateDecl*> templates;
 
     Program();
     ~Program();
@@ -489,6 +491,57 @@ public:
     NamedTypeNode(const string& n);
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+};
+
+// ============================================================
+// Lambda expressions (grammar.md §8)
+// ============================================================
+
+class CaptureNode : public Exp {
+public:
+    enum Mode { BY_VALUE, BY_REF };
+    Mode mode;
+    string name;
+    CaptureNode(Mode m, const string& n);
+    double accept(Visitor* visitor);
+    Type* accept(TypeVisitor* visitor);
+};
+
+class LambdaExprNode : public Exp {
+public:
+    vector<CaptureNode*> captures;
+    vector<VarDecl*> params;
+    TypeNode* return_type;
+    CompoundStmt* body;
+    LambdaExprNode(const vector<CaptureNode*>& caps, const vector<VarDecl*>& p, TypeNode* r, CompoundStmt* b);
+    ~LambdaExprNode();
+    double accept(Visitor* visitor);
+    Type* accept(TypeVisitor* visitor);
+};
+
+// ============================================================
+// Template declarations (grammar.md §10)
+// ============================================================
+
+class TemplateParam {
+public:
+    NodeKind kind;
+    string name;
+    TemplateParam(const string& n);
+};
+
+class TemplateDecl {
+public:
+    NodeKind kind;
+    vector<TemplateParam*> params;
+    FunDecl* func;
+    StructDecl* struct_decl;
+    bool is_function;
+    TemplateDecl(const vector<TemplateParam*>& p, FunDecl* f);
+    TemplateDecl(const vector<TemplateParam*>& p, StructDecl* s);
+    ~TemplateDecl();
+    int accept(Visitor* visitor);
+    void accept(TypeVisitor* visitor);
 };
 
 #endif

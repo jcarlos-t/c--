@@ -15,6 +15,7 @@ public:
     virtual void visit(FunDecl* f) = 0;
     virtual void visit(VarDecl* v) = 0;
     virtual void visit(StructDecl* s) = 0;
+    virtual void visit(TemplateDecl* d) = 0;
     virtual void visit(CompoundStmt* b) = 0;
 
     virtual void visit(ExprStmtNode* s) = 0;
@@ -42,6 +43,8 @@ public:
     virtual Type* visit(ArrowAccessNode* e) = 0;
     virtual Type* visit(CastNode* e) = 0;
     virtual Type* visit(SizeOfNode* e) = 0;
+    virtual Type* visit(LambdaExprNode* e) = 0;
+    virtual Type* visit(CaptureNode* e) = 0;
     virtual Type* visit(IdentifierNode* e) = 0;
     virtual Type* visit(IntegerLiteralNode* e) = 0;
     virtual Type* visit(FloatLiteralNode* e) = 0;
@@ -83,6 +86,7 @@ public:
     void visit(FunDecl* f) override;
     void visit(VarDecl* v) override;
     void visit(StructDecl* s) override;
+    void visit(TemplateDecl* d) override;
     void visit(CompoundStmt* b) override;
 
     void visit(ExprStmtNode* s) override;
@@ -110,6 +114,8 @@ public:
     Type* visit(ArrowAccessNode* e) override;
     Type* visit(CastNode* e) override;
     Type* visit(SizeOfNode* e) override;
+    Type* visit(LambdaExprNode* e) override;
+    Type* visit(CaptureNode* e) override;
     Type* visit(IdentifierNode* e) override;
     Type* visit(IntegerLiteralNode* e) override;
     Type* visit(FloatLiteralNode* e) override;

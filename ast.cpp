@@ -169,6 +169,7 @@ Program::~Program() {
     for (auto f : functions) delete f;
     for (auto g : globals) delete g;
     for (auto s : structs) delete s;
+    for (auto t : templates) delete t;
 }
 
 // ===================== TypeNode =====================
@@ -199,3 +200,31 @@ StructTypeNode::StructTypeNode(const string& n)
 // ===================== NamedTypeNode =====================
 NamedTypeNode::NamedTypeNode(const string& n)
     : TypeNode(NodeKind::NamedType), name(n) {}
+
+// ===================== CaptureNode =====================
+CaptureNode::CaptureNode(Mode m, const string& n)
+    : Exp(NodeKind::Capture), mode(m), name(n) {}
+
+// ===================== LambdaExprNode =====================
+LambdaExprNode::LambdaExprNode(const vector<CaptureNode*>& caps, const vector<VarDecl*>& p, TypeNode* r, CompoundStmt* b)
+    : Exp(NodeKind::LambdaExpr), captures(caps), params(p), return_type(r), body(b) {}
+LambdaExprNode::~LambdaExprNode() {
+    for (auto c : captures) delete c;
+    for (auto p : params) delete p;
+    delete return_type;
+    delete body;
+}
+
+// ===================== TemplateParam =====================
+TemplateParam::TemplateParam(const string& n) : kind(NodeKind::TemplateParam), name(n) {}
+
+// ===================== TemplateDecl =====================
+TemplateDecl::TemplateDecl(const vector<TemplateParam*>& p, FunDecl* f)
+    : kind(NodeKind::TemplateDecl), params(p), func(f), struct_decl(nullptr), is_function(true) {}
+TemplateDecl::TemplateDecl(const vector<TemplateParam*>& p, StructDecl* s)
+    : kind(NodeKind::TemplateDecl), params(p), func(nullptr), struct_decl(s), is_function(false) {}
+TemplateDecl::~TemplateDecl() {
+    for (auto p : params) delete p;
+    delete func;
+    delete struct_decl;
+}
