@@ -3,12 +3,14 @@
 
 #include <unordered_map>
 #include <string>
+#include <vector>
 #include "ast.h"
 #include "environment.h"
 #include "semantic_types.h"
 
 using namespace std;
 
+// Visitor abstracto para recorrido semántico del AST
 class TypeVisitor {
 public:
     virtual void visit(Program* p) = 0;
@@ -52,6 +54,7 @@ public:
     virtual Type* visit(NamedTypeNode* e) = 0;
 };
 
+// Información de firma de función para verificación de llamadas
 struct FuncInfo {
     Type* returnType;
     vector<Type*> paramTypes;
@@ -59,23 +62,40 @@ struct FuncInfo {
 
 class TypeChecker : public TypeVisitor {
 private:
-    Environment<Type*> env;
-    unordered_map<string, FuncInfo> functions;
-    Type* retornodefuncion;
+    Environment<Type*> env;           // Tabla de símbolos con scoping
+    unordered_map<string, FuncInfo> functions;  // Funciones declaradas
+    unordered_map<string, StructType*> struct_types; // Structs declarados
+    Type* retornodefuncion;           // Tipo de retorno de la función actual
 
+    // Tipos predefinidos compartidos
     Type* intType;
     Type* boolType;
     Type* voidType;
     Type* floatType;
     Type* charType;
 
+    // Cache de tipos dinámicos creados (PointerType, ArrayType, etc.)
+    vector<Type*> typeCache;
+
+    // Contexto para break/continue
+    int loopDepth;   // Nivel de anidamiento de ciclos (while/for/do-while)
+    int switchDepth; // Nivel de anidamiento de switch
+
+    // Colección de errores semánticos (en lugar de exit inmediato)
+    vector<string> errors;
+    bool hasError;
+
     void add_function(FunDecl* fd);
     Type* type_from_ast(Exp* t);
+    bool check_assign(Type* target, Type* value);
+    void error(const string& msg);
 
 public:
     TypeChecker();
+    ~TypeChecker();
     void typecheck(Program* program);
 
+    // Visitas a declaraciones y statements
     void visit(Program* p) override;
     void visit(FunDecl* f) override;
     void visit(VarDecl* v) override;
@@ -95,6 +115,7 @@ public:
     void visit(ContinueStmt* s) override;
     void visit(ReturnStmt* s) override;
 
+    // Visitas a expresiones
     Type* visit(BinaryOpNode* e) override;
     Type* visit(UnaryOpNode* e) override;
     Type* visit(AssignmentNode* e) override;

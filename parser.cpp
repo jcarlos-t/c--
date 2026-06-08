@@ -626,14 +626,7 @@ Exp* Parser::parse_cast() {
             return new CastNode(cast_type, operand);
         }
 
-        // Not a cast — restore and parse as parenthesized expression
-        scanner->setPos(saved);
-        delete current;
-        delete previous;
-        previous = nullptr;
-        current = scanner->nextToken();
-
-        advance(); // consume '('
+        // Not a cast — '(' ya fue consumido, parsear como expresión parentizada
         Exp* expr = parse_expression();
         consume(Token::RPAREN, "Se esperaba ')'");
         return new ParenthesizedExprNode(expr);
