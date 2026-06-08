@@ -12,10 +12,14 @@ Type* UnaryOpNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* AssignmentNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* TernaryOpNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* CallNode::accept(TypeVisitor* v) { return v->visit(this); }
+Type* MallocNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* SubscriptNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* MemberAccessNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* ArrowAccessNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* CastNode::accept(TypeVisitor* v) { return v->visit(this); }
+Type* SizeOfNode::accept(TypeVisitor* v) { return v->visit(this); }
+Type* LambdaExprNode::accept(TypeVisitor* v) { return v->visit(this); }
+Type* CaptureNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* IdentifierNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* IntegerLiteralNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* FloatLiteralNode::accept(TypeVisitor* v) { return v->visit(this); }
@@ -40,9 +44,11 @@ void DefaultClause::accept(TypeVisitor* v) { v->visit(this); }
 void BreakStmt::accept(TypeVisitor* v) { v->visit(this); }
 void ContinueStmt::accept(TypeVisitor* v) { v->visit(this); }
 void ReturnStmt::accept(TypeVisitor* v) { v->visit(this); }
+void FreeStmt::accept(TypeVisitor* v) { v->visit(this); }
 void VarDecl::accept(TypeVisitor* v) { v->visit(this); }
 void FunDecl::accept(TypeVisitor* v) { v->visit(this); }
 void StructDecl::accept(TypeVisitor* v) { v->visit(this); }
+void TemplateDecl::accept(TypeVisitor* v) { v->visit(this); }
 void CompoundStmt::accept(TypeVisitor* v) { v->visit(this); }
 void Program::accept(TypeVisitor* v) { v->visit(this); }
 
@@ -458,6 +464,11 @@ Type* TypeChecker::visit(TernaryOpNode* e) {
     return thenType;
 }
 
+Type* TypeChecker::visit(MallocNode* e) {
+    e->size->accept(this);
+    return intType; // returns int* (simplified)
+}
+
 Type* TypeChecker::visit(CallNode* e) {
     if (auto* id = dynamic_cast<IdentifierNode*>(e->callee)) {
         string fname = id->name;
@@ -554,10 +565,7 @@ Type* TypeChecker::visit(ArrowAccessNode* e) {
 }
 
 Type* TypeChecker::visit(CastNode* e) {
-    // Validar que el tipo destino sea válido
-    Type* targetType = type_from_ast(e->target_type);
-    e->expr->accept(this);
-    return targetType;
+    return type_from_ast(e->target_type);
 }
 
 Type* TypeChecker::visit(IdentifierNode* e) {

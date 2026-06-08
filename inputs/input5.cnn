@@ -1,37 +1,12 @@
-float base;
-
-bool valid(float amount, bool switcher) {
-    bool low;
-    float adjusted;
-    adjusted = amount + 2.0;
-    low = adjusted < 15.0;
-    if ((low) && switcher) {
-        adjusted = adjusted + 1.0;
-    }
-    print(adjusted);
-    return low;
-}
-
-float calc(float x, float y, bool enabled) {
-    float result;
-    bool under;
-    result = x * y;
-    under = result < 30.0;
-    if ((under) && enabled) {
-        result = result + 4.5;
-    }
-    return result;
-}
-
 int main() {
-    float first;
-    bool gate;
-    float answer;
-    base = 3.5;
-    first = 2.0;
-    gate = true;
-    answer = calc(first, 3.0, gate);
-    print(answer);
-    print(gate);
+    char ch;
+    int casted;
+
+    ch = 'A';
+    print(ch);
+
+    casted = (int)3.75;
+    print(casted);
+
     return 0;
 }

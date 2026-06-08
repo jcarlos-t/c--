@@ -1,24 +1,24 @@
-int fib(int n) {
+int main() {
+    int result;
     int a;
     int b;
-    int tmp;
-    if (n <= 1) {
-        return n;
-    }
-    a = 0;
-    b = 1;
-    while (n > 1) {
-        tmp = a + b;
-        a = b;
-        b = tmp;
-        n = n - 1;
-    }
-    return b;
-}
+    a = 7;
+    b = 3;
 
-int main() {
-    int val;
-    val = fib(10);
-    print(val);
+    result = (a + b) * (a - b);
+    print(result);
+
+    a += b;
+    print(a);
+
+    result = (a > b) ? a : b;
+    print(result);
+
+    if ((a != b) && (b > 0)) {
+        print(1);
+    } else {
+        print(0);
+    }
+
     return 0;
 }

@@ -14,10 +14,14 @@ double UnaryOpNode::accept(Visitor* v) { return v->visit(this); }
 double AssignmentNode::accept(Visitor* v) { return v->visit(this); }
 double TernaryOpNode::accept(Visitor* v) { return v->visit(this); }
 double CallNode::accept(Visitor* v) { return v->visit(this); }
+double MallocNode::accept(Visitor* v) { return v->visit(this); }
 double SubscriptNode::accept(Visitor* v) { return v->visit(this); }
 double MemberAccessNode::accept(Visitor* v) { return v->visit(this); }
 double ArrowAccessNode::accept(Visitor* v) { return v->visit(this); }
 double CastNode::accept(Visitor* v) { return v->visit(this); }
+double SizeOfNode::accept(Visitor* v) { return v->visit(this); }
+double LambdaExprNode::accept(Visitor* v) { return v->visit(this); }
+double CaptureNode::accept(Visitor* v) { return v->visit(this); }
 double IdentifierNode::accept(Visitor* v) { return v->visit(this); }
 double IntegerLiteralNode::accept(Visitor* v) { return v->visit(this); }
 double FloatLiteralNode::accept(Visitor* v) { return v->visit(this); }
@@ -47,9 +51,11 @@ int DefaultClause::accept(Visitor* v) { return v->visit(this); }
 int BreakStmt::accept(Visitor* v) { return v->visit(this); }
 int ContinueStmt::accept(Visitor* v) { return v->visit(this); }
 int ReturnStmt::accept(Visitor* v) { return v->visit(this); }
+int FreeStmt::accept(Visitor* v) { return v->visit(this); }
 int VarDecl::accept(Visitor* v) { return v->visit(this); }
 int FunDecl::accept(Visitor* v) { return v->visit(this); }
 int StructDecl::accept(Visitor* v) { return v->visit(this); }
+int TemplateDecl::accept(Visitor* v) { return v->visit(this); }
 int Program::accept(Visitor* v) { return v->visit(this); }
 
 // ============================================================
@@ -122,6 +128,13 @@ double PrintVisitor::visit(TernaryOpNode* e) {
     return 0;
 }
 
+double PrintVisitor::visit(MallocNode* e) {
+    cout << "malloc(";
+    e->size->accept(this);
+    cout << ")";
+    return 0;
+}
+
 double PrintVisitor::visit(CallNode* e) {
     e->callee->accept(this);
     cout << "(";
@@ -158,6 +171,13 @@ double PrintVisitor::visit(CastNode* e) {
     e->target_type->accept(this);
     cout << ")";
     e->expr->accept(this);
+    return 0;
+}
+
+double PrintVisitor::visit(SizeOfNode* e) {
+    cout << "sizeof(";
+    e->target_type->accept(this);
+    cout << ")";
     return 0;
 }
 
@@ -356,6 +376,14 @@ int PrintVisitor::visit(ReturnStmt* s) {
     return 0;
 }
 
+int PrintVisitor::visit(FreeStmt* s) {
+    print_indent();
+    cout << "free(";
+    s->expr->accept(this);
+    cout << ");\n";
+    return 0;
+}
+
 int PrintVisitor::visit(VarDecl* d) {
     print_indent();
     d->type->accept(this);
@@ -401,7 +429,42 @@ int PrintVisitor::visit(StructDecl* d) {
     return 0;
 }
 
+double PrintVisitor::visit(LambdaExprNode* e) {
+    print_indent();
+    cout << "LambdaExpr\n";
+    indent++;
+    for (auto cap : e->captures) cap->accept(this);
+    for (auto p : e->params) p->accept(this);
+    if (e->return_type) e->return_type->accept(this);
+    if (e->body) e->body->accept(this);
+    indent--;
+    return 0;
+}
+
+double PrintVisitor::visit(CaptureNode* e) {
+    print_indent();
+    cout << "Capture " << (e->mode == CaptureNode::BY_REF ? "by_ref" : "by_value");
+    if (!e->name.empty()) cout << " " << e->name;
+    cout << "\n";
+    return 0;
+}
+
+int PrintVisitor::visit(TemplateDecl* d) {
+    print_indent();
+    cout << "TemplateDecl\n";
+    indent++;
+    for (auto p : d->params) {
+        print_indent();
+        cout << "Param " << p->name << "\n";
+    }
+    if (d->func) d->func->accept(this);
+    if (d->struct_decl) d->struct_decl->accept(this);
+    indent--;
+    return 0;
+}
+
 int PrintVisitor::visit(Program* p) {
+    for (auto t : p->templates) t->accept(this);
     for (auto s : p->structs) s->accept(this);
     for (auto g : p->globals) g->accept(this);
     for (auto f : p->functions) f->accept(this);
@@ -436,7 +499,7 @@ double EVALVisitor::visit(CharLiteralNode* e) {
 }
 
 double EVALVisitor::visit(StringLiteralNode* e) {
-    cerr << "Error: string literales no soportados en evaluación" << endl;
+    last_string = e->value;
     return 0;
 }
 
@@ -510,6 +573,41 @@ double EVALVisitor::visit(UnaryOpNode* e) {
 }
 
 double EVALVisitor::visit(AssignmentNode* e) {
+    // Handle struct member assignment: obj.member = expr
+    if (auto* ma = dynamic_cast<MemberAccessNode*>(e->target)) {
+        if (auto* id = dynamic_cast<IdentifierNode*>(ma->object)) {
+            double val = e->value->accept(this);
+            auto it = struct_instances.find(id->name);
+            if (it != struct_instances.end()) {
+                it->second[ma->member] = val;
+                return val;
+            }
+        }
+        return 0;
+    }
+    // Handle array element assignment: arr[idx] = expr
+    if (auto* sub = dynamic_cast<SubscriptNode*>(e->target)) {
+        if (auto* id = dynamic_cast<IdentifierNode*>(sub->base)) {
+            int idx = (int)sub->index->accept(this);
+            double val = e->value->accept(this);
+            auto it = array_data.find(id->name);
+            if (it == array_data.end() || idx < 0 || (size_t)idx >= it->second.size()) {
+                cerr << "Error: índice de arreglo fuera de rango" << endl;
+                return 0;
+            }
+            switch (e->op) {
+                case AssignOp::ASSIGN: it->second[idx] = val; return val;
+                case AssignOp::ADD_ASSIGN: it->second[idx] += val; return it->second[idx];
+                case AssignOp::SUB_ASSIGN: it->second[idx] -= val; return it->second[idx];
+                case AssignOp::MUL_ASSIGN: it->second[idx] *= val; return it->second[idx];
+                case AssignOp::DIV_ASSIGN:
+                    if (val == 0) { cerr << "Error: división por cero" << endl; return 0; }
+                    it->second[idx] /= val;
+                    return it->second[idx];
+            }
+        }
+        return 0;
+    }
     if (auto* id = dynamic_cast<IdentifierNode*>(e->target)) {
         double val = e->value->accept(this);
         switch (e->op) {
@@ -557,12 +655,17 @@ double EVALVisitor::visit(CallNode* e) {
         string fname = id->name;
         if (fname == "print" || fname == "printf") {
             for (auto a : e->args) {
-                double val = a->accept(this);
-                string type = getType(a);
-                if (type == "bool")
-                    cout << (val != 0 ? "true" : "false");
-                else
-                    cout << val;
+                if (dynamic_cast<StringLiteralNode*>(a)) {
+                    a->accept(this);
+                    cout << last_string;
+                } else {
+                    double val = a->accept(this);
+                    string type = getType(a);
+                    if (type == "bool")
+                        cout << (val != 0 ? "true" : "false");
+                    else
+                        cout << val;
+                }
             }
             cout << endl;
             return 0;
@@ -601,17 +704,48 @@ double EVALVisitor::visit(CallNode* e) {
     return 0;
 }
 
+double EVALVisitor::visit(MallocNode* e) {
+    int size = (int)e->size->accept(this);
+    int addr = next_addr++;
+    heap[addr] = vector<double>(size, 0);
+    return (double)addr;
+}
+
 double EVALVisitor::visit(SubscriptNode* e) {
+    if (auto* id = dynamic_cast<IdentifierNode*>(e->base)) {
+        int idx = (int)e->index->accept(this);
+        auto it = array_data.find(id->name);
+        if (it != array_data.end() && idx >= 0 && (size_t)idx < it->second.size())
+            return it->second[idx];
+        cerr << "Error: índice de arreglo fuera de rango" << endl;
+        return 0;
+    }
     cerr << "Error: subíndices no soportados en evaluación" << endl;
     return 0;
 }
 
 double EVALVisitor::visit(MemberAccessNode* e) {
+    if (auto* id = dynamic_cast<IdentifierNode*>(e->object)) {
+        auto it = struct_instances.find(id->name);
+        if (it != struct_instances.end()) {
+            auto mit = it->second.find(e->member);
+            if (mit != it->second.end()) return mit->second;
+        }
+    }
     cerr << "Error: acceso a miembros no soportado en evaluación" << endl;
     return 0;
 }
 
 double EVALVisitor::visit(ArrowAccessNode* e) {
+    if (auto* id = dynamic_cast<IdentifierNode*>(e->pointer)) {
+        // Arrow dereferences a pointer: ptr->member
+        // For simplicity, treat it like dot access on the named variable
+        auto it = struct_instances.find(id->name);
+        if (it != struct_instances.end()) {
+            auto mit = it->second.find(e->member);
+            if (mit != it->second.end()) return mit->second;
+        }
+    }
     cerr << "Error: acceso por flecha no soportado en evaluación" << endl;
     return 0;
 }
@@ -626,6 +760,22 @@ double EVALVisitor::visit(CastNode* e) {
         if (pt->prim == PrimitiveTypeNode::BOOL) return val != 0 ? 1.0 : 0.0;
     }
     return val;
+}
+
+double EVALVisitor::visit(SizeOfNode* e) {
+    if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(e->target_type)) {
+        switch (pt->prim) {
+            case PrimitiveTypeNode::VOID: return 1;
+            case PrimitiveTypeNode::CHAR: return 1;
+            case PrimitiveTypeNode::BOOL: return 1;
+            case PrimitiveTypeNode::INT: return 4;
+            case PrimitiveTypeNode::FLOAT: return 4;
+            case PrimitiveTypeNode::DOUBLE: return 8;
+            case PrimitiveTypeNode::AUTO: return 0;
+        }
+    }
+    if (dynamic_cast<PointerTypeNode*>(e->target_type)) return 8;
+    return 0;
 }
 
 double EVALVisitor::visit(ParenthesizedExprNode* e) {
@@ -753,11 +903,29 @@ int EVALVisitor::visit(ReturnStmt* s) {
     throw ReturnException(0);
 }
 
+int EVALVisitor::visit(FreeStmt* s) {
+    double ptr = s->expr->accept(this);
+    int addr = (int)ptr;
+    heap.erase(addr);
+    return 0;
+}
+
 int EVALVisitor::visit(VarDecl* d) {
-    for (auto& a : d->array_sizes) (void)a;
     env.add_var(d->name);
     typeEnv.add_var(d->name, "");
-    if (d->initializer) {
+    if (auto* st = dynamic_cast<StructTypeNode*>(d->type)) {
+        unordered_map<string, double> members;
+        auto it = struct_defs.find(st->name);
+        if (it != struct_defs.end()) {
+            for (auto& m : it->second) members[m] = 0;
+        }
+        struct_instances[d->name] = members;
+        env.update(d->name, 0);
+    } else if (!d->array_sizes.empty()) {
+        int size = 1;
+        for (auto s : d->array_sizes) size *= (int)s->accept(this);
+        array_data[d->name] = vector<double>(size, 0);
+    } else if (d->initializer) {
         env.update(d->name, d->initializer->accept(this));
     }
     return 0;
@@ -769,7 +937,18 @@ int EVALVisitor::visit(FunDecl* d) {
     return 0;
 }
 
-int EVALVisitor::visit(StructDecl* d) { return 0; }
+int EVALVisitor::visit(StructDecl* d) {
+    vector<string> members;
+    for (auto m : d->members) members.push_back(m->name);
+    struct_defs[d->name] = members;
+    return 0;
+}
+
+double EVALVisitor::visit(LambdaExprNode* e) { return 0; }
+
+double EVALVisitor::visit(CaptureNode* e) { return 0; }
+
+int EVALVisitor::visit(TemplateDecl* d) { return 0; }
 
 int EVALVisitor::visit(Program* p) {
     env.add_level();
@@ -795,6 +974,7 @@ string EVALVisitor::getType(Exp* e) {
     if (dynamic_cast<IntegerLiteralNode*>(e)) return "int";
     if (dynamic_cast<FloatLiteralNode*>(e)) return "float";
     if (dynamic_cast<CharLiteralNode*>(e)) return "char";
+    if (dynamic_cast<StringLiteralNode*>(e)) return "string";
     if (auto* id = dynamic_cast<IdentifierNode*>(e)) return typeEnv.lookup(id->name);
     if (auto* be = dynamic_cast<BinaryOpNode*>(e)) {
         if (be->op == BinaryOp::EQ || be->op == BinaryOp::NE ||

@@ -1,10 +1,20 @@
-int main() {
+struct Point {
     int x;
     int y;
-    int z;
-    x = 1;
-    y = 2;
-    z = x + y;
-    print(z);
+};
+
+int main() {
+    struct Point p;
+    struct Point q;
+    int sum;
+
+    p.x = 10;
+    p.y = 20;
+    q.x = 3;
+    q.y = 7;
+
+    sum = p.x + q.y;
+    print(sum);
+
     return 0;
 }

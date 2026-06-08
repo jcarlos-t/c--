@@ -22,10 +22,14 @@ public:
     virtual double visit(AssignmentNode* e) = 0;
     virtual double visit(TernaryOpNode* e) = 0;
     virtual double visit(CallNode* e) = 0;
+    virtual double visit(MallocNode* e) = 0;
     virtual double visit(SubscriptNode* e) = 0;
     virtual double visit(MemberAccessNode* e) = 0;
     virtual double visit(ArrowAccessNode* e) = 0;
     virtual double visit(CastNode* e) = 0;
+    virtual double visit(SizeOfNode* e) = 0;
+    virtual double visit(LambdaExprNode* e) = 0;
+    virtual double visit(CaptureNode* e) = 0;
     virtual double visit(IdentifierNode* e) = 0;
     virtual double visit(IntegerLiteralNode* e) = 0;
     virtual double visit(FloatLiteralNode* e) = 0;
@@ -51,10 +55,12 @@ public:
     virtual int visit(BreakStmt* s) = 0;
     virtual int visit(ContinueStmt* s) = 0;
     virtual int visit(ReturnStmt* s) = 0;
+    virtual int visit(FreeStmt* s) = 0;
 
     virtual int visit(VarDecl* d) = 0;
     virtual int visit(FunDecl* d) = 0;
     virtual int visit(StructDecl* d) = 0;
+    virtual int visit(TemplateDecl* d) = 0;
     virtual int visit(Program* p) = 0;
 };
 
@@ -65,6 +71,8 @@ public:
     void print_indent();
 
     double visit(BinaryOpNode* e) override;
+    double visit(MallocNode* e) override;
+    double visit(SizeOfNode* e) override;
     double visit(UnaryOpNode* e) override;
     double visit(AssignmentNode* e) override;
     double visit(TernaryOpNode* e) override;
@@ -73,6 +81,8 @@ public:
     double visit(MemberAccessNode* e) override;
     double visit(ArrowAccessNode* e) override;
     double visit(CastNode* e) override;
+    double visit(LambdaExprNode* e) override;
+    double visit(CaptureNode* e) override;
     double visit(IdentifierNode* e) override;
     double visit(IntegerLiteralNode* e) override;
     double visit(FloatLiteralNode* e) override;
@@ -98,10 +108,12 @@ public:
     int visit(BreakStmt* s) override;
     int visit(ContinueStmt* s) override;
     int visit(ReturnStmt* s) override;
+    int visit(FreeStmt* s) override;
 
     int visit(VarDecl* d) override;
     int visit(FunDecl* d) override;
     int visit(StructDecl* d) override;
+    int visit(TemplateDecl* d) override;
     int visit(Program* p) override;
 
     void imprimir(Program* program);
@@ -113,8 +125,16 @@ public:
     Environment<string> typeEnv;
     unordered_map<string, FunDecl*> envfun;
     unordered_map<string, string> funReturnTypes;
+    string last_string;
+    unordered_map<string, vector<double>> array_data;
+    unordered_map<string, unordered_map<string, double>> struct_instances;
+    unordered_map<string, vector<string>> struct_defs;
+    unordered_map<int, vector<double>> heap;
+    int next_addr = 1;
 
     double visit(BinaryOpNode* e) override;
+    double visit(MallocNode* e) override;
+    double visit(SizeOfNode* e) override;
     double visit(UnaryOpNode* e) override;
     double visit(AssignmentNode* e) override;
     double visit(TernaryOpNode* e) override;
@@ -123,6 +143,8 @@ public:
     double visit(MemberAccessNode* e) override;
     double visit(ArrowAccessNode* e) override;
     double visit(CastNode* e) override;
+    double visit(LambdaExprNode* e) override;
+    double visit(CaptureNode* e) override;
     double visit(IdentifierNode* e) override;
     double visit(IntegerLiteralNode* e) override;
     double visit(FloatLiteralNode* e) override;
@@ -148,10 +170,12 @@ public:
     int visit(BreakStmt* s) override;
     int visit(ContinueStmt* s) override;
     int visit(ReturnStmt* s) override;
+    int visit(FreeStmt* s) override;
 
     int visit(VarDecl* d) override;
     int visit(FunDecl* d) override;
     int visit(StructDecl* d) override;
+    int visit(TemplateDecl* d) override;
     int visit(Program* p) override;
 
     void interprete(Program* program);

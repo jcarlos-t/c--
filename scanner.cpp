@@ -119,15 +119,15 @@ Token* Scanner::number() {
 }
 
 Token* Scanner::char_literal() {
-    advance(); // skip opening '
+    // nextToken() already consumed the opening '
     if (current < (int)input.length() && peek() == '\\') {
-        advance();
-        if (current < (int)input.length()) advance();
+        advance(); // skip backslash
+        if (current < (int)input.length()) advance(); // skip escaped char
     } else {
-        if (current < (int)input.length()) advance();
+        if (current < (int)input.length()) advance(); // skip content char
     }
     if (current < (int)input.length() && peek() == '\'')
-        advance();
+        advance(); // skip closing '
     else {
         return new Token(Token::ERR, input, first, current - first);
     }

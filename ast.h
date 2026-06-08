@@ -11,6 +11,7 @@ class Visitor;
 class TypeVisitor;
 class VarDecl;
 class DeclStmt;
+class TemplateDecl;
 
 // ============================================================
 // Location (ast.md §2)
@@ -26,19 +27,19 @@ struct Location {
 // ============================================================
 enum class NodeKind {
     Program,
-    FunctionDecl, VariableDecl, StructDecl,
+    FunctionDecl, VariableDecl, StructDecl, TemplateDecl,
     PrimitiveType, PointerType, StructType, NamedType,
     CompoundStmt, ExprStmt,
     IfStmt, WhileStmt, DoWhileStmt, ForStmt,
     SwitchStmt, CaseClause, DefaultClause,
-    BreakStmt, ContinueStmt, ReturnStmt,
-    BinaryOp, UnaryOp, Assignment, TernaryOp, Call,
+    BreakStmt, ContinueStmt, ReturnStmt, FreeStmt,
+    BinaryOp, UnaryOp, Assignment, TernaryOp, Call, Malloc,
     Subscript, MemberAccess, ArrowAccess,
-    PostInc, PostDec, PreInc, PreDec, Cast,
-    Identifier,
+    PostInc, PostDec, PreInc, PreDec, Cast, SizeOf,
+    Identifier, LambdaExpr, Capture,
     IntegerLiteral, FloatLiteral, BoolLiteral,
     CharLiteral, StringLiteral, ParenthesizedExpr,
-    Parameter
+    Parameter, TemplateParam
 };
 
 // ============================================================
@@ -156,12 +157,30 @@ public:
     Type* accept(TypeVisitor* visitor);
 };
 
+class MallocNode : public Exp {
+public:
+    Exp* size;
+    MallocNode(Exp* s);
+    ~MallocNode();
+    double accept(Visitor* visitor);
+    Type* accept(TypeVisitor* visitor);
+};
+
 class CastNode : public Exp {
 public:
     Exp* target_type;
     Exp* expr;
     CastNode(Exp* t, Exp* e);
     ~CastNode();
+    double accept(Visitor* visitor);
+    Type* accept(TypeVisitor* visitor);
+};
+
+class SizeOfNode : public Exp {
+public:
+    Exp* target_type;
+    SizeOfNode(Exp* t);
+    ~SizeOfNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
 };
@@ -360,6 +379,15 @@ public:
     void accept(TypeVisitor* visitor);
 };
 
+class FreeStmt : public Stm {
+public:
+    Exp* expr;
+    FreeStmt(Exp* e);
+    ~FreeStmt();
+    int accept(Visitor* visitor);
+    void accept(TypeVisitor* visitor);
+};
+
 // ============================================================
 // Declaration nodes (ast.md §3)
 // ============================================================
@@ -414,6 +442,7 @@ public:
     vector<FunDecl*> functions;
     vector<VarDecl*> globals;
     vector<StructDecl*> structs;
+    vector<TemplateDecl*> templates;
 
     Program();
     ~Program();
@@ -462,6 +491,57 @@ public:
     NamedTypeNode(const string& n);
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+};
+
+// ============================================================
+// Lambda expressions (grammar.md §8)
+// ============================================================
+
+class CaptureNode : public Exp {
+public:
+    enum Mode { BY_VALUE, BY_REF };
+    Mode mode;
+    string name;
+    CaptureNode(Mode m, const string& n);
+    double accept(Visitor* visitor);
+    Type* accept(TypeVisitor* visitor);
+};
+
+class LambdaExprNode : public Exp {
+public:
+    vector<CaptureNode*> captures;
+    vector<VarDecl*> params;
+    TypeNode* return_type;
+    CompoundStmt* body;
+    LambdaExprNode(const vector<CaptureNode*>& caps, const vector<VarDecl*>& p, TypeNode* r, CompoundStmt* b);
+    ~LambdaExprNode();
+    double accept(Visitor* visitor);
+    Type* accept(TypeVisitor* visitor);
+};
+
+// ============================================================
+// Template declarations (grammar.md §10)
+// ============================================================
+
+class TemplateParam {
+public:
+    NodeKind kind;
+    string name;
+    TemplateParam(const string& n);
+};
+
+class TemplateDecl {
+public:
+    NodeKind kind;
+    vector<TemplateParam*> params;
+    FunDecl* func;
+    StructDecl* struct_decl;
+    bool is_function;
+    TemplateDecl(const vector<TemplateParam*>& p, FunDecl* f);
+    TemplateDecl(const vector<TemplateParam*>& p, StructDecl* s);
+    ~TemplateDecl();
+    int accept(Visitor* visitor);
+    void accept(TypeVisitor* visitor);
 };
 
 #endif

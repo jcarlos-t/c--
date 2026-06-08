@@ -17,6 +17,7 @@ public:
     virtual void visit(FunDecl* f) = 0;
     virtual void visit(VarDecl* v) = 0;
     virtual void visit(StructDecl* s) = 0;
+    virtual void visit(TemplateDecl* d) = 0;
     virtual void visit(CompoundStmt* b) = 0;
 
     virtual void visit(ExprStmtNode* s) = 0;
@@ -31,16 +32,21 @@ public:
     virtual void visit(BreakStmt* s) = 0;
     virtual void visit(ContinueStmt* s) = 0;
     virtual void visit(ReturnStmt* s) = 0;
+    virtual void visit(FreeStmt* s) = 0;
 
     virtual Type* visit(BinaryOpNode* e) = 0;
     virtual Type* visit(UnaryOpNode* e) = 0;
     virtual Type* visit(AssignmentNode* e) = 0;
     virtual Type* visit(TernaryOpNode* e) = 0;
     virtual Type* visit(CallNode* e) = 0;
+    virtual Type* visit(MallocNode* e) = 0;
     virtual Type* visit(SubscriptNode* e) = 0;
     virtual Type* visit(MemberAccessNode* e) = 0;
     virtual Type* visit(ArrowAccessNode* e) = 0;
     virtual Type* visit(CastNode* e) = 0;
+    virtual Type* visit(SizeOfNode* e) = 0;
+    virtual Type* visit(LambdaExprNode* e) = 0;
+    virtual Type* visit(CaptureNode* e) = 0;
     virtual Type* visit(IdentifierNode* e) = 0;
     virtual Type* visit(IntegerLiteralNode* e) = 0;
     virtual Type* visit(FloatLiteralNode* e) = 0;
@@ -100,6 +106,7 @@ public:
     void visit(FunDecl* f) override;
     void visit(VarDecl* v) override;
     void visit(StructDecl* s) override;
+    void visit(TemplateDecl* d) override;
     void visit(CompoundStmt* b) override;
 
     void visit(ExprStmtNode* s) override;
@@ -114,6 +121,7 @@ public:
     void visit(BreakStmt* s) override;
     void visit(ContinueStmt* s) override;
     void visit(ReturnStmt* s) override;
+    void visit(FreeStmt* s) override;
 
     // Visitas a expresiones
     Type* visit(BinaryOpNode* e) override;
@@ -121,10 +129,14 @@ public:
     Type* visit(AssignmentNode* e) override;
     Type* visit(TernaryOpNode* e) override;
     Type* visit(CallNode* e) override;
+    Type* visit(MallocNode* e) override;
     Type* visit(SubscriptNode* e) override;
     Type* visit(MemberAccessNode* e) override;
     Type* visit(ArrowAccessNode* e) override;
     Type* visit(CastNode* e) override;
+    Type* visit(SizeOfNode* e) override;
+    Type* visit(LambdaExprNode* e) override;
+    Type* visit(CaptureNode* e) override;
     Type* visit(IdentifierNode* e) override;
     Type* visit(IntegerLiteralNode* e) override;
     Type* visit(FloatLiteralNode* e) override;

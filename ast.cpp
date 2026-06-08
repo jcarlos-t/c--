@@ -29,6 +29,10 @@ TernaryOpNode::~TernaryOpNode() { delete condition; delete then_expr; delete els
 // ===================== CallNode =====================
 CallNode::~CallNode() { delete callee; for (auto a : args) delete a; }
 
+// ===================== MallocNode =====================
+MallocNode::MallocNode(Exp* s) : Exp(NodeKind::Malloc), size(s) {}
+MallocNode::~MallocNode() { delete size; }
+
 // ===================== SubscriptNode =====================
 SubscriptNode::SubscriptNode(Exp* b, Exp* i)
     : Exp(NodeKind::Subscript), base(b), index(i) {}
@@ -48,6 +52,10 @@ ArrowAccessNode::~ArrowAccessNode() { delete pointer; }
 CastNode::CastNode(Exp* t, Exp* e)
     : Exp(NodeKind::Cast), target_type(t), expr(e) {}
 CastNode::~CastNode() { delete target_type; delete expr; }
+
+// ===================== SizeOfNode =====================
+SizeOfNode::SizeOfNode(Exp* t) : Exp(NodeKind::SizeOf), target_type(t) {}
+SizeOfNode::~SizeOfNode() { delete target_type; }
 
 // ===================== IdentifierNode =====================
 IdentifierNode::IdentifierNode(const string& n)
@@ -136,6 +144,10 @@ ContinueStmt::ContinueStmt() : Stm(NodeKind::ContinueStmt) {}
 ReturnStmt::ReturnStmt(Exp* e) : Stm(NodeKind::ReturnStmt), expr(e) {}
 ReturnStmt::~ReturnStmt() { delete expr; }
 
+// ===================== FreeStmt =====================
+FreeStmt::FreeStmt(Exp* e) : Stm(NodeKind::FreeStmt), expr(e) {}
+FreeStmt::~FreeStmt() { delete expr; }
+
 // ===================== VarDecl =====================
 VarDecl::VarDecl(Exp* t, const string& n)
     : kind(NodeKind::VariableDecl), type(t), name(n), initializer(nullptr) {}
@@ -157,6 +169,7 @@ Program::~Program() {
     for (auto f : functions) delete f;
     for (auto g : globals) delete g;
     for (auto s : structs) delete s;
+    for (auto t : templates) delete t;
 }
 
 // ===================== TypeNode =====================
@@ -187,3 +200,31 @@ StructTypeNode::StructTypeNode(const string& n)
 // ===================== NamedTypeNode =====================
 NamedTypeNode::NamedTypeNode(const string& n)
     : TypeNode(NodeKind::NamedType), name(n) {}
+
+// ===================== CaptureNode =====================
+CaptureNode::CaptureNode(Mode m, const string& n)
+    : Exp(NodeKind::Capture), mode(m), name(n) {}
+
+// ===================== LambdaExprNode =====================
+LambdaExprNode::LambdaExprNode(const vector<CaptureNode*>& caps, const vector<VarDecl*>& p, TypeNode* r, CompoundStmt* b)
+    : Exp(NodeKind::LambdaExpr), captures(caps), params(p), return_type(r), body(b) {}
+LambdaExprNode::~LambdaExprNode() {
+    for (auto c : captures) delete c;
+    for (auto p : params) delete p;
+    delete return_type;
+    delete body;
+}
+
+// ===================== TemplateParam =====================
+TemplateParam::TemplateParam(const string& n) : kind(NodeKind::TemplateParam), name(n) {}
+
+// ===================== TemplateDecl =====================
+TemplateDecl::TemplateDecl(const vector<TemplateParam*>& p, FunDecl* f)
+    : kind(NodeKind::TemplateDecl), params(p), func(f), struct_decl(nullptr), is_function(true) {}
+TemplateDecl::TemplateDecl(const vector<TemplateParam*>& p, StructDecl* s)
+    : kind(NodeKind::TemplateDecl), params(p), func(nullptr), struct_decl(s), is_function(false) {}
+TemplateDecl::~TemplateDecl() {
+    for (auto p : params) delete p;
+    delete func;
+    delete struct_decl;
+}
