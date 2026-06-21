@@ -9,6 +9,7 @@ using namespace std;
 
 class Visitor;
 class TypeVisitor;
+class CodeGenVisitor;
 class VarDecl;
 class DeclStmt;
 class TemplateDecl;
@@ -70,6 +71,8 @@ public:
     virtual ~Exp() = 0;
     virtual double accept(Visitor* visitor) = 0;
     virtual Type* accept(TypeVisitor* visitor) = 0;
+    virtual void accept(CodeGenVisitor* visitor) = 0;
+    virtual void computeAddress(CodeGenVisitor* visitor);
 };
 
 // --- Expression nodes ---
@@ -83,6 +86,7 @@ public:
     ~BinaryOpNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class UnaryOpNode : public Exp {
@@ -93,6 +97,8 @@ public:
     ~UnaryOpNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
+    void computeAddress(CodeGenVisitor* visitor);
 };
 
 class AssignmentNode : public Exp {
@@ -104,6 +110,7 @@ public:
     ~AssignmentNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class TernaryOpNode : public Exp {
@@ -115,6 +122,7 @@ public:
     ~TernaryOpNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class CallNode : public Exp {
@@ -125,6 +133,7 @@ public:
     ~CallNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class SubscriptNode : public Exp {
@@ -135,6 +144,8 @@ public:
     ~SubscriptNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
+    void computeAddress(CodeGenVisitor* visitor);
 };
 
 class MemberAccessNode : public Exp {
@@ -145,6 +156,8 @@ public:
     ~MemberAccessNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
+    void computeAddress(CodeGenVisitor* visitor);
 };
 
 class ArrowAccessNode : public Exp {
@@ -155,6 +168,8 @@ public:
     ~ArrowAccessNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
+    void computeAddress(CodeGenVisitor* visitor);
 };
 
 class MallocNode : public Exp {
@@ -164,6 +179,7 @@ public:
     ~MallocNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class CastNode : public Exp {
@@ -174,6 +190,7 @@ public:
     ~CastNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class SizeOfNode : public Exp {
@@ -183,6 +200,7 @@ public:
     ~SizeOfNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class IdentifierNode : public Exp {
@@ -192,6 +210,8 @@ public:
     ~IdentifierNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
+    void computeAddress(CodeGenVisitor* visitor);
 };
 
 class IntegerLiteralNode : public Exp {
@@ -200,6 +220,7 @@ public:
     IntegerLiteralNode(long long v);
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class FloatLiteralNode : public Exp {
@@ -208,6 +229,7 @@ public:
     FloatLiteralNode(double v);
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class BoolLiteralNode : public Exp {
@@ -216,6 +238,7 @@ public:
     BoolLiteralNode(bool v);
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class CharLiteralNode : public Exp {
@@ -224,6 +247,7 @@ public:
     CharLiteralNode(char v);
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class StringLiteralNode : public Exp {
@@ -232,6 +256,7 @@ public:
     StringLiteralNode(const string& v);
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class ParenthesizedExprNode : public Exp {
@@ -241,6 +266,7 @@ public:
     ~ParenthesizedExprNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 // ============================================================
@@ -254,6 +280,7 @@ public:
     virtual ~Stm() = 0;
     virtual int accept(Visitor* visitor) = 0;
     virtual void accept(TypeVisitor* visitor) = 0;
+    virtual void accept(CodeGenVisitor* visitor) = 0;
 };
 
 class CompoundStmt : public Stm {
@@ -264,6 +291,7 @@ public:
     ~CompoundStmt();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class ExprStmtNode : public Stm {
@@ -273,6 +301,7 @@ public:
     ~ExprStmtNode();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class DeclStmt : public Stm {
@@ -282,6 +311,7 @@ public:
     ~DeclStmt();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class IfStmt : public Stm {
@@ -293,6 +323,7 @@ public:
     ~IfStmt();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class WhileStmt : public Stm {
@@ -303,6 +334,7 @@ public:
     ~WhileStmt();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class DoWhileStmt : public Stm {
@@ -313,6 +345,7 @@ public:
     ~DoWhileStmt();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class ForStmt : public Stm {
@@ -325,6 +358,7 @@ public:
     ~ForStmt();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class SwitchStmt : public Stm {
@@ -335,6 +369,7 @@ public:
     ~SwitchStmt();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class CaseClause : public Stm {
@@ -345,6 +380,7 @@ public:
     ~CaseClause();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class DefaultClause : public Stm {
@@ -354,6 +390,7 @@ public:
     ~DefaultClause();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class BreakStmt : public Stm {
@@ -361,6 +398,7 @@ public:
     BreakStmt();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class ContinueStmt : public Stm {
@@ -368,6 +406,7 @@ public:
     ContinueStmt();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class ReturnStmt : public Stm {
@@ -377,6 +416,7 @@ public:
     ~ReturnStmt();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class FreeStmt : public Stm {
@@ -386,6 +426,7 @@ public:
     ~FreeStmt();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 // ============================================================
@@ -404,6 +445,7 @@ public:
     ~VarDecl();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class FunDecl {
@@ -420,6 +462,7 @@ public:
     ~FunDecl();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class StructDecl {
@@ -433,6 +476,7 @@ public:
     ~StructDecl();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class Program {
@@ -448,6 +492,7 @@ public:
     ~Program();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 // ============================================================
@@ -466,6 +511,7 @@ public:
     PrimitiveTypeNode(Prim p);
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class PointerTypeNode : public TypeNode {
@@ -475,6 +521,7 @@ public:
     ~PointerTypeNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class StructTypeNode : public TypeNode {
@@ -483,6 +530,7 @@ public:
     StructTypeNode(const string& n);
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class NamedTypeNode : public TypeNode {
@@ -491,6 +539,7 @@ public:
     NamedTypeNode(const string& n);
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 // ============================================================
@@ -505,6 +554,7 @@ public:
     CaptureNode(Mode m, const string& n);
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 class LambdaExprNode : public Exp {
@@ -517,6 +567,7 @@ public:
     ~LambdaExprNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 // ============================================================
@@ -542,6 +593,7 @@ public:
     ~TemplateDecl();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
 };
 
 #endif

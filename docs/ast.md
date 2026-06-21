@@ -399,58 +399,113 @@ Expressions
 
 The AST uses **exclusive ownership** via raw pointers. The `Program` root node is responsible for deallocating the entire tree. A recursive `freeNode(ASTNode*)` function traverses and deletes all children based on `NodeKind`.
 
-## 6. Visitor Pattern (Suggestion)
+## 6. Visitor Patterns
+
+El AST soporta actualmente **tres** jerarquías de visitors mediante double dispatch:
+
+| Jerarquía | Clase Base | Retorno Exp | Retorno Stm | Propósito |
+|-----------|-----------|-------------|-------------|-----------|
+| `Visitor` | `Visitor` | `double` | `int` | Interpretación (`EVALVisitor`) y pretty-print (`PrintVisitor`) |
+| `TypeVisitor` | `TypeVisitor` | `Type*` | `void` | Type checking (`TypeChecker`) |
+| `CodeGenVisitor` | `CodeGenVisitor` | `void` | `void` | Code generation (x86-64) |
+
+Cada nodo tiene tres métodos `accept`:
 
 ```cpp
-class ASTVisitor {
+// Ejemplo: BinaryOpNode
+double accept(Visitor* visitor);      → visitor.cpp
+Type* accept(TypeVisitor* visitor);   → TypeChecker.cpp
+void accept(CodeGenVisitor* visitor); → ast.cpp (stub, double dispatch)
+```
+
+### 6.1 CodeGenVisitor (abstracto)
+
+`CodeGenVisitor` está definido en `CodeGenVisitor.h` e incluye:
+
+```cpp
+class CodeGenVisitor {
 public:
-    virtual void visit(Program*) = 0;
-    virtual void visit(FunctionDecl*) = 0;
-    virtual void visit(VariableDecl*) = 0;
-    virtual void visit(StructDecl*) = 0;
-    virtual void visit(TemplateDecl*) = 0;
-    virtual void visit(TemplateParam*) = 0;
-    virtual void visit(PrimitiveType*) = 0;
-    virtual void visit(PointerType*) = 0;
-    virtual void visit(StructType*) = 0;
-    virtual void visit(NamedType*) = 0;
-    virtual void visit(Parameter*) = 0;
-    virtual void visit(CompoundStmt*) = 0;
-    virtual void visit(ExprStmt*) = 0;
-    virtual void visit(IfStmt*) = 0;
-    virtual void visit(WhileStmt*) = 0;
-    virtual void visit(DoWhileStmt*) = 0;
-    virtual void visit(ForStmt*) = 0;
-    virtual void visit(SwitchStmt*) = 0;
-    virtual void visit(CaseClause*) = 0;
-    virtual void visit(DefaultClause*) = 0;
-    virtual void visit(BreakStmt*) = 0;
-    virtual void visit(ContinueStmt*) = 0;
-    virtual void visit(ReturnStmt*) = 0;
-    virtual void visit(BinaryOp*) = 0;
-    virtual void visit(UnaryOp*) = 0;
-    virtual void visit(Assignment*) = 0;
-    virtual void visit(TernaryOp*) = 0;
-    virtual void visit(Call*) = 0;
-    virtual void visit(Subscript*) = 0;
-    virtual void visit(MemberAccess*) = 0;
-    virtual void visit(ArrowAccess*) = 0;
-    virtual void visit(PostInc*) = 0;
-    virtual void visit(PostDec*) = 0;
-    virtual void visit(PreInc*) = 0;
-    virtual void visit(PreDec*) = 0;
-    virtual void visit(Cast*) = 0;
-    virtual void visit(Identifier*) = 0;
-    virtual void visit(IntegerLiteral*) = 0;
-    virtual void visit(FloatLiteral*) = 0;
-    virtual void visit(CharLiteral*) = 0;
-    virtual void visit(StringLiteral*) = 0;
-    virtual void visit(ParenthesizedExpr*) = 0;
-    virtual void visit(LambdaExpr*) = 0;
-    virtual void visit(Capture*) = 0;
-    virtual void visit(MallocExpr*) = 0;
-    virtual void visit(FreeStmt*) = 0;
+    // --- Expressions ---
+    virtual void visit(BinaryOpNode* e) = 0;
+    virtual void visit(UnaryOpNode* e) = 0;
+    virtual void visit(AssignmentNode* e) = 0;
+    virtual void visit(TernaryOpNode* e) = 0;
+    virtual void visit(CallNode* e) = 0;
+    virtual void visit(SubscriptNode* e) = 0;
+    virtual void visit(MemberAccessNode* e) = 0;
+    virtual void visit(ArrowAccessNode* e) = 0;
+    virtual void visit(MallocNode* e) = 0;
+    virtual void visit(CastNode* e) = 0;
+    virtual void visit(SizeOfNode* e) = 0;
+    virtual void visit(IdentifierNode* e) = 0;
+    virtual void visit(IntegerLiteralNode* e) = 0;
+    virtual void visit(FloatLiteralNode* e) = 0;
+    virtual void visit(BoolLiteralNode* e) = 0;
+    virtual void visit(CharLiteralNode* e) = 0;
+    virtual void visit(StringLiteralNode* e) = 0;
+    virtual void visit(ParenthesizedExprNode* e) = 0;
+    virtual void visit(PrimitiveTypeNode* e) = 0;
+    virtual void visit(PointerTypeNode* e) = 0;
+    virtual void visit(StructTypeNode* e) = 0;
+    virtual void visit(NamedTypeNode* e) = 0;
+    virtual void visit(CaptureNode* e) = 0;
+    virtual void visit(LambdaExprNode* e) = 0;
+
+    // --- Statements ---
+    virtual void visit(CompoundStmt* s) = 0;
+    virtual void visit(ExprStmtNode* s) = 0;
+    virtual void visit(DeclStmt* s) = 0;
+    virtual void visit(IfStmt* s) = 0;
+    virtual void visit(WhileStmt* s) = 0;
+    virtual void visit(DoWhileStmt* s) = 0;
+    virtual void visit(ForStmt* s) = 0;
+    virtual void visit(SwitchStmt* s) = 0;
+    virtual void visit(CaseClause* s) = 0;
+    virtual void visit(DefaultClause* s) = 0;
+    virtual void visit(BreakStmt* s) = 0;
+    virtual void visit(ContinueStmt* s) = 0;
+    virtual void visit(ReturnStmt* s) = 0;
+    virtual void visit(FreeStmt* s) = 0;
+
+    // --- Declarations ---
+    virtual void visit(VarDecl* d) = 0;
+    virtual void visit(FunDecl* d) = 0;
+    virtual void visit(StructDecl* d) = 0;
+    virtual void visit(Program* p) = 0;
+    virtual void visit(TemplateDecl* d) = 0;
+
+    // --- Lvalue address computation ---
+    virtual void computeAddress(UnaryOpNode* e) = 0;
+    virtual void computeAddress(IdentifierNode* e) = 0;
+    virtual void computeAddress(SubscriptNode* e) = 0;
+    virtual void computeAddress(MemberAccessNode* e) = 0;
+    virtual void computeAddress(ArrowAccessNode* e) = 0;
 };
 ```
 
-This visitor pattern decouples traversal from analysis (type checking, code generation, printing).
+### 6.2 Lvalue handling (`computeAddress`)
+
+Para generación de código, la asignación requiere distinguir entre:
+
+- **Rvalue** (`visit`) — evaluar una expresión, dejar el valor en `%rax`
+- **Lvalue** (`computeAddress`) — calcular la dirección efectiva de un lvalue y dejarla en `%rbx` para almacenar
+
+El método `computeAddress` está declarado en `Exp` con una implementación default que lanza error ("not an lvalue"). Los siguientes nodos lo overriddean:
+
+| Nodo | Descripción |
+|------|-------------|
+| `UnaryOpNode` (solo DEREF) | Dirección del apuntado (`*ptr`) |
+| `IdentifierNode` | Dirección de variable (`x`) |
+| `SubscriptNode` | Dirección de elemento de array (`arr[i]`) |
+| `MemberAccessNode` | Dirección de miembro de struct (`s.m`) |
+| `ArrowAccessNode` | Dirección de miembro vía puntero (`p->m`) |
+
+El patrón de uso en asignación simple (`=`):
+
+```
+visit(RHS)           → valor en %rax
+target->computeAddress(this) → dirección en %rbx
+emit "movq %rax, (%rbx)"     → almacenar
+```
+
+Para asignación compuesta (`+=`, etc.), primero se calcula la dirección, luego se carga el valor actual, se aplica la operación, y se almacena el resultado.

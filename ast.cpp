@@ -1,10 +1,15 @@
 #include "ast.h"
+#include "CodeGenVisitor.h"
 #include <iostream>
 
 using namespace std;
 
 // ===================== Exp base =====================
 Exp::~Exp() {}
+
+void Exp::computeAddress(CodeGenVisitor*) {
+    cerr << "Error: el nodo no es un lvalue" << endl;
+}
 
 // ===================== BinaryOpNode =====================
 BinaryOpNode::BinaryOpNode(Exp* l, Exp* r, ::BinaryOp o)
@@ -228,3 +233,63 @@ TemplateDecl::~TemplateDecl() {
     delete func;
     delete struct_decl;
 }
+
+// ============================================================
+// accept(CodeGenVisitor*) — double dispatch stubs
+// ============================================================
+
+void BinaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void UnaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void AssignmentNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void TernaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void CallNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void SubscriptNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void MemberAccessNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void ArrowAccessNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void MallocNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void CastNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void SizeOfNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void IdentifierNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void IntegerLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void FloatLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void BoolLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void CharLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void StringLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void ParenthesizedExprNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void PrimitiveTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void PointerTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void StructTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void NamedTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void CaptureNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void LambdaExprNode::accept(CodeGenVisitor* v) { v->visit(this); }
+
+void CompoundStmt::accept(CodeGenVisitor* v) { v->visit(this); }
+void ExprStmtNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void DeclStmt::accept(CodeGenVisitor* v) { v->visit(this); }
+void IfStmt::accept(CodeGenVisitor* v) { v->visit(this); }
+void WhileStmt::accept(CodeGenVisitor* v) { v->visit(this); }
+void DoWhileStmt::accept(CodeGenVisitor* v) { v->visit(this); }
+void ForStmt::accept(CodeGenVisitor* v) { v->visit(this); }
+void SwitchStmt::accept(CodeGenVisitor* v) { v->visit(this); }
+void CaseClause::accept(CodeGenVisitor* v) { v->visit(this); }
+void DefaultClause::accept(CodeGenVisitor* v) { v->visit(this); }
+void BreakStmt::accept(CodeGenVisitor* v) { v->visit(this); }
+void ContinueStmt::accept(CodeGenVisitor* v) { v->visit(this); }
+void ReturnStmt::accept(CodeGenVisitor* v) { v->visit(this); }
+void FreeStmt::accept(CodeGenVisitor* v) { v->visit(this); }
+
+void VarDecl::accept(CodeGenVisitor* v) { v->visit(this); }
+void FunDecl::accept(CodeGenVisitor* v) { v->visit(this); }
+void StructDecl::accept(CodeGenVisitor* v) { v->visit(this); }
+void Program::accept(CodeGenVisitor* v) { v->visit(this); }
+void TemplateDecl::accept(CodeGenVisitor* v) { v->visit(this); }
+
+// ============================================================
+// computeAddress(CodeGenVisitor*) — lvalue nodes only
+// ============================================================
+
+void UnaryOpNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
+void IdentifierNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
+void SubscriptNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
+void MemberAccessNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
+void ArrowAccessNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
