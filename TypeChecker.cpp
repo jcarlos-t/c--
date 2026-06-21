@@ -53,7 +53,7 @@ void CompoundStmt::accept(TypeVisitor* v) { v->visit(this); }
 void Program::accept(TypeVisitor* v) { v->visit(this); }
 
 // ============================================================
-// Constructor
+// Constructor / Destructor
 // ============================================================
 
 TypeChecker::TypeChecker() {
@@ -63,10 +63,23 @@ TypeChecker::TypeChecker() {
     floatType = new Type(Type::FLOAT);
     charType = new Type(Type::INT); // treat char as int for now
     retornodefuncion = nullptr;
+    loopDepth = 0;
+    switchDepth = 0;
+    hasError = false;
+}
+
+TypeChecker::~TypeChecker() {
+    // Limpia tipos dinámicos creados durante el typecheck
+    for (auto t : typeCache) delete t;
+    for (auto& [k, v] : struct_types) delete v;
+    delete intType;
+    delete boolType;
+    delete voidType;
+    delete floatType;
 }
 
 // ============================================================
-// Helper: convert AST type node to semantic Type
+// Helper: convertir nodo tipo del AST a Type* semántico
 // ============================================================
 
 Type* TypeChecker::type_from_ast(Exp* t) {
@@ -78,20 +91,57 @@ Type* TypeChecker::type_from_ast(Exp* t) {
             case PrimitiveTypeNode::FLOAT:  return floatType;
             case PrimitiveTypeNode::DOUBLE: return floatType;
             case PrimitiveTypeNode::BOOL:   return boolType;
-            case PrimitiveTypeNode::AUTO:   return intType; // default
+            case PrimitiveTypeNode::AUTO:   return intType; // default, se infiere después
         }
     }
-    return intType; // default fallback
+    if (auto* pt = dynamic_cast<PointerTypeNode*>(t)) {
+        Type* base = type_from_ast(pt->base);
+        PointerType* ptr = new PointerType(base);
+        typeCache.push_back(ptr);
+        return ptr;
+    }
+    if (auto* st = dynamic_cast<StructTypeNode*>(t)) {
+        auto it = struct_types.find(st->name);
+        if (it != struct_types.end()) return it->second;
+        error("struct '" + st->name + "' no declarado.");
+        return intType;
+    }
+    if (auto* nt = dynamic_cast<NamedTypeNode*>(t)) {
+        error("tipo no reconocido: '" + nt->name + "'.");
+        return intType;
+    }
+    return intType; // fallback
 }
 
 // ============================================================
-// Register functions
+// Helper: verifica compatibilidad de tipos en asignación
+// Permite promoción automática int → float
+// ============================================================
+
+bool TypeChecker::check_assign(Type* target, Type* value) {
+    if (target->match(value)) return true;
+    // Promoción: int → float
+    if (target->ttype == Type::FLOAT && value->ttype == Type::INT) return true;
+    return false;
+}
+
+// ============================================================
+// Helper: registrar error semántico (no aborta)
+// ============================================================
+
+void TypeChecker::error(const string& msg) {
+    errors.push_back(msg);
+    hasError = true;
+}
+
+// ============================================================
+// Registrar funciones
 // ============================================================
 
 void TypeChecker::add_function(FunDecl* fd) {
     if (functions.find(fd->name) != functions.end()) {
-        cerr << "Error: función '" << fd->name << "' ya declarada." << endl;
-        exit(0);
+        error("función '" + fd->name + "' ya declarada.");
+        return;
     }
     Type* returnType = type_from_ast(fd->return_type);
     FuncInfo info;
@@ -103,11 +153,17 @@ void TypeChecker::add_function(FunDecl* fd) {
 }
 
 // ============================================================
-// Typecheck entry
+// Typecheck entry point
 // ============================================================
 
 void TypeChecker::typecheck(Program* program) {
+    hasError = false;
+    errors.clear();
     if (program) program->accept(this);
+    if (hasError) {
+        for (auto& e : errors) cerr << "Error semántico: " << e << endl;
+        exit(1);
+    }
     cout << "Revisión exitosa" << endl;
 }
 
@@ -123,7 +179,7 @@ static void register_builtins(unordered_map<string, FuncInfo>& functions) {
 }
 
 // ============================================================
-// Visits
+// Visits: declaraciones y statements
 // ============================================================
 
 void TypeChecker::visit(Program* p) {
@@ -132,6 +188,7 @@ void TypeChecker::visit(Program* p) {
     env.add_level();
     for (auto g : p->globals) g->accept(this);
     for (auto s : p->structs) s->accept(this);
+    for (auto t : p->templates) t->accept(this);
     for (auto f : p->functions) f->accept(this);
     env.remove_level();
 }
@@ -148,22 +205,56 @@ void TypeChecker::visit(FunDecl* f) {
 
 void TypeChecker::visit(VarDecl* v) {
     Type* t = type_from_ast(v->type);
+
+    // Wrap en ArrayType si tiene dimensiones de arreglo
+    for (auto s : v->array_sizes) {
+        ArrayType* at = new ArrayType(t, -1);
+        typeCache.push_back(at);
+        t = at;
+    }
+
+    // Inferencia auto: usar tipo del inicializador
+    if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(v->type)) {
+        if (pt->prim == PrimitiveTypeNode::AUTO) {
+            if (!v->initializer) {
+                error("variable 'auto' necesita inicializador para inferir tipo.");
+                t = intType;
+            } else {
+                t = v->initializer->accept(this);
+            }
+        }
+    }
+
     if (env.check(v->name)) {
-        cerr << "Error: variable '" << v->name << "' ya declarada." << endl;
-        exit(0);
+        error("variable '" + v->name + "' ya declarada en este ámbito.");
+        return;
     }
     env.add_var(v->name, t);
+
+    // Verificar inicializador (si no es auto, porque auto ya lo chequeó)
     if (v->initializer) {
-        Type* initType = v->initializer->accept(this);
-        if (!t->match(initType)) {
-            cerr << "Error: tipos incompatibles en inicialización de '" << v->name << "'." << endl;
-            exit(0);
+        // Si es auto, ya se verificó el inicializador arriba
+        bool isAuto = false;
+        if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(v->type)) {
+            isAuto = (pt->prim == PrimitiveTypeNode::AUTO);
+        }
+        if (!isAuto) {
+            Type* initType = v->initializer->accept(this);
+            if (!check_assign(t, initType)) {
+                error("tipos incompatibles en inicialización de '" + v->name + "'.");
+            }
         }
     }
 }
 
 void TypeChecker::visit(StructDecl* s) {
-    for (auto m : s->members) m->accept(this);
+    // Crear StructType y registrar sus miembros
+    StructType* st = new StructType(s->name);
+    for (auto m : s->members) {
+        Type* mt = type_from_ast(m->type);
+        st->members[m->name] = mt;
+    }
+    struct_types[s->name] = st;
 }
 
 void TypeChecker::visit(CompoundStmt* b) {
@@ -184,8 +275,7 @@ void TypeChecker::visit(DeclStmt* s) {
 void TypeChecker::visit(IfStmt* s) {
     Type* t = s->condition->accept(this);
     if (!t->match(boolType)) {
-        cerr << "Error: condición de if debe ser bool." << endl;
-        exit(0);
+        error("condición de if debe ser bool.");
     }
     s->then_branch->accept(this);
     if (s->else_branch) s->else_branch->accept(this);
@@ -194,41 +284,54 @@ void TypeChecker::visit(IfStmt* s) {
 void TypeChecker::visit(WhileStmt* s) {
     Type* t = s->condition->accept(this);
     if (!t->match(boolType)) {
-        cerr << "Error: condición de while debe ser bool." << endl;
-        exit(0);
+        error("condición de while debe ser bool.");
     }
+    loopDepth++;
     s->body->accept(this);
+    loopDepth--;
 }
 
 void TypeChecker::visit(DoWhileStmt* s) {
+    loopDepth++;
     s->body->accept(this);
+    loopDepth--;
     Type* t = s->condition->accept(this);
     if (!t->match(boolType)) {
-        cerr << "Error: condición de do-while debe ser bool." << endl;
-        exit(0);
+        error("condición de do-while debe ser bool.");
     }
 }
 
 void TypeChecker::visit(ForStmt* s) {
+    env.add_level();
     if (s->init) s->init->accept(this);
     if (s->condition) {
         Type* t = s->condition->accept(this);
         if (!t->match(boolType)) {
-            cerr << "Error: condición de for debe ser bool." << endl;
-            exit(0);
+            error("condición de for debe ser bool.");
         }
     }
+    loopDepth++;
     s->body->accept(this);
+    loopDepth--;
     if (s->increment) s->increment->accept(this);
+    env.remove_level();
 }
 
 void TypeChecker::visit(SwitchStmt* s) {
-    s->expr->accept(this);
+    Type* t = s->expr->accept(this);
+    if (!t->match(intType) && !t->match(charType)) {
+        error("expresión de switch debe ser int o char.");
+    }
+    switchDepth++;
     for (auto c : s->cases) c->accept(this);
+    switchDepth--;
 }
 
 void TypeChecker::visit(CaseClause* s) {
-    s->value->accept(this);
+    Type* t = s->value->accept(this);
+    if (!t->match(intType) && !t->match(charType)) {
+        error("valor de case debe ser int o char.");
+    }
     for (auto st : s->body) st->accept(this);
 }
 
@@ -236,23 +339,38 @@ void TypeChecker::visit(DefaultClause* s) {
     for (auto st : s->body) st->accept(this);
 }
 
-void TypeChecker::visit(BreakStmt* s) {}
-void TypeChecker::visit(ContinueStmt* s) {}
+void TypeChecker::visit(TemplateDecl* d) {
+    // Por ahora no se verifica el template en sí; se podría instanciar
+}
 
 void TypeChecker::visit(FreeStmt* s) {
     s->expr->accept(this);
 }
 
+void TypeChecker::visit(BreakStmt* s) {
+    // break válido dentro de ciclo o switch
+    if (loopDepth == 0 && switchDepth == 0) {
+        error("break fuera de ciclo o switch.");
+    }
+}
+
+void TypeChecker::visit(ContinueStmt* s) {
+    // continue válido solo dentro de ciclo
+    if (loopDepth == 0) {
+        error("continue fuera de ciclo.");
+    }
+}
+
 void TypeChecker::visit(ReturnStmt* s) {
     if (retornodefuncion->match(voidType) && s->expr) {
-        cerr << "Error: función void no debe retornar valor." << endl;
-        exit(0);
+        error("función void no debe retornar valor.");
+        return;
     }
     if (s->expr) {
         Type* t = s->expr->accept(this);
-        if (!t->match(retornodefuncion)) {
-            cerr << "Error: tipo de retorno incompatible." << endl;
-            exit(0);
+        if (!check_assign(retornodefuncion, t)) {
+            error("tipo de retorno incompatible (esperaba " +
+                  retornodefuncion->str() + ").");
         }
     }
 }
@@ -266,32 +384,36 @@ Type* TypeChecker::visit(BinaryOpNode* e) {
     Type* right = e->right->accept(this);
 
     switch (e->op) {
+        // Operaciones aritméticas: permiten int o float, promueven a float
         case BinaryOp::ADD: case BinaryOp::SUB:
         case BinaryOp::MUL: case BinaryOp::DIV: case BinaryOp::MOD:
         case BinaryOp::POW:
-            if ((left->match(intType) || left->match(floatType)) &&
-                (right->match(intType) || right->match(floatType))) {
-                if (left->match(floatType) || right->match(floatType))
+            if ((left->ttype == Type::INT || left->ttype == Type::FLOAT) &&
+                (right->ttype == Type::INT || right->ttype == Type::FLOAT)) {
+                // Promoción automática: si alguno es float, resultado float
+                if (left->ttype == Type::FLOAT || right->ttype == Type::FLOAT)
                     return floatType;
                 return intType;
             }
-            cerr << "Error: operación aritmética requiere int o float." << endl;
-            exit(0);
+            error("operación aritmética requiere int o float.");
+            return intType;
 
+        // Comparaciones: int o float, resultado bool
         case BinaryOp::EQ: case BinaryOp::NE:
         case BinaryOp::LT: case BinaryOp::GT:
         case BinaryOp::LE: case BinaryOp::GE:
-            if ((left->match(intType) || left->match(floatType)) &&
-                (right->match(intType) || right->match(floatType)))
+            if ((left->ttype == Type::INT || left->ttype == Type::FLOAT) &&
+                (right->ttype == Type::INT || right->ttype == Type::FLOAT))
                 return boolType;
-            cerr << "Error: comparación requiere int o float." << endl;
-            exit(0);
+            error("comparación requiere int o float.");
+            return boolType;
 
+        // Lógicos: operandos bool, resultado bool
         case BinaryOp::LOG_AND: case BinaryOp::LOG_OR:
             if (left->match(boolType) && right->match(boolType))
                 return boolType;
-            cerr << "Error: operación lógica requiere bool." << endl;
-            exit(0);
+            error("operación lógica requiere bool.");
+            return boolType;
 
         default:
             return intType;
@@ -304,15 +426,28 @@ Type* TypeChecker::visit(UnaryOpNode* e) {
         case UnaryOp::MINUS:
         case UnaryOp::PRE_INC: case UnaryOp::PRE_DEC:
         case UnaryOp::POST_INC: case UnaryOp::POST_DEC:
-            if (t->match(intType) || t->match(floatType)) return t;
-            cerr << "Error: operación unaria requiere int o float." << endl;
-            exit(0);
+            if (t->ttype == Type::INT || t->ttype == Type::FLOAT) return t;
+            error("operación unaria requiere int o float.");
+            return t;
         case UnaryOp::LOG_NOT:
             if (t->match(boolType)) return boolType;
-            cerr << "Error: ! requiere bool." << endl;
-            exit(0);
-        case UnaryOp::ADDR: return new Type(Type::INT); // pointer type placeholder
-        case UnaryOp::DEREF: return intType;
+            error("! requiere bool.");
+            return boolType;
+        case UnaryOp::ADDR:
+            // &x devuelve puntero al tipo de x
+            {
+                PointerType* ptr = new PointerType(t);
+                typeCache.push_back(ptr);
+                return ptr;
+            }
+        case UnaryOp::DEREF:
+            // *p devuelve el tipo base del puntero
+            if (t->ttype == Type::POINTER) {
+                PointerType* pt = (PointerType*)t;
+                return pt->base;
+            }
+            error("operando de * debe ser puntero.");
+            return intType;
     }
     return intType;
 }
@@ -320,9 +455,9 @@ Type* TypeChecker::visit(UnaryOpNode* e) {
 Type* TypeChecker::visit(AssignmentNode* e) {
     Type* targetType = e->target->accept(this);
     Type* valueType = e->value->accept(this);
-    if (!targetType->match(valueType)) {
-        cerr << "Error: tipos incompatibles en asignación." << endl;
-        exit(0);
+    if (!check_assign(targetType, valueType)) {
+        error("tipos incompatibles en asignación (se esperaba " +
+              targetType->str() + ").");
     }
     return targetType;
 }
@@ -330,14 +465,17 @@ Type* TypeChecker::visit(AssignmentNode* e) {
 Type* TypeChecker::visit(TernaryOpNode* e) {
     Type* cond = e->condition->accept(this);
     if (!cond->match(boolType)) {
-        cerr << "Error: condición ternaria debe ser bool." << endl;
-        exit(0);
+        error("condición ternaria debe ser bool.");
     }
     Type* thenType = e->then_expr->accept(this);
     Type* elseType = e->else_expr->accept(this);
     if (!thenType->match(elseType)) {
-        cerr << "Error: tipos incompatibles en expresión ternaria." << endl;
-        exit(0);
+        // Permitir int→float en ternary
+        if (thenType->ttype == Type::FLOAT && elseType->ttype == Type::INT)
+            return floatType;
+        if (thenType->ttype == Type::INT && elseType->ttype == Type::FLOAT)
+            return floatType;
+        error("tipos incompatibles en expresión ternaria.");
     }
     return thenType;
 }
@@ -352,8 +490,8 @@ Type* TypeChecker::visit(CallNode* e) {
         string fname = id->name;
         auto it = functions.find(fname);
         if (it == functions.end()) {
-            cerr << "Error: función no declarada '" << fname << "'." << endl;
-            exit(0);
+            error("función no declarada '" + fname + "'.");
+            return intType;
         }
         FuncInfo& info = it->second;
 
@@ -364,37 +502,92 @@ Type* TypeChecker::visit(CallNode* e) {
         }
 
         if (e->args.size() != info.paramTypes.size()) {
-            cerr << "Error: número de argumentos incorrecto en llamada a '" << fname << "'." << endl;
-            exit(0);
+            error("número de argumentos incorrecto en llamada a '" + fname +
+                  "' (esperaba " + to_string(info.paramTypes.size()) +
+                  ", recibió " + to_string(e->args.size()) + ").");
+            return info.returnType;
         }
         for (size_t i = 0; i < e->args.size(); i++) {
             Type* argType = e->args[i]->accept(this);
-            if (!argType->match(info.paramTypes[i])) {
-                cerr << "Error: tipo de argumento " << (i+1) << " incorrecto en llamada a '" << fname << "'." << endl;
-                exit(0);
+            if (!check_assign(info.paramTypes[i], argType)) {
+                error("tipo de argumento " + to_string(i+1) +
+                      " incorrecto en llamada a '" + fname + "'.");
             }
         }
         return info.returnType;
     }
+    // Llamada a través de puntero a función (no implementado)
+    error("llamada a función no reconocida.");
     return intType;
 }
 
-Type* TypeChecker::visit(SubscriptNode* e) { return intType; }
-Type* TypeChecker::visit(MemberAccessNode* e) { return intType; }
-Type* TypeChecker::visit(ArrowAccessNode* e) { return intType; }
+Type* TypeChecker::visit(SubscriptNode* e) {
+    Type* base = e->base->accept(this);
+    Type* index = e->index->accept(this);
+    // El índice debe ser int
+    if (!index->match(intType) && !index->match(charType)) {
+        error("índice de arreglo debe ser int o char.");
+    }
+    // Acceso a arreglo: devuelve tipo base
+    if (base->ttype == Type::ARRAY) {
+        ArrayType* at = (ArrayType*)base;
+        return at->base;
+    }
+    // Acceso a puntero: devuelve tipo base (equivalente a *(p + i))
+    if (base->ttype == Type::POINTER) {
+        PointerType* pt = (PointerType*)base;
+        return pt->base;
+    }
+    error("acceso por índice requiere arreglo o puntero.");
+    return intType;
+}
+
+Type* TypeChecker::visit(MemberAccessNode* e) {
+    Type* objType = e->object->accept(this);
+    if (objType->ttype != Type::STRUCT) {
+        error("acceso a miembro '.' sobre tipo no struct (es " +
+              objType->str() + ").");
+        return intType;
+    }
+    StructType* st = (StructType*)objType;
+    auto it = st->members.find(e->member);
+    if (it == st->members.end()) {
+        error("el struct '" + st->name + "' no tiene miembro '" +
+              e->member + "'.");
+        return intType;
+    }
+    return it->second;
+}
+
+Type* TypeChecker::visit(ArrowAccessNode* e) {
+    Type* ptrType = e->pointer->accept(this);
+    if (ptrType->ttype != Type::POINTER) {
+        error("acceso '->' requiere puntero (es " + ptrType->str() + ").");
+        return intType;
+    }
+    PointerType* pt = (PointerType*)ptrType;
+    if (pt->base->ttype != Type::STRUCT) {
+        error("acceso '->' requiere puntero a struct.");
+        return intType;
+    }
+    StructType* st = (StructType*)pt->base;
+    auto it = st->members.find(e->member);
+    if (it == st->members.end()) {
+        error("el struct '" + st->name + "' no tiene miembro '" +
+              e->member + "'.");
+        return intType;
+    }
+    return it->second;
+}
 
 Type* TypeChecker::visit(CastNode* e) {
     return type_from_ast(e->target_type);
 }
 
-Type* TypeChecker::visit(SizeOfNode* e) {
-    return intType;
-}
-
 Type* TypeChecker::visit(IdentifierNode* e) {
     if (!env.check(e->name)) {
-        cerr << "Error: variable '" << e->name << "' no declarada." << endl;
-        exit(0);
+        error("variable '" + e->name + "' no declarada.");
+        return intType;
     }
     return env.lookup(e->name);
 }
@@ -406,15 +599,22 @@ Type* TypeChecker::visit(CharLiteralNode* e) { return charType; }
 Type* TypeChecker::visit(StringLiteralNode* e) { return intType; }
 Type* TypeChecker::visit(ParenthesizedExprNode* e) { return e->expr->accept(this); }
 Type* TypeChecker::visit(PrimitiveTypeNode* e) { return type_from_ast(e); }
-Type* TypeChecker::visit(PointerTypeNode* e) { return intType; }
-Type* TypeChecker::visit(StructTypeNode* e) { return intType; }
-Type* TypeChecker::visit(NamedTypeNode* e) { return intType; }
+Type* TypeChecker::visit(PointerTypeNode* e) { return type_from_ast(e); }
+Type* TypeChecker::visit(StructTypeNode* e) { return type_from_ast(e); }
+Type* TypeChecker::visit(NamedTypeNode* e) { return type_from_ast(e); }
 
-Type* TypeChecker::visit(LambdaExprNode* e) { return intType; }
+Type* TypeChecker::visit(SizeOfNode* e) {
+    e->target_type->accept(this);
+    return intType;
+}
 
-Type* TypeChecker::visit(CaptureNode* e) { return intType; }
+Type* TypeChecker::visit(LambdaExprNode* e) {
+    for (auto p : e->params) p->accept(this);
+    if (e->return_type) type_from_ast(e->return_type);
+    if (e->body) e->body->accept(this);
+    return intType; // tipo de lambda no especificado
+}
 
-void TypeChecker::visit(TemplateDecl* d) {
-    if (d->func) d->func->accept(this);
-    if (d->struct_decl) d->struct_decl->accept(this);
+Type* TypeChecker::visit(CaptureNode* e) {
+    return intType;
 }

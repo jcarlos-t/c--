@@ -409,8 +409,12 @@ Stm* Parser::parse_for_statement() {
 
     Stm* init = nullptr;
     if (!check(Token::SEMICOL)) {
-        Exp* e = parse_expression();
-        init = new ExprStmtNode(e);
+        if (is_type_start()) {
+            init = new DeclStmt(parse_local_var_decl());
+        } else {
+            Exp* e = parse_expression();
+            init = new ExprStmtNode(e);
+        }
     }
     consume(Token::SEMICOL, "Se esperaba ';' en for");
 
@@ -802,6 +806,12 @@ Exp* Parser::parse_primary() {
         Exp* size = parse_expression();
         consume(Token::RPAREN, "Se esperaba ')'");
         return new MallocNode(size);
+    }
+    if (match(Token::SIZEOF)) {
+        consume(Token::LPAREN, "Se esperaba '(' después de sizeof");
+        Exp* target = parse_type();
+        consume(Token::RPAREN, "Se esperaba ')'");
+        return new SizeOfNode(target);
     }
     sync_error("Se esperaba una expresión");
     return nullptr;
