@@ -40,7 +40,7 @@ public:
         AMPERSAND, ARROW, DOT,
 
         // Literals
-        NUM, CHAR_LIT, STRING_LIT,
+        NUM, FNUM, CHAR_LIT, STRING_LIT,
 
         // Literals
         TRUE, FALSE,

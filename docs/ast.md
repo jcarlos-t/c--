@@ -27,7 +27,7 @@ enum class NodeKind {
     NamedType,
 
     // --- Statements ---
-    CompoundStmt,
+    Body,
     ExprStmt,
     IfStmt,
     WhileStmt,
@@ -95,7 +95,7 @@ struct FunctionDecl : ASTNode {
     ASTNode* return_type;           // type node
     string name;
     vector<ASTNode*> params;        // Parameter nodes
-    ASTNode* body;                  // CompoundStmt
+    ASTNode* body;                  // Body
     bool is_template = false;
 };
 
@@ -146,7 +146,7 @@ struct Parameter : ASTNode {
 // Statements
 // ──────────────────────────────────────────
 
-struct CompoundStmt : ASTNode {
+struct Body : ASTNode {
     vector<ASTNode*> stmts;
 };
 
@@ -235,12 +235,12 @@ struct TernaryOp : ASTNode {
     ASTNode* else_expr;
 };
 
-struct Call : ASTNode {
+struct Fcall : ASTNode {
     ASTNode* callee;                // function expression
     vector<ASTNode*> args;
 };
 
-struct Subscript : ASTNode {
+struct Index : ASTNode {
     ASTNode* base;                  // array expression
     ASTNode* index;
 };
@@ -312,7 +312,7 @@ struct LambdaExpr : ASTNode {
     vector<ASTNode*> captures;      // Capture nodes
     vector<ASTNode*> params;        // Parameter nodes
     ASTNode* return_type;
-    ASTNode* body;                  // CompoundStmt
+    ASTNode* body;                  // Body
 };
 
 struct Capture : ASTNode {
@@ -352,7 +352,7 @@ Program
 │   ├── Parameter (×N)
 │   │   ├── type
 │   │   └── name
-│   └── CompoundStmt
+│   └── Body
 │       └── Statement (×N)
 │
 ├── VariableDecl
@@ -377,15 +377,15 @@ Statements
 ├── ReturnStmt ── [expr]
 ├── BreakStmt / ContinueStmt
 ├── ExprStmt ── expr
-└── CompoundStmt ── stmt[]
+└── Body ── stmt[]
 
 Expressions
 ├── BinaryOp ── left OP right
 ├── UnaryOp ── OP operand
 ├── Assignment ── target OP value
 ├── TernaryOp ── cond ? then : else
-├── Call ── callee(args[])
-├── Subscript ── base[index]
+├── Fcall ── callee(args[])
+├── Index ── base[index]
 ├── MemberAccess ── object.member
 ├── ArrowAccess ── pointer->member
 ├── Cast ── (type)expr
@@ -430,8 +430,8 @@ public:
     virtual void visit(UnaryOpNode* e) = 0;
     virtual void visit(AssignmentNode* e) = 0;
     virtual void visit(TernaryOpNode* e) = 0;
-    virtual void visit(CallNode* e) = 0;
-    virtual void visit(SubscriptNode* e) = 0;
+    virtual void visit(FcallNode* e) = 0;
+    virtual void visit(IndexNode* e) = 0;
     virtual void visit(MemberAccessNode* e) = 0;
     virtual void visit(ArrowAccessNode* e) = 0;
     virtual void visit(MallocNode* e) = 0;
@@ -452,7 +452,7 @@ public:
     virtual void visit(LambdaExprNode* e) = 0;
 
     // --- Statements ---
-    virtual void visit(CompoundStmt* s) = 0;
+    virtual void visit(Body* s) = 0;
     virtual void visit(ExprStmtNode* s) = 0;
     virtual void visit(DeclStmt* s) = 0;
     virtual void visit(IfStmt* s) = 0;
@@ -477,7 +477,7 @@ public:
     // --- Lvalue address computation ---
     virtual void computeAddress(UnaryOpNode* e) = 0;
     virtual void computeAddress(IdentifierNode* e) = 0;
-    virtual void computeAddress(SubscriptNode* e) = 0;
+    virtual void computeAddress(IndexNode* e) = 0;
     virtual void computeAddress(MemberAccessNode* e) = 0;
     virtual void computeAddress(ArrowAccessNode* e) = 0;
 };
@@ -496,7 +496,7 @@ El método `computeAddress` está declarado en `Exp` con una implementación def
 |------|-------------|
 | `UnaryOpNode` (solo DEREF) | Dirección del apuntado (`*ptr`) |
 | `IdentifierNode` | Dirección de variable (`x`) |
-| `SubscriptNode` | Dirección de elemento de array (`arr[i]`) |
+| `IndexNode` | Dirección de elemento de array (`arr[i]`) |
 | `MemberAccessNode` | Dirección de miembro de struct (`s.m`) |
 | `ArrowAccessNode` | Dirección de miembro vía puntero (`p->m`) |
 

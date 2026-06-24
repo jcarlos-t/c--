@@ -74,6 +74,7 @@ static const char* token_name(Token::Type t) {
         case Token::ARROW:  return "ARROW";
         case Token::DOT:    return "DOT";
         case Token::NUM:    return "NUM";
+        case Token::FNUM:   return "FNUM";
         case Token::CHAR_LIT:return "CHAR_LIT";
         case Token::STRING_LIT:return "STRING_LIT";
         case Token::TRUE:   return "TRUE";

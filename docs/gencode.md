@@ -276,7 +276,7 @@ unordered_map<string, int> funFrameSize;
 // En visit(VarDecl*):
 //  - Por cada variable declarada: slots++
 
-// En visit(CompoundStmt*):
+// En visit(Body*):
 //  - Abrir scope, visitar, cerrar scope (no incrementa slots porque
 //    VarDecl ya los cuenta; pero los scopes anidados necesitan reset
 //    de contador local si se quiere optimizar como en base_lab)

@@ -21,9 +21,9 @@ public:
     virtual double visit(UnaryOpNode* e) = 0;
     virtual double visit(AssignmentNode* e) = 0;
     virtual double visit(TernaryOpNode* e) = 0;
-    virtual double visit(CallNode* e) = 0;
+    virtual double visit(FcallNode* e) = 0;
     virtual double visit(MallocNode* e) = 0;
-    virtual double visit(SubscriptNode* e) = 0;
+    virtual double visit(IndexNode* e) = 0;
     virtual double visit(MemberAccessNode* e) = 0;
     virtual double visit(ArrowAccessNode* e) = 0;
     virtual double visit(CastNode* e) = 0;
@@ -42,7 +42,7 @@ public:
     virtual double visit(StructTypeNode* e) = 0;
     virtual double visit(NamedTypeNode* e) = 0;
 
-    virtual int visit(CompoundStmt* s) = 0;
+    virtual int visit(Body* s) = 0;
     virtual int visit(ExprStmtNode* s) = 0;
     virtual int visit(DeclStmt* s) = 0;
     virtual int visit(IfStmt* s) = 0;
@@ -76,8 +76,8 @@ public:
     double visit(UnaryOpNode* e) override;
     double visit(AssignmentNode* e) override;
     double visit(TernaryOpNode* e) override;
-    double visit(CallNode* e) override;
-    double visit(SubscriptNode* e) override;
+    double visit(FcallNode* e) override;
+    double visit(IndexNode* e) override;
     double visit(MemberAccessNode* e) override;
     double visit(ArrowAccessNode* e) override;
     double visit(CastNode* e) override;
@@ -95,7 +95,7 @@ public:
     double visit(StructTypeNode* e) override;
     double visit(NamedTypeNode* e) override;
 
-    int visit(CompoundStmt* s) override;
+    int visit(Body* s) override;
     int visit(ExprStmtNode* s) override;
     int visit(DeclStmt* s) override;
     int visit(IfStmt* s) override;
@@ -138,8 +138,8 @@ public:
     double visit(UnaryOpNode* e) override;
     double visit(AssignmentNode* e) override;
     double visit(TernaryOpNode* e) override;
-    double visit(CallNode* e) override;
-    double visit(SubscriptNode* e) override;
+    double visit(FcallNode* e) override;
+    double visit(IndexNode* e) override;
     double visit(MemberAccessNode* e) override;
     double visit(ArrowAccessNode* e) override;
     double visit(CastNode* e) override;
@@ -157,7 +157,7 @@ public:
     double visit(StructTypeNode* e) override;
     double visit(NamedTypeNode* e) override;
 
-    int visit(CompoundStmt* s) override;
+    int visit(Body* s) override;
     int visit(ExprStmtNode* s) override;
     int visit(DeclStmt* s) override;
     int visit(IfStmt* s) override;

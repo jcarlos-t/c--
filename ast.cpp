@@ -31,17 +31,17 @@ TernaryOpNode::TernaryOpNode(Exp* c, Exp* t, Exp* e)
     : Exp(NodeKind::TernaryOp), condition(c), then_expr(t), else_expr(e) {}
 TernaryOpNode::~TernaryOpNode() { delete condition; delete then_expr; delete else_expr; }
 
-// ===================== CallNode =====================
-CallNode::~CallNode() { delete callee; for (auto a : args) delete a; }
+// ===================== FcallNode =====================
+FcallNode::~FcallNode() { delete callee; for (auto a : args) delete a; }
 
 // ===================== MallocNode =====================
 MallocNode::MallocNode(Exp* s) : Exp(NodeKind::Malloc), size(s) {}
 MallocNode::~MallocNode() { delete size; }
 
-// ===================== SubscriptNode =====================
-SubscriptNode::SubscriptNode(Exp* b, Exp* i)
+// ===================== IndexNode =====================
+IndexNode::IndexNode(Exp* b, Exp* i)
     : Exp(NodeKind::Subscript), base(b), index(i) {}
-SubscriptNode::~SubscriptNode() { delete base; delete index; }
+IndexNode::~IndexNode() { delete base; delete index; }
 
 // ===================== MemberAccessNode =====================
 MemberAccessNode::MemberAccessNode(Exp* o, const string& m)
@@ -95,9 +95,9 @@ ParenthesizedExprNode::~ParenthesizedExprNode() { delete expr; }
 // ===================== Stm base =====================
 Stm::~Stm() {}
 
-// ===================== CompoundStmt =====================
-CompoundStmt::CompoundStmt() : Stm(NodeKind::CompoundStmt) {}
-CompoundStmt::~CompoundStmt() { for (auto s : stmts) delete s; for (auto v : vdlist) delete v; }
+// ===================== Body =====================
+Body::Body() : Stm(NodeKind::Body) {}
+Body::~Body() { for (auto s : stmts) delete s; for (auto v : vdlist) delete v; }
 
 // ===================== ExprStmtNode =====================
 ExprStmtNode::ExprStmtNode(Exp* e) : Stm(NodeKind::ExprStmt), expr(e) {}
@@ -159,7 +159,7 @@ VarDecl::VarDecl(Exp* t, const string& n)
 VarDecl::~VarDecl() { delete type; for (auto s : array_sizes) delete s; delete initializer; }
 
 // ===================== FunDecl =====================
-FunDecl::FunDecl(Exp* rt, const string& n, CompoundStmt* b)
+FunDecl::FunDecl(Exp* rt, const string& n, Body* b)
     : kind(NodeKind::FunctionDecl), return_type(rt), name(n), body(b), is_template(false) {}
 FunDecl::~FunDecl() { delete return_type; for (auto p : params) delete p; delete body; }
 
@@ -211,7 +211,7 @@ CaptureNode::CaptureNode(Mode m, const string& n)
     : Exp(NodeKind::Capture), mode(m), name(n) {}
 
 // ===================== LambdaExprNode =====================
-LambdaExprNode::LambdaExprNode(const vector<CaptureNode*>& caps, const vector<VarDecl*>& p, TypeNode* r, CompoundStmt* b)
+LambdaExprNode::LambdaExprNode(const vector<CaptureNode*>& caps, const vector<VarDecl*>& p, TypeNode* r, Body* b)
     : Exp(NodeKind::LambdaExpr), captures(caps), params(p), return_type(r), body(b) {}
 LambdaExprNode::~LambdaExprNode() {
     for (auto c : captures) delete c;
@@ -242,8 +242,8 @@ void BinaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void UnaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void AssignmentNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void TernaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void CallNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void SubscriptNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void FcallNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void IndexNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void MemberAccessNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void ArrowAccessNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void MallocNode::accept(CodeGenVisitor* v) { v->visit(this); }
@@ -263,7 +263,7 @@ void NamedTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void CaptureNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void LambdaExprNode::accept(CodeGenVisitor* v) { v->visit(this); }
 
-void CompoundStmt::accept(CodeGenVisitor* v) { v->visit(this); }
+void Body::accept(CodeGenVisitor* v) { v->visit(this); }
 void ExprStmtNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void DeclStmt::accept(CodeGenVisitor* v) { v->visit(this); }
 void IfStmt::accept(CodeGenVisitor* v) { v->visit(this); }
@@ -290,6 +290,6 @@ void TemplateDecl::accept(CodeGenVisitor* v) { v->visit(this); }
 
 void UnaryOpNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
 void IdentifierNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
-void SubscriptNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
+void IndexNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
 void MemberAccessNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
 void ArrowAccessNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }

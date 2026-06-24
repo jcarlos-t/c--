@@ -18,7 +18,7 @@ public:
     virtual void visit(VarDecl* v) = 0;
     virtual void visit(StructDecl* s) = 0;
     virtual void visit(TemplateDecl* d) = 0;
-    virtual void visit(CompoundStmt* b) = 0;
+    virtual void visit(Body* b) = 0;
 
     virtual void visit(ExprStmtNode* s) = 0;
     virtual void visit(DeclStmt* s) = 0;
@@ -38,9 +38,9 @@ public:
     virtual Type* visit(UnaryOpNode* e) = 0;
     virtual Type* visit(AssignmentNode* e) = 0;
     virtual Type* visit(TernaryOpNode* e) = 0;
-    virtual Type* visit(CallNode* e) = 0;
+    virtual Type* visit(FcallNode* e) = 0;
     virtual Type* visit(MallocNode* e) = 0;
-    virtual Type* visit(SubscriptNode* e) = 0;
+    virtual Type* visit(IndexNode* e) = 0;
     virtual Type* visit(MemberAccessNode* e) = 0;
     virtual Type* visit(ArrowAccessNode* e) = 0;
     virtual Type* visit(CastNode* e) = 0;
@@ -107,7 +107,7 @@ public:
     void visit(VarDecl* v) override;
     void visit(StructDecl* s) override;
     void visit(TemplateDecl* d) override;
-    void visit(CompoundStmt* b) override;
+    void visit(Body* b) override;
 
     void visit(ExprStmtNode* s) override;
     void visit(DeclStmt* s) override;
@@ -128,9 +128,9 @@ public:
     Type* visit(UnaryOpNode* e) override;
     Type* visit(AssignmentNode* e) override;
     Type* visit(TernaryOpNode* e) override;
-    Type* visit(CallNode* e) override;
+    Type* visit(FcallNode* e) override;
     Type* visit(MallocNode* e) override;
-    Type* visit(SubscriptNode* e) override;
+    Type* visit(IndexNode* e) override;
     Type* visit(MemberAccessNode* e) override;
     Type* visit(ArrowAccessNode* e) override;
     Type* visit(CastNode* e) override;

@@ -13,9 +13,9 @@ double BinaryOpNode::accept(Visitor* v) { return v->visit(this); }
 double UnaryOpNode::accept(Visitor* v) { return v->visit(this); }
 double AssignmentNode::accept(Visitor* v) { return v->visit(this); }
 double TernaryOpNode::accept(Visitor* v) { return v->visit(this); }
-double CallNode::accept(Visitor* v) { return v->visit(this); }
+double FcallNode::accept(Visitor* v) { return v->visit(this); }
 double MallocNode::accept(Visitor* v) { return v->visit(this); }
-double SubscriptNode::accept(Visitor* v) { return v->visit(this); }
+double IndexNode::accept(Visitor* v) { return v->visit(this); }
 double MemberAccessNode::accept(Visitor* v) { return v->visit(this); }
 double ArrowAccessNode::accept(Visitor* v) { return v->visit(this); }
 double CastNode::accept(Visitor* v) { return v->visit(this); }
@@ -38,7 +38,7 @@ double NamedTypeNode::accept(Visitor* v) { return v->visit(this); }
 // accept() methods for Visitor (int-returning)
 // Statements & Declarations
 // ============================================================
-int CompoundStmt::accept(Visitor* v) { return v->visit(this); }
+int Body::accept(Visitor* v) { return v->visit(this); }
 int ExprStmtNode::accept(Visitor* v) { return v->visit(this); }
 int DeclStmt::accept(Visitor* v) { return v->visit(this); }
 int IfStmt::accept(Visitor* v) { return v->visit(this); }
@@ -135,7 +135,7 @@ double PrintVisitor::visit(MallocNode* e) {
     return 0;
 }
 
-double PrintVisitor::visit(CallNode* e) {
+double PrintVisitor::visit(FcallNode* e) {
     e->callee->accept(this);
     cout << "(";
     for (size_t i = 0; i < e->args.size(); i++) {
@@ -146,7 +146,7 @@ double PrintVisitor::visit(CallNode* e) {
     return 0;
 }
 
-double PrintVisitor::visit(SubscriptNode* e) {
+double PrintVisitor::visit(IndexNode* e) {
     e->base->accept(this);
     cout << "[";
     e->index->accept(this);
@@ -246,7 +246,7 @@ double PrintVisitor::visit(NamedTypeNode* e) {
     return 0;
 }
 
-int PrintVisitor::visit(CompoundStmt* s) {
+int PrintVisitor::visit(Body* s) {
     cout << "{\n";
     indent++;
     for (auto v : s->vdlist) v->accept(this);
@@ -586,7 +586,7 @@ double EVALVisitor::visit(AssignmentNode* e) {
         return 0;
     }
     // Handle array element assignment: arr[idx] = expr
-    if (auto* sub = dynamic_cast<SubscriptNode*>(e->target)) {
+    if (auto* sub = dynamic_cast<IndexNode*>(e->target)) {
         if (auto* id = dynamic_cast<IdentifierNode*>(sub->base)) {
             int idx = (int)sub->index->accept(this);
             double val = e->value->accept(this);
@@ -650,7 +650,7 @@ double EVALVisitor::visit(TernaryOpNode* e) {
     return e->else_expr->accept(this);
 }
 
-double EVALVisitor::visit(CallNode* e) {
+double EVALVisitor::visit(FcallNode* e) {
     if (auto* id = dynamic_cast<IdentifierNode*>(e->callee)) {
         string fname = id->name;
         if (fname == "print" || fname == "printf") {
@@ -711,7 +711,7 @@ double EVALVisitor::visit(MallocNode* e) {
     return (double)addr;
 }
 
-double EVALVisitor::visit(SubscriptNode* e) {
+double EVALVisitor::visit(IndexNode* e) {
     if (auto* id = dynamic_cast<IdentifierNode*>(e->base)) {
         int idx = (int)e->index->accept(this);
         auto it = array_data.find(id->name);
@@ -787,7 +787,7 @@ double EVALVisitor::visit(PointerTypeNode* e) { return 0; }
 double EVALVisitor::visit(StructTypeNode* e) { return 0; }
 double EVALVisitor::visit(NamedTypeNode* e) { return 0; }
 
-int EVALVisitor::visit(CompoundStmt* s) {
+int EVALVisitor::visit(Body* s) {
     env.add_level();
     typeEnv.add_level();
     try {

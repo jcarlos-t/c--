@@ -30,7 +30,7 @@ enum class NodeKind {
     Program,
     FunctionDecl, VariableDecl, StructDecl, TemplateDecl,
     PrimitiveType, PointerType, StructType, NamedType,
-    CompoundStmt, ExprStmt,
+    Body, ExprStmt,
     IfStmt, WhileStmt, DoWhileStmt, ForStmt,
     SwitchStmt, CaseClause, DefaultClause,
     BreakStmt, ContinueStmt, ReturnStmt, FreeStmt,
@@ -125,23 +125,23 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
-class CallNode : public Exp {
+class FcallNode : public Exp {
 public:
     Exp* callee;
     vector<Exp*> args;
-    CallNode(Exp* c) : Exp(NodeKind::Call), callee(c) {}
-    ~CallNode();
+    FcallNode(Exp* c) : Exp(NodeKind::Call), callee(c) {}
+    ~FcallNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
     void accept(CodeGenVisitor* visitor);
 };
 
-class SubscriptNode : public Exp {
+class IndexNode : public Exp {
 public:
     Exp* base;
     Exp* index;
-    SubscriptNode(Exp* b, Exp* i);
-    ~SubscriptNode();
+    IndexNode(Exp* b, Exp* i);
+    ~IndexNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
     void accept(CodeGenVisitor* visitor);
@@ -283,12 +283,12 @@ public:
     virtual void accept(CodeGenVisitor* visitor) = 0;
 };
 
-class CompoundStmt : public Stm {
+class Body : public Stm {
 public:
     vector<Stm*> stmts;
     vector<VarDecl*> vdlist;
-    CompoundStmt();
-    ~CompoundStmt();
+    Body();
+    ~Body();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
     void accept(CodeGenVisitor* visitor);
@@ -455,10 +455,10 @@ public:
     Exp* return_type;
     string name;
     vector<VarDecl*> params;
-    CompoundStmt* body;
+    Body* body;
     bool is_template;
 
-    FunDecl(Exp* rt, const string& n, CompoundStmt* b);
+    FunDecl(Exp* rt, const string& n, Body* b);
     ~FunDecl();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
@@ -562,8 +562,8 @@ public:
     vector<CaptureNode*> captures;
     vector<VarDecl*> params;
     TypeNode* return_type;
-    CompoundStmt* body;
-    LambdaExprNode(const vector<CaptureNode*>& caps, const vector<VarDecl*>& p, TypeNode* r, CompoundStmt* b);
+    Body* body;
+    LambdaExprNode(const vector<CaptureNode*>& caps, const vector<VarDecl*>& p, TypeNode* r, Body* b);
     ~LambdaExprNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);

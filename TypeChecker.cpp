@@ -11,9 +11,9 @@ Type* BinaryOpNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* UnaryOpNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* AssignmentNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* TernaryOpNode::accept(TypeVisitor* v) { return v->visit(this); }
-Type* CallNode::accept(TypeVisitor* v) { return v->visit(this); }
+Type* FcallNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* MallocNode::accept(TypeVisitor* v) { return v->visit(this); }
-Type* SubscriptNode::accept(TypeVisitor* v) { return v->visit(this); }
+Type* IndexNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* MemberAccessNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* ArrowAccessNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* CastNode::accept(TypeVisitor* v) { return v->visit(this); }
@@ -49,7 +49,7 @@ void VarDecl::accept(TypeVisitor* v) { v->visit(this); }
 void FunDecl::accept(TypeVisitor* v) { v->visit(this); }
 void StructDecl::accept(TypeVisitor* v) { v->visit(this); }
 void TemplateDecl::accept(TypeVisitor* v) { v->visit(this); }
-void CompoundStmt::accept(TypeVisitor* v) { v->visit(this); }
+void Body::accept(TypeVisitor* v) { v->visit(this); }
 void Program::accept(TypeVisitor* v) { v->visit(this); }
 
 // ============================================================
@@ -257,7 +257,7 @@ void TypeChecker::visit(StructDecl* s) {
     struct_types[s->name] = st;
 }
 
-void TypeChecker::visit(CompoundStmt* b) {
+void TypeChecker::visit(Body* b) {
     env.add_level();
     for (auto v : b->vdlist) v->accept(this);
     for (auto s : b->stmts) s->accept(this);
@@ -485,7 +485,7 @@ Type* TypeChecker::visit(MallocNode* e) {
     return intType; // returns int* (simplified)
 }
 
-Type* TypeChecker::visit(CallNode* e) {
+Type* TypeChecker::visit(FcallNode* e) {
     if (auto* id = dynamic_cast<IdentifierNode*>(e->callee)) {
         string fname = id->name;
         auto it = functions.find(fname);
@@ -521,7 +521,7 @@ Type* TypeChecker::visit(CallNode* e) {
     return intType;
 }
 
-Type* TypeChecker::visit(SubscriptNode* e) {
+Type* TypeChecker::visit(IndexNode* e) {
     Type* base = e->base->accept(this);
     Type* index = e->index->accept(this);
     // El índice debe ser int

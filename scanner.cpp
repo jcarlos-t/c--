@@ -68,15 +68,17 @@ Token* Scanner::identifier_or_keyword() {
         advance();
     string word = input.substr(first, current - first);
 
+    // tipos base
     if (word == "void")     return make_token(Token::VOID);
     if (word == "int")      return make_token(Token::INT);
     if (word == "char")     return make_token(Token::CHAR);
     if (word == "float")    return make_token(Token::FLOAT);
     if (word == "double")   return make_token(Token::DOUBLE);
     if (word == "bool")     return make_token(Token::BOOL);
+    if (word == "auto")     return make_token(Token::AUTO);
+    
     if (word == "true")     return make_token(Token::TRUE);
     if (word == "false")    return make_token(Token::FALSE);
-    if (word == "auto")     return make_token(Token::AUTO);
     if (word == "struct")   return make_token(Token::STRUCT);
     if (word == "if")       return make_token(Token::IF);
     if (word == "else")     return make_token(Token::ELSE);
@@ -99,23 +101,26 @@ Token* Scanner::identifier_or_keyword() {
 }
 
 Token* Scanner::number() {
+    bool is_float = false;
     while (current < (int)input.length() && isdigit(peek()))
         advance();
 
     if (peek() == '.') {
+        is_float = true;
         advance();
         while (current < (int)input.length() && isdigit(peek()))
             advance();
     }
 
     if (peek() == 'e' || peek() == 'E') {
+        is_float = true;
         advance();
         if (peek() == '+' || peek() == '-') advance();
         while (current < (int)input.length() && isdigit(peek()))
             advance();
     }
 
-    return make_token(Token::NUM);
+    return make_token(is_float ? Token::FNUM : Token::NUM);
 }
 
 Token* Scanner::char_literal() {

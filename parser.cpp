@@ -136,7 +136,7 @@ void Parser::parse_declaration(Program* p) {
         } while (match(Token::COMA));
         consume(Token::GT, "Se esperaba '>' después de template");
 
-        // Parse inner declaration (function or struct)
+        // function or struct template
         if (check(Token::STRUCT)) {
             StructDecl* sd = parse_struct_decl();
             TemplateDecl* td = new TemplateDecl(tparams, sd);
@@ -153,7 +153,6 @@ void Parser::parse_declaration(Program* p) {
     }
 
     // Struct declaration: "struct" ID "{" { variable_declaration } "}" ";"
-    // Check by looking ahead without consuming: STRUCT ID LBRACE
     if (check(Token::STRUCT)) {
         Scanner::Pos saved = scanner->getPos();
         advance(); // consume STRUCT
@@ -223,7 +222,7 @@ FunDecl* Parser::parse_function_decl(Exp* ret_type, const string& name) {
     }
     consume(Token::RPAREN, "Se esperaba ')' en declaración de función");
 
-    CompoundStmt* body = dynamic_cast<CompoundStmt*>(parse_compound_statement());
+    Body* body = dynamic_cast<Body*>(parse_compound_statement());
     if (!body) sync_error("Se esperaba cuerpo de función compuesto por { }");
     fd->body = body;
     return fd;
@@ -254,7 +253,7 @@ VarDecl* Parser::parse_variable_decl(Exp* type, const string& name) {
 }
 
 // =============================
-// Struct declaration (grammar.md §2)
+// Struct declaration
 // =============================
 
 StructDecl* Parser::parse_struct_decl() {
@@ -361,7 +360,7 @@ VarDecl* Parser::parse_local_var_decl() {
 }
 
 Stm* Parser::parse_compound_statement() {
-    CompoundStmt* cs = new CompoundStmt();
+    Body* cs = new Body();
     consume(Token::LBRACE, "Se esperaba '{'");
     while (!check(Token::RBRACE) && !isAtEnd()) {
         cs->stmts.push_back(parse_statement());
@@ -691,9 +690,9 @@ Exp* Parser::parse_postfix() {
         if (match(Token::LBRACKET)) {
             Exp* index = parse_expression();
             consume(Token::RBRACKET, "Se esperaba ']'");
-            l = new SubscriptNode(l, index);
+            l = new IndexNode(l, index);
         } else if (match(Token::LPAREN)) {
-            CallNode* call = new CallNode(l);
+            FcallNode* call = new FcallNode(l);
             if (!check(Token::RPAREN)) {
                 call->args.push_back(parse_assignment());
                 while (match(Token::COMA)) {
@@ -728,11 +727,10 @@ Exp* Parser::parse_primary() {
         return new IdentifierNode(previous->text);
     }
     if (match(Token::NUM)) {
-        string text = previous->text;
-        if (text.find('.') != string::npos || text.find('e') != string::npos || text.find('E') != string::npos) {
-            return new FloatLiteralNode(stod(text));
-        }
-        return new IntegerLiteralNode(stoll(text));
+        return new IntegerLiteralNode(stoll(previous->text));
+    }
+    if (match(Token::FNUM)) {
+        return new FloatLiteralNode(stod(previous->text));
     }
     if (match(Token::CHAR_LIT)) {
         string t = previous->text;
@@ -792,7 +790,7 @@ Exp* Parser::parse_primary() {
         consume(Token::RPAREN, "Se esperaba ')' en lambda");
         consume(Token::ARROW, "Se esperaba '->' en lambda");
         TypeNode* lret = parse_type();
-        CompoundStmt* lbody = dynamic_cast<CompoundStmt*>(parse_compound_statement());
+        Body* lbody = dynamic_cast<Body*>(parse_compound_statement());
         if (!lbody) sync_error("Se esperaba cuerpo compuesto en lambda");
         return new LambdaExprNode(captures, lparams, lret, lbody);
     }

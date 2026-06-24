@@ -6,8 +6,8 @@ class BinaryOpNode;
 class UnaryOpNode;
 class AssignmentNode;
 class TernaryOpNode;
-class CallNode;
-class SubscriptNode;
+class FcallNode;
+class IndexNode;
 class MemberAccessNode;
 class ArrowAccessNode;
 class MallocNode;
@@ -28,7 +28,7 @@ class CaptureNode;
 class LambdaExprNode;
 
 class Stm;
-class CompoundStmt;
+class Body;
 class ExprStmtNode;
 class DeclStmt;
 class IfStmt;
@@ -58,8 +58,8 @@ public:
     virtual void visit(UnaryOpNode* e) = 0;
     virtual void visit(AssignmentNode* e) = 0;
     virtual void visit(TernaryOpNode* e) = 0;
-    virtual void visit(CallNode* e) = 0;
-    virtual void visit(SubscriptNode* e) = 0;
+    virtual void visit(FcallNode* e) = 0;
+    virtual void visit(IndexNode* e) = 0;
     virtual void visit(MemberAccessNode* e) = 0;
     virtual void visit(ArrowAccessNode* e) = 0;
     virtual void visit(MallocNode* e) = 0;
@@ -80,7 +80,7 @@ public:
     virtual void visit(LambdaExprNode* e) = 0;
 
     // --- Statements ---
-    virtual void visit(CompoundStmt* s) = 0;
+    virtual void visit(Body* s) = 0;
     virtual void visit(ExprStmtNode* s) = 0;
     virtual void visit(DeclStmt* s) = 0;
     virtual void visit(IfStmt* s) = 0;
@@ -105,7 +105,7 @@ public:
     // --- Lvalue address computation ---
     virtual void computeAddress(UnaryOpNode* e) = 0;
     virtual void computeAddress(IdentifierNode* e) = 0;
-    virtual void computeAddress(SubscriptNode* e) = 0;
+    virtual void computeAddress(IndexNode* e) = 0;
     virtual void computeAddress(MemberAccessNode* e) = 0;
     virtual void computeAddress(ArrowAccessNode* e) = 0;
 };
