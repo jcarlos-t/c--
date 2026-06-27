@@ -288,6 +288,11 @@ void TypeChecker::visit(FunDecl* f) {
 void TypeChecker::visit(VarDecl* v) {
     Type* t = type_from_ast(v->type);
 
+    if (t->match(voidType)) {
+        error("no se puede declarar variable de tipo void.");
+        return;
+    }
+
     // Wrap en ArrayType si tiene dimensiones de arreglo
     for (auto s : v->array_sizes) {
         ArrayType* at = new ArrayType(t, -1);
@@ -307,7 +312,7 @@ void TypeChecker::visit(VarDecl* v) {
         }
     }
 
-    if (env.check(v->name)) {
+    if (env.check_current(v->name)) {
         error("variable '" + v->name + "' ya declarada en este ámbito.");
         return;
     }
@@ -452,6 +457,10 @@ void TypeChecker::visit(ReturnStmt* s) {
         error("función void no debe retornar valor.");
         return;
     }
+    if (!retornodefuncion->match(voidType) && !s->expr) {
+        error("función no-void debe retornar un valor.");
+        return;
+    }
     if (s->expr) {
         Type* t = s->expr->accept(this);
         if (!check_assign(retornodefuncion, t)) {
@@ -587,17 +596,21 @@ Type* TypeChecker::visit(FcallNode* e) {
             for (size_t i = 0; i < tdecl->params.size() && i < e->template_args.size(); i++)
                 subs[tdecl->params[i]->name] = type_from_ast(e->template_args[i]);
 
-            Type* concrete_ret = type_from_ast(tfunc->return_type);
+            Type* concrete_ret;
             if (auto* nt = dynamic_cast<NamedTypeNode*>(tfunc->return_type)) {
                 auto sit = subs.find(nt->name);
-                if (sit != subs.end()) concrete_ret = sit->second;
+                concrete_ret = (sit != subs.end()) ? sit->second : intType;
+            } else {
+                concrete_ret = type_from_ast(tfunc->return_type);
             }
             vector<Type*> concrete_params;
             for (auto p : tfunc->params) {
-                Type* pt = type_from_ast(p->type);
+                Type* pt;
                 if (auto* nt = dynamic_cast<NamedTypeNode*>(p->type)) {
                     auto sit = subs.find(nt->name);
-                    if (sit != subs.end()) pt = sit->second;
+                    pt = (sit != subs.end()) ? sit->second : intType;
+                } else {
+                    pt = type_from_ast(p->type);
                 }
                 concrete_params.push_back(pt);
             }
@@ -743,10 +756,17 @@ Type* TypeChecker::visit(SizeOfNode* e) {
 }
 
 Type* TypeChecker::visit(LambdaExprNode* e) {
+    env.add_level();
     for (auto p : e->params) p->accept(this);
-    if (e->return_type) type_from_ast(e->return_type);
+    Type* savedRet = retornodefuncion;
+    if (e->return_type)
+        retornodefuncion = type_from_ast(e->return_type);
+    else
+        retornodefuncion = voidType;
     if (e->body) e->body->accept(this);
-    return intType; // tipo de lambda no especificado
+    retornodefuncion = savedRet;
+    env.remove_level();
+    return retornodefuncion;
 }
 
 Type* TypeChecker::visit(CaptureNode* e) {

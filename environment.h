@@ -71,9 +71,15 @@ public:
         return true;
     }
 
-    // Verifica si una variable existe
+    // Verifica si una variable existe en cualquier scope
     bool check(const string& x) const {
         return (search_rib(x) >= 0);
+    }
+
+    // Verifica si una variable existe en el scope actual solamente
+    bool check_current(const string& x) const {
+        if (ribs.empty()) return false;
+        return ribs.back().count(x) > 0;
     }
 
     // Busca y devuelve el valor de una variable

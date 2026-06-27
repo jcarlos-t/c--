@@ -15,7 +15,7 @@
 - [-] 1.3.2 Definir alias de tipos (typedef / type alias).
 - [x] 1.3.4 Implementar lexer para tokens de tipos básicos.
 - [x] 1.3.5 Implementar parser para declaraciones de tipos definidos por el usuario.
-- [ ] 1.3.6 Implementar verificación semántica de tipos definidos por el usuario.
+- [x] 1.3.6 Implementar verificación semántica de tipos definidos por el usuario.
 
 ### 1.4 Variables y manejo de alcance (scope)
 
