@@ -7,17 +7,19 @@
 
 using namespace std;
 
-Scanner::Scanner(const char* s) : input(s), first(0), current(0) {}
+Scanner::Scanner(const char* s) : input(s), first(0), current(0), line(1), column(1), first_line(1), first_column(1) {}
 
 Scanner::~Scanner() {}
 
 Scanner::Pos Scanner::getPos() const {
-    return {first, current};
+    return {first, current, line, column};
 }
 
 void Scanner::setPos(Pos p) {
     first = p.first;
     current = p.current;
+    line = p.line;
+    column = p.column;
 }
 
 char Scanner::peek() const {
@@ -26,28 +28,43 @@ char Scanner::peek() const {
 }
 
 char Scanner::advance() {
-    return input[current++];
+    char c = input[current++];
+    if (c == '\n') { line++; column = 1; }
+    else column++;
+    return c;
 }
 
 bool Scanner::match_advance(char expected) {
     if (peek() != expected) return false;
     current++;
+    column++;
     return true;
 }
 
 void Scanner::skip_whitespace() {
     while (current < (int)input.length()) {
         char c = input[current];
-        if (c == ' ' || c == '\n' || c == '\r' || c == '\t')
+        if (c == ' ' || c == '\r' || c == '\t') {
             current++;
+            column++;
+        }
+        else if (c == '\n') {
+            current++;
+            line++;
+            column = 1;
+        }
         else if (c == '/' && current + 1 < (int)input.length() && input[current + 1] == '/') {
             while (current < (int)input.length() && input[current] != '\n')
                 current++;
         }
         else if (c == '/' && current + 1 < (int)input.length() && input[current + 1] == '*') {
             current += 2;
-            while (current + 1 < (int)input.length() && !(input[current] == '*' && input[current + 1] == '/'))
+            column += 2;
+            while (current + 1 < (int)input.length() && !(input[current] == '*' && input[current + 1] == '/')) {
+                if (input[current] == '\n') { line++; column = 1; }
+                else column++;
                 current++;
+            }
             if (current + 1 < (int)input.length()) current += 2;
         }
         else
@@ -56,11 +73,17 @@ void Scanner::skip_whitespace() {
 }
 
 Token* Scanner::make_token(Token::Type type) const {
-    return new Token(type, input, first, current - first);
+    Token* t = new Token(type, input, first, current - first);
+    t->line = first_line;
+    t->col = first_column;
+    return t;
 }
 
 Token* Scanner::make_token(Token::Type type, char c) const {
-    return new Token(type, c);
+    Token* t = new Token(type, c);
+    t->line = first_line;
+    t->col = first_column;
+    return t;
 }
 
 Token* Scanner::identifier_or_keyword() {
@@ -159,10 +182,15 @@ Token* Scanner::string_literal() {
 Token* Scanner::nextToken() {
     skip_whitespace();
 
-    if (current >= (int)input.length())
-        return new Token(Token::END);
+    if (current >= (int)input.length()) {
+        Token* t = new Token(Token::END);
+        t->line = line; t->col = column;
+        return t;
+    }
 
     first = current;
+    first_line = line;
+    first_column = column;
     char c = advance();
 
     if (isalpha(c) || c == '_')
@@ -170,6 +198,7 @@ Token* Scanner::nextToken() {
 
     if (isdigit(c)) {
         current--; // back up, number() will re-read
+        column--;  // back up column too
         return number();
     }
 
@@ -233,10 +262,10 @@ Token* Scanner::nextToken() {
 
         case '|':
             if (peek() == '|') { advance(); return make_token(Token::OR); }
-            return new Token(Token::ERR, c);
+            { Token* t = new Token(Token::ERR, c); t->line = first_line; t->col = first_column; return t; }
 
         default:
-            return new Token(Token::ERR, c);
+            { Token* t = new Token(Token::ERR, c); t->line = first_line; t->col = first_column; return t; }
     }
 }
 
@@ -269,7 +298,7 @@ void ejecutar_scanner(Scanner* scanner, const string& InputFile) {
         if (tok->type == Token::ERR) {
             outFile << *tok << endl;
             delete tok;
-            outFile << "Caracter invalido" << endl << endl;
+            outFile << "Caracter invalido en linea " << tok->line << ":" << tok->col << endl << endl;
             outFile << "Scanner no exitoso" << endl << endl;
             outFile.close();
             return;

@@ -1,5 +1,4 @@
 #include "ast.h"
-#include "CodeGenVisitor.h"
 #include <iostream>
 
 using namespace std;
@@ -177,18 +176,6 @@ Program::~Program() {
     for (auto t : templates) delete t;
 }
 
-// ===================== TypeNode =====================
-TypeNode* TypeNode::from_basic(const string& name) {
-    if (name == "void")   return new PrimitiveTypeNode(PrimitiveTypeNode::VOID);
-    if (name == "int")    return new PrimitiveTypeNode(PrimitiveTypeNode::INT);
-    if (name == "char")   return new PrimitiveTypeNode(PrimitiveTypeNode::CHAR);
-    if (name == "float")  return new PrimitiveTypeNode(PrimitiveTypeNode::FLOAT);
-    if (name == "double") return new PrimitiveTypeNode(PrimitiveTypeNode::DOUBLE);
-    if (name == "bool")   return new PrimitiveTypeNode(PrimitiveTypeNode::BOOL);
-    if (name == "auto")   return new PrimitiveTypeNode(PrimitiveTypeNode::AUTO);
-    return new NamedTypeNode(name);
-}
-
 // ===================== PrimitiveTypeNode =====================
 PrimitiveTypeNode::PrimitiveTypeNode(Prim p)
     : TypeNode(NodeKind::PrimitiveType), prim(p) {}
@@ -205,6 +192,13 @@ StructTypeNode::StructTypeNode(const string& n)
 // ===================== NamedTypeNode =====================
 NamedTypeNode::NamedTypeNode(const string& n)
     : TypeNode(NodeKind::NamedType), name(n) {}
+
+// ===================== TemplateTypeNode =====================
+TemplateTypeNode::TemplateTypeNode(const string& n, const vector<TypeNode*>& args)
+    : TypeNode(NodeKind::NamedType), name(n), type_args(args) {}
+TemplateTypeNode::~TemplateTypeNode() {
+    for (auto a : type_args) delete a;
+}
 
 // ===================== CaptureNode =====================
 CaptureNode::CaptureNode(Mode m, const string& n)
@@ -234,62 +228,3 @@ TemplateDecl::~TemplateDecl() {
     delete struct_decl;
 }
 
-// ============================================================
-// accept(CodeGenVisitor*) — double dispatch stubs
-// ============================================================
-
-void BinaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void UnaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void AssignmentNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void TernaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void FcallNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void IndexNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void MemberAccessNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void ArrowAccessNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void MallocNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void CastNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void SizeOfNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void IdentifierNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void IntegerLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void FloatLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void BoolLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void CharLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void StringLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void ParenthesizedExprNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void PrimitiveTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void PointerTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void StructTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void NamedTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void CaptureNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void LambdaExprNode::accept(CodeGenVisitor* v) { v->visit(this); }
-
-void Body::accept(CodeGenVisitor* v) { v->visit(this); }
-void ExprStmtNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void DeclStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void IfStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void WhileStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void DoWhileStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void ForStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void SwitchStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void CaseClause::accept(CodeGenVisitor* v) { v->visit(this); }
-void DefaultClause::accept(CodeGenVisitor* v) { v->visit(this); }
-void BreakStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void ContinueStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void ReturnStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void FreeStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-
-void VarDecl::accept(CodeGenVisitor* v) { v->visit(this); }
-void FunDecl::accept(CodeGenVisitor* v) { v->visit(this); }
-void StructDecl::accept(CodeGenVisitor* v) { v->visit(this); }
-void Program::accept(CodeGenVisitor* v) { v->visit(this); }
-void TemplateDecl::accept(CodeGenVisitor* v) { v->visit(this); }
-
-// ============================================================
-// computeAddress(CodeGenVisitor*) — lvalue nodes only
-// ============================================================
-
-void UnaryOpNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
-void IdentifierNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
-void IndexNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
-void MemberAccessNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
-void ArrowAccessNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }

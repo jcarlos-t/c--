@@ -1,5 +1,6 @@
-#include "TypeChecker.h"
+#include "visitor.h"
 #include <iostream>
+#include <functional>
 
 using namespace std;
 
@@ -31,6 +32,8 @@ Type* PrimitiveTypeNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* PointerTypeNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* StructTypeNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* NamedTypeNode::accept(TypeVisitor* v) { return v->visit(this); }
+
+Type* TemplateTypeNode::accept(TypeVisitor* v) { return v->visit(this); }
 
 void ExprStmtNode::accept(TypeVisitor* v) { v->visit(this); }
 void DeclStmt::accept(TypeVisitor* v) { v->visit(this); }
@@ -110,7 +113,86 @@ Type* TypeChecker::type_from_ast(Exp* t) {
         error("tipo no reconocido: '" + nt->name + "'.");
         return intType;
     }
+    if (auto* tt = dynamic_cast<TemplateTypeNode*>(t)) {
+        return instantiate_template(tt->name, tt->type_args);
+    }
     return intType; // fallback
+}
+
+// ============================================================
+// Helper: instanciar template struct
+// ============================================================
+
+StructType* TypeChecker::instantiate_template(const string& name, const vector<TypeNode*>& args) {
+    string concrete_name = name + "<";
+    for (size_t i = 0; i < args.size(); i++) {
+        if (i > 0) concrete_name += ",";
+        if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(args[i])) {
+            switch (pt->prim) {
+                case PrimitiveTypeNode::INT: concrete_name += "int"; break;
+                case PrimitiveTypeNode::FLOAT: concrete_name += "float"; break;
+                case PrimitiveTypeNode::CHAR: concrete_name += "char"; break;
+                case PrimitiveTypeNode::DOUBLE: concrete_name += "double"; break;
+                case PrimitiveTypeNode::BOOL: concrete_name += "bool"; break;
+                default: concrete_name += "?"; break;
+            }
+        } else if (auto* st = dynamic_cast<StructTypeNode*>(args[i])) {
+            concrete_name += st->name;
+        } else {
+            concrete_name += "?";
+        }
+    }
+    concrete_name += ">";
+
+    auto cit = struct_types.find(concrete_name);
+    if (cit != struct_types.end()) return cit->second;
+
+    auto it = template_decls.find(name);
+    if (it == template_decls.end() || it->second->is_function) {
+        error("template '" + name + "' no declarado.");
+        StructType* err = new StructType("error");
+        typeCache.push_back(err);
+        return err;
+    }
+
+    TemplateDecl* tdecl = it->second;
+    StructDecl* orig = tdecl->struct_decl;
+    unordered_map<string, Type*> subs;
+    for (size_t i = 0; i < tdecl->params.size() && i < args.size(); i++) {
+        subs[tdecl->params[i]->name] = type_from_ast(args[i]);
+    }
+
+    function<Type*(Exp*)> substitute = [&](Exp* ast_type) -> Type* {
+        if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(ast_type)) {
+            return type_from_ast(pt);
+        }
+        if (auto* idt = dynamic_cast<NamedTypeNode*>(ast_type)) {
+            auto sit = subs.find(idt->name);
+            if (sit != subs.end()) return sit->second;
+            error("tipo de template '" + idt->name + "' no reconocido.");
+            return intType;
+        }
+        if (auto* ptr = dynamic_cast<PointerTypeNode*>(ast_type)) {
+            Type* base = substitute(ptr->base);
+            PointerType* result = new PointerType(base);
+            typeCache.push_back(result);
+            return result;
+        }
+        return type_from_ast(ast_type);
+    };
+
+    StructType* st = new StructType(concrete_name);
+    for (auto member : orig->members) {
+        Type* mt = substitute(member->type);
+        for (size_t d = 0; d < member->array_sizes.size(); d++) {
+            ArrayType* at = new ArrayType(mt, -1);
+            typeCache.push_back(at);
+            mt = at;
+        }
+        st->members[member->name] = mt;
+    }
+    struct_types[concrete_name] = st;
+    return st;
 }
 
 // ============================================================
@@ -340,7 +422,11 @@ void TypeChecker::visit(DefaultClause* s) {
 }
 
 void TypeChecker::visit(TemplateDecl* d) {
-    // Por ahora no se verifica el template en sí; se podría instanciar
+    if (d->is_function) {
+        template_decls[d->func->name] = d;
+    } else {
+        template_decls[d->struct_decl->name] = d;
+    }
 }
 
 void TypeChecker::visit(FreeStmt* s) {
@@ -488,6 +574,54 @@ Type* TypeChecker::visit(MallocNode* e) {
 Type* TypeChecker::visit(FcallNode* e) {
     if (auto* id = dynamic_cast<IdentifierNode*>(e->callee)) {
         string fname = id->name;
+
+        if (!e->template_args.empty()) {
+            auto tit = template_decls.find(fname);
+            if (tit == template_decls.end() || !tit->second->is_function) {
+                error("template de función '" + fname + "' no declarado.");
+                return intType;
+            }
+            TemplateDecl* tdecl = tit->second;
+            FunDecl* tfunc = tdecl->func;
+            unordered_map<string, Type*> subs;
+            for (size_t i = 0; i < tdecl->params.size() && i < e->template_args.size(); i++)
+                subs[tdecl->params[i]->name] = type_from_ast(e->template_args[i]);
+
+            Type* concrete_ret = type_from_ast(tfunc->return_type);
+            if (auto* nt = dynamic_cast<NamedTypeNode*>(tfunc->return_type)) {
+                auto sit = subs.find(nt->name);
+                if (sit != subs.end()) concrete_ret = sit->second;
+            }
+            vector<Type*> concrete_params;
+            for (auto p : tfunc->params) {
+                Type* pt = type_from_ast(p->type);
+                if (auto* nt = dynamic_cast<NamedTypeNode*>(p->type)) {
+                    auto sit = subs.find(nt->name);
+                    if (sit != subs.end()) pt = sit->second;
+                }
+                concrete_params.push_back(pt);
+            }
+            FuncInfo info;
+            info.returnType = concrete_ret;
+            info.paramTypes = concrete_params;
+            functions[fname] = info;
+
+            if (e->args.size() != info.paramTypes.size()) {
+                error("número de argumentos incorrecto en llamada a '" + fname +
+                      "' (esperaba " + to_string(info.paramTypes.size()) +
+                      ", recibió " + to_string(e->args.size()) + ").");
+                return info.returnType;
+            }
+            for (size_t i = 0; i < e->args.size(); i++) {
+                Type* argType = e->args[i]->accept(this);
+                if (!check_assign(info.paramTypes[i], argType)) {
+                    error("tipo de argumento " + to_string(i+1) +
+                          " incorrecto en llamada a '" + fname + "'.");
+                }
+            }
+            return info.returnType;
+        }
+
         auto it = functions.find(fname);
         if (it == functions.end()) {
             error("función no declarada '" + fname + "'.");
@@ -495,7 +629,6 @@ Type* TypeChecker::visit(FcallNode* e) {
         }
         FuncInfo& info = it->second;
 
-        // Built-in functions like print/printf accept any args
         if (fname == "print" || fname == "printf") {
             for (auto a : e->args) a->accept(this);
             return info.returnType;
@@ -516,7 +649,6 @@ Type* TypeChecker::visit(FcallNode* e) {
         }
         return info.returnType;
     }
-    // Llamada a través de puntero a función (no implementado)
     error("llamada a función no reconocida.");
     return intType;
 }
@@ -602,6 +734,8 @@ Type* TypeChecker::visit(PrimitiveTypeNode* e) { return type_from_ast(e); }
 Type* TypeChecker::visit(PointerTypeNode* e) { return type_from_ast(e); }
 Type* TypeChecker::visit(StructTypeNode* e) { return type_from_ast(e); }
 Type* TypeChecker::visit(NamedTypeNode* e) { return type_from_ast(e); }
+
+Type* TypeChecker::visit(TemplateTypeNode* e) { return type_from_ast(e); }
 
 Type* TypeChecker::visit(SizeOfNode* e) {
     e->target_type->accept(this);

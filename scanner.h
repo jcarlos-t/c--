@@ -11,6 +11,8 @@ private:
     string input;
     int first;
     int current;
+    int line, column;
+    int first_line, first_column;
 
     char peek() const;
     char advance();
@@ -26,6 +28,7 @@ private:
 public:
     struct Pos {
         int first, current;
+        int line, column;
     };
 
     Scanner(const char* in_s);

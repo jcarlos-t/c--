@@ -1,7 +1,6 @@
 #ifndef SEMANTIC_TYPES_H
 #define SEMANTIC_TYPES_H
 
-#include <iostream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -41,7 +40,7 @@ class PointerType : public Type {
 public:
     Type* base;
     PointerType(Type* b) : Type(POINTER), base(b) {}
-    ~PointerType() override { delete base; }
+    ~PointerType() override { }
 
     bool match(Type* t) const override {
         if (t->ttype != POINTER) return false;
@@ -60,7 +59,7 @@ public:
     Type* base;
     int size; // -1 si tamaño desconocido
     ArrayType(Type* b, int s = -1) : Type(ARRAY), base(b), size(s) {}
-    ~ArrayType() override { delete base; }
+    ~ArrayType() override { }
 
     bool match(Type* t) const override {
         if (t->ttype != ARRAY) return false;
@@ -82,9 +81,7 @@ public:
     unordered_map<string, Type*> members;
 
     StructType(const string& n) : Type(STRUCT), name(n) {}
-    ~StructType() override {
-        for (auto& [k, v] : members) delete v;
-    }
+    ~StructType() override { }
 
     bool match(Type* t) const override {
         if (t->ttype != STRUCT) return false;

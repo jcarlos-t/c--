@@ -4,8 +4,8 @@ import shutil
 import sys
 
 # Archivos c++
-programa = ["main.cpp", "scanner.cpp", "token.cpp", "parser.cpp", "ast.cpp", "visitor.cpp", "semantic_types.h",
-            "TypeChecker.cpp"]
+programa = ["main.cpp", "scanner.cpp", "token.cpp", "parser.cpp", "ast.cpp", "visitor.cpp",
+            "TypeChecker.cpp", "Gencode.cpp"]
 
 # Compilar
 compile = ["g++", "-std=c++17"] + programa + ["-o", "c--"]

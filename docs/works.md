@@ -13,16 +13,16 @@
 
 - [-] 1.3.1 Definir tipos de datos básicos (int, float, bool, char, etc.).
 - [-] 1.3.2 Definir alias de tipos (typedef / type alias).
-- [-] 1.3.4 Implementar lexer para tokens de tipos básicos.
-- [ ] 1.3.5 Implementar parser para declaraciones de tipos definidos por el usuario.
+- [x] 1.3.4 Implementar lexer para tokens de tipos básicos.
+- [x] 1.3.5 Implementar parser para declaraciones de tipos definidos por el usuario.
 - [ ] 1.3.6 Implementar verificación semántica de tipos definidos por el usuario.
 
 ### 1.4 Variables y manejo de alcance (scope)
 
 - [ ] 1.4.1 Definir reglas de declaración de variables.
 - [ ] 1.4.2 Definir reglas de alcance (global, local, bloque).
-- [ ] 1.4.3 Implementar lexer para declaraciones de variables.
-- [ ] 1.4.4 Implementar parser para declaraciones y asignaciones de variables.
+- [x] 1.4.3 Implementar lexer para declaraciones de variables.
+- [x] 1.4.4 Implementar parser para declaraciones y asignaciones de variables.
 - [ ] 1.4.5 Implementar tabla de símbolos con soporte de scopes anidados.
 - [ ] 1.4.6 Implementar verificación semántica de variables no declaradas y redeclaraciones.
 
@@ -30,9 +30,9 @@
 
 - [ ] 1.5.1 Definir sintaxis de declaración y llamada a funciones.
 - [ ] 1.5.2 Definir reglas de paso de parámetros y retorno.
-- [ ] 1.5.3 Implementar lexer para tokens de funciones.
-- [ ] 1.5.4 Implementar parser para declaraciones de funciones (parámetros, tipo de retorno, cuerpo).
-- [ ] 1.5.5 Implementar parser para llamadas a funciones.
+- [x] 1.5.3 Implementar lexer para tokens de funciones.
+- [x] 1.5.4 Implementar parser para declaraciones de funciones (parámetros, tipo de retorno, cuerpo).
+- [x] 1.5.5 Implementar parser para llamadas a funciones.
 - [ ] 1.5.6 Implementar verificación semántica de firmas, aridad y tipos de retorno.
 
 ### 1.6 Estructuras de control
@@ -41,10 +41,10 @@
 - [ ] 1.6.2 Definir `while`.
 - [ ] 1.6.3 Definir `for` (o `do-while` si aplica).
 - [ ] 1.6.4 Definir `switch` / `case` (si aplica).
-- [ ] 1.6.5 Implementar lexer para palabras clave de control de flujo.
-- [ ] 1.6.6 Implementar parser para `if` / `else`.
-- [ ] 1.6.7 Implementar parser para `while`.
-- [ ] 1.6.8 Implementar parser para `for`.
+- [x] 1.6.5 Implementar lexer para palabras clave de control de flujo.
+- [x] 1.6.6 Implementar parser para `if` / `else`.
+- [x] 1.6.7 Implementar parser para `while`.
+- [x] 1.6.8 Implementar parser para `for`.
 - [ ] 1.6.9 Implementar verificación semántica de condiciones (deben ser booleanas).
 
 ### 1.7 Structs, arreglos y cadenas de caracteres (strings)
@@ -52,11 +52,11 @@
 - [ ] 1.7.1 Definir sintaxis de structs (declaración, inicialización, acceso a miembros).
 - [ ] 1.7.2 Definir sintaxis de arreglos unidimensionales (declaración, indexación).
 - [ ] 1.7.3 Definir sintaxis de strings (literales, operaciones básicas).
-- [ ] 1.7.4 Implementar lexer para tokens de structs, arreglos y strings.
-- [ ] 1.7.5 Implementar parser para declaraciones de structs.
-- [ ] 1.7.6 Implementar parser para acceso a miembros de structs.
-- [ ] 1.7.7 Implementar parser para declaración e indexación de arreglos.
-- [ ] 1.7.8 Implementar parser para literales de string.
+- [x] 1.7.4 Implementar lexer para tokens de structs, arreglos y strings.
+- [x] 1.7.5 Implementar parser para declaraciones de structs.
+- [x] 1.7.6 Implementar parser para acceso a miembros de structs.
+- [x] 1.7.7 Implementar parser para declaración e indexación de arreglos.
+- [x] 1.7.8 Implementar parser para literales de string.
 - [ ] 1.7.9 Implementar verificación semántica de structs (miembros válidos, anidamiento).
 - [ ] 1.7.10 Implementar verificación semántica de arreglos (índices enteros, límites).
 
@@ -64,19 +64,19 @@
 
 - [ ] 1.8.1 Definir sintaxis de punteros (declaración, desreferencia, referencia).
 - [ ] 1.8.2 Definir operaciones de manejo de memoria dinámica (alloc / free o similar).
-- [ ] 1.8.3 Implementar lexer para tokens de punteros y memoria dinámica.
-- [ ] 1.8.4 Implementar parser para declaraciones de punteros.
-- [ ] 1.8.5 Implementar parser para operaciones de desreferencia y referencia (`*`, `&`).
-- [ ] 1.8.6 Implementar parser para operaciones de memoria dinámica.
+- [x] 1.8.3 Implementar lexer para tokens de punteros y memoria dinámica.
+- [x] 1.8.4 Implementar parser para declaraciones de punteros.
+- [x] 1.8.5 Implementar parser para operaciones de desreferencia y referencia (`*`, `&`).
+- [x] 1.8.6 Implementar parser para operaciones de memoria dinámica.
 - [ ] 1.8.7 Implementar verificación semántica de tipos de punteros.
 - [ ] 1.8.8 Implementar verificación semántica de liberación de memoria no alocada.
 
 ### 1.9 Tipos genéricos y plantillas (templates)
 
 - [ ] 1.9.1 Definir sintaxis de genéricos/templates.
-- [ ] 1.9.2 Implementar lexer para tokens de genéricos.
-- [ ] 1.9.3 Implementar parser para declaraciones genéricas.
-- [ ] 1.9.4 Implementar parser para instanciación de genéricos.
+- [x] 1.9.2 Implementar lexer para tokens de genéricos.
+- [x] 1.9.3 Implementar parser para declaraciones genéricas.
+- [x] 1.9.4 Implementar parser para instanciación de genéricos.
 - [ ] 1.9.5 Implementar verificación semántica de parámetros de tipo.
 - [ ] 1.9.6 Implementar generación de código para templates instanciados.
 
@@ -86,9 +86,9 @@
 - [ ] 1.10.2 Definir reglas de conversión implícita entre tipos.
 - [ ] 1.10.3 Definir reglas de conversión explícita (casting).
 - [ ] 1.10.4 Definir reglas de promoción automática en expresiones.
-- [ ] 1.10.5 Implementar lexer para tokens de inferencia y casting.
-- [ ] 1.10.6 Implementar parser para declaraciones con inferencia de tipos.
-- [ ] 1.10.7 Implementar parser para expresiones de casting explícito.
+- [x] 1.10.5 Implementar lexer para tokens de inferencia y casting.
+- [x] 1.10.6 Implementar parser para declaraciones con inferencia de tipos.
+- [x] 1.10.7 Implementar parser para expresiones de casting explícito.
 - [ ] 1.10.8 Implementar verificación semántica para inferencia de tipos.
 - [ ] 1.10.9 Implementar verificación semántica para conversiones válidas.
 - [ ] 1.10.10 Implementar promoción automática en el análisis semántico de expresiones.
@@ -97,10 +97,10 @@
 
 - [ ] 1.11.1 Definir sintaxis de arreglos multidimensionales.
 - [ ] 1.11.2 Definir sintaxis de funciones lambda (expresiones lambda).
-- [ ] 1.11.3 Implementar lexer para tokens de arreglos multidimensionales y lambdas.
-- [ ] 1.11.4 Implementar parser para declaraciones de arreglos multidimensionales.
-- [ ] 1.11.5 Implementar parser para indexación de arreglos multidimensionales.
-- [ ] 1.11.6 Implementar parser para expresiones lambda.
+- [x] 1.11.3 Implementar lexer para tokens de arreglos multidimensionales y lambdas.
+- [x] 1.11.4 Implementar parser para declaraciones de arreglos multidimensionales.
+- [x] 1.11.5 Implementar parser para indexación de arreglos multidimensionales.
+- [x] 1.11.6 Implementar parser para expresiones lambda.
 - [ ] 1.11.7 Implementar verificación semántica de dimensiones de arreglos.
 - [ ] 1.11.8 Implementar verificación semántica de tipos en lambdas.
 - [ ] 1.11.9 Implementar captura de entorno (closures) para lambdas.
@@ -109,26 +109,26 @@
 
 ## 2. Análisis léxico (Lexer)
 
-- [ ] 2.1 Definir el conjunto completo de tokens del lenguaje.
-- [ ] 2.2 Implementar el lexer (escáner) para todos los tokens.
-- [ ] 2.3 Implementar manejo de errores léxicos (caracteres no reconocidos, strings no cerrados, etc.).
-- [ ] 2.4 Implementar conteo de líneas y columnas para reporte de errores.
-- [ ] 2.5 Escribir pruebas unitarias para el lexer.
+- [x] 2.1 Definir el conjunto completo de tokens del lenguaje.
+- [x] 2.2 Implementar el lexer (escáner) para todos los tokens.
+- [x] 2.3 Implementar manejo de errores léxicos (caracteres no reconocidos, strings no cerrados, etc.).
+- [x] 2.4 Implementar conteo de líneas y columnas para reporte de errores.
+- [x] 2.5 Escribir pruebas unitarias para el lexer.
 
 ---
 
 ## 3. Análisis sintáctico (Parser) y AST
 
-- [ ] 3.1 Definir la gramática formal del lenguaje (EBNF o similar).
-- [ ] 3.2 Elegir estrategia de parsing (recursive descent, LL, LR, etc.).
-- [ ] 3.3 Diseñar la estructura de nodos del AST.
-- [ ] 3.4 Implementar el parser para el programa completo (entry point).
-- [ ] 3.5 Implementar el parser para todas las expresiones (aritméticas, lógicas, relacionales).
-- [ ] 3.6 Implementar el parser para todas las declaraciones (variables, funciones, tipos).
-- [ ] 3.7 Implementar el parser para todas las sentencias (control de flujo, asignación, etc.).
-- [ ] 3.8 Implementar construcción del AST durante el parsing.
-- [ ] 3.9 Implementar manejo de errores sintácticos (recuperación o reporte claro).
-- [ ] 3.10 Escribir pruebas unitarias para el parser.
+- [x] 3.1 Definir la gramática formal del lenguaje (EBNF o similar).
+- [x] 3.2 Elegir estrategia de parsing (recursive descent, LL, LR, etc.).
+- [x] 3.3 Diseñar la estructura de nodos del AST.
+- [x] 3.4 Implementar el parser para el programa completo (entry point).
+- [x] 3.5 Implementar el parser para todas las expresiones (aritméticas, lógicas, relacionales).
+- [x] 3.6 Implementar el parser para todas las declaraciones (variables, funciones, tipos).
+- [x] 3.7 Implementar el parser para todas las sentencias (control de flujo, asignación, etc.).
+- [x] 3.8 Implementar construcción del AST durante el parsing.
+- [x] 3.9 Implementar manejo de errores sintácticos (recuperación o reporte claro).
+- [x] 3.10 Escribir pruebas unitarias para el parser.
 
 ---
 

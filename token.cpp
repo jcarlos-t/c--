@@ -4,13 +4,13 @@
 using namespace std;
 
 Token::Token(Type type)
-    : type(type), text("") { }
+    : type(type), text(""), line(0), col(0) { }
 
 Token::Token(Type type, char c)
-    : type(type), text(string(1, c)) { }
+    : type(type), text(string(1, c)), line(0), col(0) { }
 
 Token::Token(Type type, const string& source, int first, int last)
-    : type(type), text(source.substr(first, last)) { }
+    : type(type), text(source.substr(first, last)), line(0), col(0) { }
 
 static const char* token_name(Token::Type t) {
     switch (t) {
@@ -87,7 +87,9 @@ static const char* token_name(Token::Type t) {
 }
 
 ostream& operator<<(ostream& outs, const Token& tok) {
-    outs << "TOKEN(" << token_name(tok.type) << ", \"" << tok.text << "\")";
+    outs << "TOKEN(" << token_name(tok.type) << ", \"" << tok.text << "\"";
+    if (tok.line > 0) outs << ", " << tok.line << ":" << tok.col;
+    outs << ")";
     return outs;
 }
 

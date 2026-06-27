@@ -15,8 +15,6 @@ using namespace std;
 Parser::Parser(Scanner* sc) : scanner(sc) {
     previous = nullptr;
     current = scanner->nextToken();
-    current_line = 1;
-    current_column = 1;
     if (current->type == Token::ERR) {
         throw runtime_error("Error léxico");
     }
@@ -60,13 +58,14 @@ Token* Parser::consume(Token::Type ttype, const string& msg) {
         return t;
     }
     ostringstream oss;
-    oss << msg << " (se esperaba " << ttype << " pero se encontró '" << current->text << "')";
+    oss << "line " << current->line << ":" << current->col << " - " << msg
+        << " (se esperaba " << ttype << " pero se encontró '" << current->text << "')";
     throw runtime_error(oss.str());
 }
 
 void Parser::sync_error(const string& msg) {
     ostringstream oss;
-    oss << "Error sintáctico: " << msg;
+    oss << "line " << current->line << ":" << current->col << " - Error sintáctico: " << msg;
     throw runtime_error(oss.str());
 }
 
@@ -101,6 +100,28 @@ TypeNode* Parser::parse_basic_type() {
         Token* name = consume(Token::ID, "Se esperaba nombre de struct");
         return new StructTypeNode(name->text);
     }
+    if (check(Token::ID)) {
+        string tname = current->text;
+        if (current_template_params.count(tname)) {
+            advance();
+            return new NamedTypeNode(tname);
+        }
+        Scanner::Pos saved = scanner->getPos();
+        advance();
+        if (match(Token::LT)) {
+            vector<TypeNode*> targs;
+            do {
+                targs.push_back(parse_type());
+            } while (match(Token::COMA));
+            consume(Token::GT, "Se esperaba '>' en instanciación de template");
+            return new TemplateTypeNode(tname, targs);
+        }
+        scanner->setPos(saved);
+        delete current;
+        delete previous;
+        previous = nullptr;
+        current = scanner->nextToken();
+    }
     sync_error("Se esperaba un tipo (int, float, void, char, double, auto, struct)");
     return nullptr;
 }
@@ -133,10 +154,10 @@ void Parser::parse_declaration(Program* p) {
             consume(Token::TYPENAME, "Se esperaba 'typename'");
             Token* tname = consume(Token::ID, "Se esperaba nombre del parámetro de template");
             tparams.push_back(new TemplateParam(tname->text));
+            current_template_params.insert(tname->text);
         } while (match(Token::COMA));
         consume(Token::GT, "Se esperaba '>' después de template");
 
-        // function or struct template
         if (check(Token::STRUCT)) {
             StructDecl* sd = parse_struct_decl();
             TemplateDecl* td = new TemplateDecl(tparams, sd);
@@ -149,6 +170,9 @@ void Parser::parse_declaration(Program* p) {
             TemplateDecl* td = new TemplateDecl(tparams, fd);
             p->templates.push_back(td);
         }
+
+        for (auto tp : tparams)
+            current_template_params.erase(tp->name);
         return;
     }
 
@@ -301,12 +325,25 @@ bool Parser::is_type_start() const {
            check(Token::AUTO) || check(Token::STRUCT);
 }
 
+bool Parser::can_start_type() {
+    if (is_type_start()) return true;
+    if (check(Token::ID)) {
+        Scanner::Pos saved = scanner->getPos();
+        Token* next = scanner->nextToken();
+        bool result = (next->type == Token::LT);
+        delete next;
+        scanner->setPos(saved);
+        return result;
+    }
+    return false;
+}
+
 // =============================
 // Statements (grammar.md §5)
 // =============================
 
 Stm* Parser::parse_statement() {
-    if (is_type_start()) {
+    if (can_start_type()) {
         return new DeclStmt(parse_local_var_decl());
     }
     if (check(Token::LBRACE))
@@ -408,7 +445,7 @@ Stm* Parser::parse_for_statement() {
 
     Stm* init = nullptr;
     if (!check(Token::SEMICOL)) {
-        if (is_type_start()) {
+        if (can_start_type()) {
             init = new DeclStmt(parse_local_var_decl());
         } else {
             Exp* e = parse_expression();
@@ -584,18 +621,27 @@ Exp* Parser::parse_additive() {
 }
 
 Exp* Parser::parse_multiplicative() {
-    Exp* l = parse_cast();
+    Exp* l = parse_pow();
     while (true) {
         if (match(Token::STAR)) {
-            Exp* r = parse_cast();
+            Exp* r = parse_pow();
             l = new BinaryOpNode(l, r, BinaryOp::MUL);
         } else if (match(Token::DIV)) {
-            Exp* r = parse_cast();
+            Exp* r = parse_pow();
             l = new BinaryOpNode(l, r, BinaryOp::DIV);
         } else if (match(Token::MOD)) {
-            Exp* r = parse_cast();
+            Exp* r = parse_pow();
             l = new BinaryOpNode(l, r, BinaryOp::MOD);
         } else break;
+    }
+    return l;
+}
+
+Exp* Parser::parse_pow() {
+    Exp* l = parse_cast();
+    if (match(Token::POW)) {
+        Exp* r = parse_pow();
+        l = new BinaryOpNode(l, r, BinaryOp::POW);
     }
     return l;
 }
@@ -628,16 +674,43 @@ Exp* Parser::parse_cast() {
                 advance(); // consume ')'
             }
         } else if (check(Token::STRUCT)) {
-            // Possibly struct type cast: (struct id) expr
-            advance(); // consume STRUCT
+            advance();
             if (check(Token::ID)) {
                 string sname = current->text;
-                advance(); // consume ID
+                advance();
                 if (check(Token::RPAREN)) {
                     is_cast = true;
                     cast_type = new StructTypeNode(sname);
-                    advance(); // consume ')'
+                    advance();
                 }
+            }
+        } else if (check(Token::ID)) {
+            string tname = current->text;
+            Scanner::Pos psaved = scanner->getPos();
+            Token* peek1 = scanner->nextToken();
+            bool is_template = false;
+            if (peek1->type == Token::LT) {
+                Token* peek2 = scanner->nextToken();
+                is_template = (peek2->type == Token::INT || peek2->type == Token::FLOAT ||
+                               peek2->type == Token::CHAR || peek2->type == Token::DOUBLE ||
+                               peek2->type == Token::BOOL || peek2->type == Token::AUTO ||
+                               peek2->type == Token::VOID || peek2->type == Token::STRUCT ||
+                               peek2->type == Token::ID);
+                delete peek2;
+            }
+            delete peek1;
+            scanner->setPos(psaved);
+            if (is_template) {
+                advance();
+                consume(Token::LT, "Se esperaba '<'");
+                vector<TypeNode*> targs;
+                do {
+                    targs.push_back(parse_type());
+                } while (match(Token::COMA));
+                consume(Token::GT, "Se esperaba '>'");
+                consume(Token::RPAREN, "Se esperaba ')' en cast de template");
+                is_cast = true;
+                cast_type = new TemplateTypeNode(tname, targs);
             }
         }
 

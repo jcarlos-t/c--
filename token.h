@@ -51,6 +51,8 @@ public:
 
     Type type;
     string text;
+    int line;
+    int col;
 
     Token(Type type);
     Token(Type type, char c);

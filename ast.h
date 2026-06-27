@@ -13,6 +13,7 @@ class CodeGenVisitor;
 class VarDecl;
 class DeclStmt;
 class TemplateDecl;
+class TypeNode;
 
 // ============================================================
 // Location (ast.md §2)
@@ -129,6 +130,7 @@ class FcallNode : public Exp {
 public:
     Exp* callee;
     vector<Exp*> args;
+    vector<TypeNode*> template_args;
     FcallNode(Exp* c) : Exp(NodeKind::Call), callee(c) {}
     ~FcallNode();
     double accept(Visitor* visitor);
@@ -501,7 +503,6 @@ public:
 class TypeNode : public Exp {
 public:
     TypeNode(NodeKind k) : Exp(k) {}
-    static TypeNode* from_basic(const string& name);
 };
 
 class PrimitiveTypeNode : public TypeNode {
@@ -537,9 +538,22 @@ class NamedTypeNode : public TypeNode {
 public:
     string name;
     NamedTypeNode(const string& n);
+
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
     void accept(CodeGenVisitor* visitor);
+};
+
+class TemplateTypeNode : public TypeNode {
+public:
+    string name;
+    vector<TypeNode*> type_args;
+    TemplateTypeNode(const string& n, const vector<TypeNode*>& args);
+    ~TemplateTypeNode();
+
+    Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
+    double accept(Visitor* visitor);
 };
 
 // ============================================================

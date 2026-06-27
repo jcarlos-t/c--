@@ -3,12 +3,13 @@
 
 #include "scanner.h"
 #include "ast.h"
+#include <unordered_set>
 
 class Parser {
 private:
     Scanner* scanner;
     Token *current, *previous;
-    int current_line, current_column;
+    unordered_set<string> current_template_params;
 
     bool match(Token::Type ttype);
     bool check(Token::Type ttype) const;
@@ -51,6 +52,7 @@ private:
     Exp* parse_relational();
     Exp* parse_additive();
     Exp* parse_multiplicative();
+    Exp* parse_pow();
     Exp* parse_cast();
     Exp* parse_unary();
     Exp* parse_postfix();
@@ -60,6 +62,7 @@ private:
     // Helpers
     Exp* parse_argument_list();
     bool is_type_start() const;
+    bool can_start_type();
     VarDecl* parse_local_var_decl();
 
 public:
