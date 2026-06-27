@@ -236,6 +236,7 @@ void Parser::parse_declaration(Program* p) {
 
 FunDecl* Parser::parse_function_decl(Exp* ret_type, const string& name) {
     FunDecl* fd = new FunDecl(ret_type, name, nullptr);
+    fd->loc.line = current->line; fd->loc.column = current->col;
     consume(Token::LPAREN, "Se esperaba '(' en declaración de función");
 
     if (!check(Token::RPAREN)) {
@@ -258,6 +259,7 @@ FunDecl* Parser::parse_function_decl(Exp* ret_type, const string& name) {
 
 VarDecl* Parser::parse_variable_decl(Exp* type, const string& name) {
     VarDecl* vd = new VarDecl(type, name);
+    vd->loc.line = current->line; vd->loc.column = current->col;
 
     // array_suffix
     while (match(Token::LBRACKET)) {
@@ -359,14 +361,20 @@ Stm* Parser::parse_statement() {
     if (check(Token::SWITCH))
         return parse_switch_statement();
     if (check(Token::BREAK)) {
+        int bl = current->line, bc = current->col;
         advance();
         consume(Token::SEMICOL, "Se esperaba ';' después de break");
-        return new BreakStmt();
+        BreakStmt* bs = new BreakStmt();
+        bs->loc.line = bl; bs->loc.column = bc;
+        return bs;
     }
     if (check(Token::CONTINUE)) {
+        int cl = current->line, cc = current->col;
         advance();
         consume(Token::SEMICOL, "Se esperaba ';' después de continue");
-        return new ContinueStmt();
+        ContinueStmt* cs = new ContinueStmt();
+        cs->loc.line = cl; cs->loc.column = cc;
+        return cs;
     }
     if (check(Token::RETURN))
         return parse_return_statement();
@@ -501,12 +509,15 @@ Stm* Parser::parse_switch_statement() {
 
 Stm* Parser::parse_return_statement() {
     consume(Token::RETURN, "Se esperaba 'return'");
+    int rl = previous->line, rc = previous->col;
     Exp* expr = nullptr;
     if (!check(Token::SEMICOL)) {
         expr = parse_expression();
     }
     consume(Token::SEMICOL, "Se esperaba ';' después de return");
-    return new ReturnStmt(expr);
+    ReturnStmt* rs = new ReturnStmt(expr);
+    rs->loc.line = rl; rs->loc.column = rc;
+    return rs;
 }
 
 // =============================

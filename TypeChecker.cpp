@@ -1,5 +1,6 @@
 #include "visitor.h"
 #include <iostream>
+#include <sstream>
 #include <functional>
 
 using namespace std;
@@ -216,6 +217,16 @@ void TypeChecker::error(const string& msg) {
     hasError = true;
 }
 
+void TypeChecker::error(const string& msg, const Location& loc) {
+    ostringstream oss;
+    if (loc.line > 0)
+        oss << "line " << loc.line << ":" << loc.column << " - " << msg;
+    else
+        oss << msg;
+    errors.push_back(oss.str());
+    hasError = true;
+}
+
 // ============================================================
 // Registrar funciones
 // ============================================================
@@ -249,6 +260,16 @@ void TypeChecker::typecheck(Program* program) {
     cout << "Revisión exitosa" << endl;
 }
 
+bool TypeChecker::check(Program* program) {
+    hasError = false;
+    errors.clear();
+    if (program) program->accept(this);
+    if (hasError) {
+        for (auto& e : errors) cerr << "Error semántico: " << e << endl;
+    }
+    return !hasError;
+}
+
 // ============================================================
 // Built-in function registration
 // ============================================================
@@ -278,10 +299,29 @@ void TypeChecker::visit(Program* p) {
 void TypeChecker::visit(FunDecl* f) {
     env.add_level();
     for (auto p : f->params) {
-        env.add_var(p->name, type_from_ast(p->type));
+        Type* t = type_from_ast(p->type);
+        if (t->match(voidType))
+            error("parámetro no puede ser de tipo void.");
+        env.add_var(p->name, t);
     }
     retornodefuncion = type_from_ast(f->return_type);
     f->body->accept(this);
+
+    if (!retornodefuncion->match(voidType)) {
+        bool endsWithReturn = false;
+        if (!f->body->stmts.empty()) {
+            Stm* last = f->body->stmts.back();
+            endsWithReturn = (dynamic_cast<ReturnStmt*>(last) != nullptr);
+            if (!endsWithReturn) {
+                if (auto* ifst = dynamic_cast<IfStmt*>(last)) {
+                    endsWithReturn = ifst->else_branch != nullptr;
+                }
+            }
+        }
+    if (!endsWithReturn)
+        error("función no-void no garantiza retorno en todos los caminos.", f->loc);
+    }
+
     env.remove_level();
 }
 
@@ -439,33 +479,31 @@ void TypeChecker::visit(FreeStmt* s) {
 }
 
 void TypeChecker::visit(BreakStmt* s) {
-    // break válido dentro de ciclo o switch
     if (loopDepth == 0 && switchDepth == 0) {
-        error("break fuera de ciclo o switch.");
+        error("break fuera de ciclo o switch.", s->loc);
     }
 }
 
 void TypeChecker::visit(ContinueStmt* s) {
-    // continue válido solo dentro de ciclo
     if (loopDepth == 0) {
-        error("continue fuera de ciclo.");
+        error("continue fuera de ciclo.", s->loc);
     }
 }
 
 void TypeChecker::visit(ReturnStmt* s) {
     if (retornodefuncion->match(voidType) && s->expr) {
-        error("función void no debe retornar valor.");
+        error("función void no debe retornar valor.", s->loc);
         return;
     }
     if (!retornodefuncion->match(voidType) && !s->expr) {
-        error("función no-void debe retornar un valor.");
+        error("función no-void debe retornar un valor.", s->loc);
         return;
     }
     if (s->expr) {
         Type* t = s->expr->accept(this);
         if (!check_assign(retornodefuncion, t)) {
             error("tipo de retorno incompatible (esperaba " +
-                  retornodefuncion->str() + ").");
+                  retornodefuncion->str() + ").", s->loc);
         }
     }
 }

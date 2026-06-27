@@ -232,12 +232,14 @@ private:
     ::Type* type_from_ast(Exp* t);
     bool check_assign(::Type* target, ::Type* value);
     void error(const string& msg);
+    void error(const string& msg, const Location& loc);
     StructType* instantiate_template(const string& name, const vector<TypeNode*>& args);
 
 public:
     TypeChecker();
     ~TypeChecker();
     void typecheck(Program* program);
+    bool check(Program* program);
 
     void visit(Program* p) override;
     void visit(FunDecl* f) override;

@@ -23,8 +23,8 @@
 - [ ] 1.4.2 Definir reglas de alcance (global, local, bloque).
 - [x] 1.4.3 Implementar lexer para declaraciones de variables.
 - [x] 1.4.4 Implementar parser para declaraciones y asignaciones de variables.
-- [ ] 1.4.5 Implementar tabla de símbolos con soporte de scopes anidados.
-- [ ] 1.4.6 Implementar verificación semántica de variables no declaradas y redeclaraciones.
+- [x] 1.4.5 Implementar tabla de símbolos con soporte de scopes anidados.
+- [x] 1.4.6 Implementar verificación semántica de variables no declaradas y redeclaraciones.
 
 ### 1.5 Funciones
 
@@ -33,7 +33,7 @@
 - [x] 1.5.3 Implementar lexer para tokens de funciones.
 - [x] 1.5.4 Implementar parser para declaraciones de funciones (parámetros, tipo de retorno, cuerpo).
 - [x] 1.5.5 Implementar parser para llamadas a funciones.
-- [ ] 1.5.6 Implementar verificación semántica de firmas, aridad y tipos de retorno.
+- [x] 1.5.6 Implementar verificación semántica de firmas, aridad y tipos de retorno.
 
 ### 1.6 Estructuras de control
 
@@ -45,7 +45,7 @@
 - [x] 1.6.6 Implementar parser para `if` / `else`.
 - [x] 1.6.7 Implementar parser para `while`.
 - [x] 1.6.8 Implementar parser para `for`.
-- [ ] 1.6.9 Implementar verificación semántica de condiciones (deben ser booleanas).
+- [x] 1.6.9 Implementar verificación semántica de condiciones (deben ser booleanas).
 
 ### 1.7 Structs, arreglos y cadenas de caracteres (strings)
 
@@ -57,8 +57,8 @@
 - [x] 1.7.6 Implementar parser para acceso a miembros de structs.
 - [x] 1.7.7 Implementar parser para declaración e indexación de arreglos.
 - [x] 1.7.8 Implementar parser para literales de string.
-- [ ] 1.7.9 Implementar verificación semántica de structs (miembros válidos, anidamiento).
-- [ ] 1.7.10 Implementar verificación semántica de arreglos (índices enteros, límites).
+- [x] 1.7.9 Implementar verificación semántica de structs (miembros válidos, anidamiento).
+- [x] 1.7.10 Implementar verificación semántica de arreglos (índices enteros, límites).
 
 ### 1.8 Punteros, direccionamiento de memoria y manejo de memoria dinámica
 
@@ -68,7 +68,7 @@
 - [x] 1.8.4 Implementar parser para declaraciones de punteros.
 - [x] 1.8.5 Implementar parser para operaciones de desreferencia y referencia (`*`, `&`).
 - [x] 1.8.6 Implementar parser para operaciones de memoria dinámica.
-- [ ] 1.8.7 Implementar verificación semántica de tipos de punteros.
+- [x] 1.8.7 Implementar verificación semántica de tipos de punteros.
 - [ ] 1.8.8 Implementar verificación semántica de liberación de memoria no alocada.
 
 ### 1.9 Tipos genéricos y plantillas (templates)
@@ -77,7 +77,7 @@
 - [x] 1.9.2 Implementar lexer para tokens de genéricos.
 - [x] 1.9.3 Implementar parser para declaraciones genéricas.
 - [x] 1.9.4 Implementar parser para instanciación de genéricos.
-- [ ] 1.9.5 Implementar verificación semántica de parámetros de tipo.
+- [x] 1.9.5 Implementar verificación semántica de parámetros de tipo.
 - [ ] 1.9.6 Implementar generación de código para templates instanciados.
 
 ### 1.10 Inferencia, conversión y promoción automática de tipos
@@ -89,9 +89,9 @@
 - [x] 1.10.5 Implementar lexer para tokens de inferencia y casting.
 - [x] 1.10.6 Implementar parser para declaraciones con inferencia de tipos.
 - [x] 1.10.7 Implementar parser para expresiones de casting explícito.
-- [ ] 1.10.8 Implementar verificación semántica para inferencia de tipos.
-- [ ] 1.10.9 Implementar verificación semántica para conversiones válidas.
-- [ ] 1.10.10 Implementar promoción automática en el análisis semántico de expresiones.
+- [x] 1.10.8 Implementar verificación semántica para inferencia de tipos.
+- [x] 1.10.9 Implementar verificación semántica para conversiones válidas.
+- [x] 1.10.10 Implementar promoción automática en el análisis semántico de expresiones.
 
 ### 1.11 Arreglos multidimensionales y funciones lambda
 
@@ -101,8 +101,8 @@
 - [x] 1.11.4 Implementar parser para declaraciones de arreglos multidimensionales.
 - [x] 1.11.5 Implementar parser para indexación de arreglos multidimensionales.
 - [x] 1.11.6 Implementar parser para expresiones lambda.
-- [ ] 1.11.7 Implementar verificación semántica de dimensiones de arreglos.
-- [ ] 1.11.8 Implementar verificación semántica de tipos en lambdas.
+- [x] 1.11.7 Implementar verificación semántica de dimensiones de arreglos.
+- [x] 1.11.8 Implementar verificación semántica de tipos en lambdas.
 - [ ] 1.11.9 Implementar captura de entorno (closures) para lambdas.
 
 ---
@@ -134,41 +134,41 @@
 
 ## 4. Tabla de símbolos
 
-- [ ] 4.1 Diseñar la estructura de la tabla de símbolos con scopes jerárquicos.
-- [ ] 4.2 Implementar inserción de símbolos (variables, funciones, tipos, structs).
-- [ ] 4.3 Implementar búsqueda de símbolos respetando reglas de scope.
-- [ ] 4.4 Implementar soporte para scope global, de función y de bloque.
-- [ ] 4.5 Implementar almacenamiento de metadatos (tipo, offset, scope, etc.) en cada símbolo.
+- [x] 4.1 Diseñar la estructura de la tabla de símbolos con scopes jerárquicos.
+- [x] 4.2 Implementar inserción de símbolos (variables, funciones, tipos, structs).
+- [x] 4.3 Implementar búsqueda de símbolos respetando reglas de scope.
+- [x] 4.4 Implementar soporte para scope global, de función y de bloque.
+- [x] 4.5 Implementar almacenamiento de metadatos (tipo, offset, scope, etc.) en cada símbolo.
 
 ---
 
 ## 5. Análisis semántico
 
-- [ ] 5.1 Implementar verificación de tipos en expresiones aritméticas.
-- [ ] 5.2 Implementar verificación de tipos en expresiones lógicas y relacionales.
-- [ ] 5.3 Implementar verificación de tipos en asignaciones.
-- [ ] 5.4 Implementar verificación de tipos en llamadas a funciones.
-- [ ] 5.5 Implementar verificación de tipos en retorno de funciones.
-- [ ] 5.6 Implementar verificación de tipos en operaciones con punteros.
-- [ ] 5.7 Implementar verificación de tipos en operaciones con structs.
-- [ ] 5.8 Implementar verificación de tipos en operaciones con arreglos.
-- [ ] 5.9 Implementar verificación de tipos en genéricos/templates.
-- [ ] 5.10 Implementar verificación de conversiones y promociones de tipos.
-- [ ] 5.11 Implementar regla de variable declarada antes de uso.
-- [ ] 5.12 Implementar regla de función declarada antes de llamado.
-- [ ] 5.13 Implementar regla de break/continue dentro de ciclos.
-- [ ] 5.14 Implementar regla de retorno en todos los caminos de función no void.
-- [ ] 5.15 Implementar reporte de errores semánticos con ubicación en código fuente.
-- [ ] 5.16 Escribir pruebas unitarias para el análisis semántico.
+- [x] 5.1 Implementar verificación de tipos en expresiones aritméticas.
+- [x] 5.2 Implementar verificación de tipos en expresiones lógicas y relacionales.
+- [x] 5.3 Implementar verificación de tipos en asignaciones.
+- [x] 5.4 Implementar verificación de tipos en llamadas a funciones.
+- [x] 5.5 Implementar verificación de tipos en retorno de funciones.
+- [x] 5.6 Implementar verificación de tipos en operaciones con punteros.
+- [x] 5.7 Implementar verificación de tipos en operaciones con structs.
+- [x] 5.8 Implementar verificación de tipos en operaciones con arreglos.
+- [x] 5.9 Implementar verificación de tipos en genéricos/templates.
+- [x] 5.10 Implementar verificación de conversiones y promociones de tipos.
+- [x] 5.11 Implementar regla de variable declarada antes de uso.
+- [x] 5.12 Implementar regla de función declarada antes de llamado.
+- [x] 5.13 Implementar regla de break/continue dentro de ciclos.
+- [x] 5.14 Implementar regla de retorno en todos los caminos de función no void.
+- [x] 5.15 Implementar reporte de errores semánticos con ubicación en código fuente.
+- [x] 5.16 Escribir pruebas unitarias para el análisis semántico.
 
 ---
 
 ## 6. Generación de código ensamblador x86
 
-- [ ] 6.1 Seleccionar sintaxis de ensamblador (AT&T vs Intel) y assembler (NASM, GAS, MASM).
-- [ ] 6.2 Diseñar la estrategia de generación de código (recorrido del AST con visitor o similar).
-- [ ] 6.3 Implementar generación de prólogo y epílogo de programa (entry point, exit).
-- [ ] 6.4 Implementar generación de código para funciones (setup de stack frame, retorno).
+- [x] 6.1 Seleccionar sintaxis de ensamblador (AT&T vs Intel) y assembler (NASM, GAS, MASM).
+- [x] 6.2 Diseñar la estrategia de generación de código (recorrido del AST con visitor o similar).
+- [-] 6.3 Implementar generación de prólogo y epílogo de programa (entry point, exit).
+- [-] 6.4 Implementar generación de código para funciones (setup de stack frame, retorno).
 - [ ] 6.5 Implementar generación de código para llamadas a funciones (convención de llamada).
 - [ ] 6.6 Implementar generación de código para paso de parámetros.
 - [ ] 6.7 Implementar generación de código para declaraciones y acceso a variables locales.
