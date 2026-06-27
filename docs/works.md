@@ -167,28 +167,28 @@
 
 - [x] 6.1 Seleccionar sintaxis de ensamblador (AT&T vs Intel) y assembler (NASM, GAS, MASM).
 - [x] 6.2 Diseñar la estrategia de generación de código (recorrido del AST con visitor o similar).
-- [-] 6.3 Implementar generación de prólogo y epílogo de programa (entry point, exit).
-- [-] 6.4 Implementar generación de código para funciones (setup de stack frame, retorno).
-- [ ] 6.5 Implementar generación de código para llamadas a funciones (convención de llamada).
-- [ ] 6.6 Implementar generación de código para paso de parámetros.
-- [ ] 6.7 Implementar generación de código para declaraciones y acceso a variables locales.
-- [ ] 6.8 Implementar generación de código para variables globales.
-- [ ] 6.9 Implementar generación de código para expresiones aritméticas.
-- [ ] 6.10 Implementar generación de código para expresiones lógicas y relacionales.
-- [ ] 6.11 Implementar generación de código para estructuras de control (`if`/`else`).
-- [ ] 6.12 Implementar generación de código para `while`.
-- [ ] 6.13 Implementar generación de código para `for`.
-- [ ] 6.14 Implementar generación de código para punteros (desreferencia, referencia).
-- [ ] 6.15 Implementar generación de código para manejo de memoria dinámica.
-- [ ] 6.16 Implementar generación de código para structs (acceso a miembros, alineación).
-- [ ] 6.17 Implementar generación de código para arreglos unidimensionales.
-- [ ] 6.18 Implementar generación de código para arreglos multidimensionales.
-- [ ] 6.19 Implementar generación de código para strings.
-- [ ] 6.20 Implementar generación de código para lambdas.
-- [ ] 6.21 Implementar generación de código para templates/genéricos.
-- [ ] 6.22 Implementar generación de código para promoción y conversión de tipos.
-- [ ] 6.23 Escribir pruebas unitarias para el generador de código.
-- [ ] 6.24 Verificar que el código ensamblador generado compila y ejecuta correctamente.
+- [x] 6.3 Implementar generación de prólogo y epílogo de programa (entry point, exit).
+- [x] 6.4 Implementar generación de código para funciones (setup de stack frame, retorno).
+- [x] 6.5 Implementar generación de código para llamadas a funciones (convención de llamada).
+- [x] 6.6 Implementar generación de código para paso de parámetros.
+- [x] 6.7 Implementar generación de código para declaraciones y acceso a variables locales.
+- [x] 6.8 Implementar generación de código para variables globales.
+- [x] 6.9 Implementar generación de código para expresiones aritméticas.
+- [x] 6.10 Implementar generación de código para expresiones lógicas y relacionales.
+- [x] 6.11 Implementar generación de código para estructuras de control (`if`/`else`).
+- [x] 6.12 Implementar generación de código para `while`.
+- [x] 6.13 Implementar generación de código para `for`.
+- [x] 6.14 Implementar generación de código para punteros (desreferencia, referencia).
+- [x] 6.15 Implementar generación de código para manejo de memoria dinámica.
+- [x] 6.16 Implementar generación de código para structs (acceso a miembros, alineación).
+- [x] 6.17 Implementar generación de código para arreglos unidimensionales.
+- [x] 6.18 Implementar generación de código para arreglos multidimensionales.
+- [x] 6.19 Implementar generación de código para strings.
+- [x] 6.20 Implementar generación de código para lambdas.
+- [x] 6.21 Implementar generación de código para templates/genéricos.
+- [x] 6.22 Implementar generación de código para promoción y conversión de tipos.
+- [x] 6.23 Escribir pruebas unitarias para el generador de código.
+- [x] 6.24 Verificar que el código ensamblador generado compila y ejecuta correctamente.
 
 ---
 

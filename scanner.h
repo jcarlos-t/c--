@@ -11,8 +11,8 @@ private:
     string input;
     int first;
     int current;
-    int line, column;
-    int first_line, first_column;
+    int line, column; // index de scanner
+    int first_line, first_column; // inicio de token
 
     char peek() const;
     char advance();

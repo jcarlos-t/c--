@@ -367,12 +367,18 @@ private:
     LVal *lvalTarget = nullptr;
     LVal captureLVal(Exp *e);
     void storeTarget(const LVal &lv);
+    string varMem(const string& name);
+    void loadVar(const string& name);
+    void storeVar(const string& name);
+    void leaVar(const string& name);
 
     unordered_map<string, int> memoria;
     unordered_map<string, bool> memoriaGlobal;
     unordered_map<string, int> arraySizes;
+    unordered_map<string, vector<int>> arrayDimensions;
     unordered_map<string, int> structFieldCount;
     unordered_map<string, unordered_map<string, int>> structFieldOffset;
+    unordered_map<string, int> stringLabels;
 
     int offset = -8;
     int labelcont = 0;

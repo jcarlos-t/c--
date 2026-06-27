@@ -2,6 +2,7 @@
 #include "ast.h"
 #include <iostream>
 #include <stdexcept>
+#include <algorithm>
 
 using namespace std;
 
@@ -70,17 +71,24 @@ void ArrowAccessNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this
 // Entry point
 // ============================================================
 void GenCodeVisitor::generate(Program *p) {
-    out << ".data\n";
-    out << "print_fmt: .string \"%ld \\n\"\n";
-    out << "println_fmt: .string \"\\n\"\n";
-
+    stringLabels.clear();
     for (auto g : p->globals)
         memoriaGlobal[g->name] = true;
+
+    out << ".data\n";
+    out << "print_fmt: .string \"%ld\\n\"\n";
+    out << "println_fmt: .string \"\\n\"\n";
 
     for (auto &[name, _] : memoriaGlobal)
         out << name << ": .quad 0\n";
 
     out << "\n.text\n";
+    out << ".globl _start\n";
+    out << "_start:\n";
+    out << "  call main\n";
+    out << "  movq %rax, %rdi\n";
+    out << "  call exit@PLT\n";
+
     for (auto f : p->functions)
         f->accept(this);
 
@@ -122,6 +130,25 @@ void GenCodeVisitor::generate(Program *p) {
 // ============================================================
 // Lvalue capture & store
 // ============================================================
+
+string GenCodeVisitor::varMem(const string& name) {
+    if (memoriaGlobal.count(name))
+        return name + "(%rip)";
+    return to_string(memoria[name]) + "(%rbp)";
+}
+
+void GenCodeVisitor::loadVar(const string& name) {
+    out << "  movq " << varMem(name) << ", %rax\n";
+}
+
+void GenCodeVisitor::storeVar(const string& name) {
+    out << "  movq %rax, " << varMem(name) << "\n";
+}
+
+void GenCodeVisitor::leaVar(const string& name) {
+    out << "  leaq " << varMem(name) << ", %rax\n";
+}
+
 GenCodeVisitor::LVal GenCodeVisitor::captureLVal(Exp *e) {
     LVal lv;
     lvalTarget = &lv;
@@ -133,10 +160,7 @@ GenCodeVisitor::LVal GenCodeVisitor::captureLVal(Exp *e) {
 void GenCodeVisitor::storeTarget(const LVal &lv) {
     switch (lv.kind) {
     case LValKind::Id:
-        if (memoriaGlobal.count(lv.name))
-            out << "  movq %rax, " << lv.name << "(%rip)\n";
-        else
-            out << "  movq %rax, " << memoria[lv.name] << "(%rbp)\n";
+        storeVar(lv.name);
         break;
     case LValKind::Index:
         out << "  pushq %rax\n";
@@ -144,19 +168,13 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
         out << "  movq %rax, %rdi\n";
         out << "  popq %rax\n";
         out << "  movq %rax, %rcx\n";
-        if (memoriaGlobal.count(lv.name))
-            out << "  movq " << lv.name << "(%rip), %rax\n";
-        else
-            out << "  movq " << memoria[lv.name] << "(%rbp), %rax\n";
+        loadVar(lv.name);
         out << "  movq %rcx, (%rax, %rdi, 8)\n";
         break;
     case LValKind::Member:
         out << "  pushq %rax\n";
         out << "  popq %rcx\n";
-        if (memoriaGlobal.count(lv.name))
-            out << "  movq " << lv.name << "(%rip), %rax\n";
-        else
-            out << "  movq " << memoria[lv.name] << "(%rbp), %rax\n";
+        loadVar(lv.name);
         out << "  movq %rcx, " << structFieldOffset[lv.name][lv.member] << "(%rax)\n";
         break;
     case LValKind::Deref:
@@ -189,8 +207,18 @@ void GenCodeVisitor::visit(CharLiteralNode *e) {
 }
 
 void GenCodeVisitor::visit(StringLiteralNode *e) {
-    // strings are not directly supported as values in codegen
-    out << "  movq $0, %rax\n";
+    auto it = stringLabels.find(e->value);
+    int lbl;
+    if (it == stringLabels.end()) {
+        lbl = (int)stringLabels.size();
+        stringLabels[e->value] = lbl;
+        out << ".section .rodata\n";
+        out << ".Lstr" << lbl << ": .string \"" << e->value << "\"\n";
+        out << ".text\n";
+    } else {
+        lbl = it->second;
+    }
+    out << "  leaq .Lstr" << lbl << "(%rip), %rax\n";
 }
 
 void GenCodeVisitor::visit(IdentifierNode *e) {
@@ -199,10 +227,7 @@ void GenCodeVisitor::visit(IdentifierNode *e) {
         lvalTarget->name = e->name;
         return;
     }
-    if (memoriaGlobal.count(e->name))
-        out << "  movq " << e->name << "(%rip), %rax\n";
-    else
-        out << "  movq " << memoria[e->name] << "(%rbp), %rax\n";
+    loadVar(e->name);
 }
 
 void GenCodeVisitor::visit(BinaryOpNode *e) {
@@ -307,32 +332,19 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
         break;
     case UnaryOp::PRE_INC:
         out << "  incq %rax\n";
-        // actualizar la variable
-        if (auto *id = dynamic_cast<IdentifierNode *>(e->operand)) {
-            if (memoriaGlobal.count(id->name))
-                out << "  movq %rax, " << id->name << "(%rip)\n";
-            else
-                out << "  movq %rax, " << memoria[id->name] << "(%rbp)\n";
-        }
+        if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
+            storeVar(id->name);
         break;
     case UnaryOp::PRE_DEC:
         out << "  decq %rax\n";
-        if (auto *id = dynamic_cast<IdentifierNode *>(e->operand)) {
-            if (memoriaGlobal.count(id->name))
-                out << "  movq %rax, " << id->name << "(%rip)\n";
-            else
-                out << "  movq %rax, " << memoria[id->name] << "(%rbp)\n";
-        }
+        if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
+            storeVar(id->name);
         break;
     case UnaryOp::POST_INC:
-        // POST_INC: retorna valor original, luego incrementa
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand)) {
             out << "  pushq %rax\n";
             out << "  incq %rax\n";
-            if (memoriaGlobal.count(id->name))
-                out << "  movq %rax, " << id->name << "(%rip)\n";
-            else
-                out << "  movq %rax, " << memoria[id->name] << "(%rbp)\n";
+            storeVar(id->name);
             out << "  popq %rax\n";
         }
         break;
@@ -340,20 +352,13 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand)) {
             out << "  pushq %rax\n";
             out << "  decq %rax\n";
-            if (memoriaGlobal.count(id->name))
-                out << "  movq %rax, " << id->name << "(%rip)\n";
-            else
-                out << "  movq %rax, " << memoria[id->name] << "(%rbp)\n";
+            storeVar(id->name);
             out << "  popq %rax\n";
         }
         break;
     case UnaryOp::ADDR:
-        if (auto *id = dynamic_cast<IdentifierNode *>(e->operand)) {
-            if (memoriaGlobal.count(id->name))
-                out << "  leaq " << id->name << "(%rip), %rax\n";
-            else
-                out << "  leaq " << memoria[id->name] << "(%rbp), %rax\n";
-        }
+        if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
+            leaVar(id->name);
         break;
     case UnaryOp::DEREF:
         out << "  movq (%rax), %rax\n";
@@ -444,16 +449,49 @@ void GenCodeVisitor::visit(IndexNode *e) {
         lvalTarget->index = e->index;
         return;
     }
+
+    vector<Exp*> indices;
+    Exp* b = e;
+    while (auto* inner = dynamic_cast<IndexNode*>(b)) {
+        indices.push_back(inner->index);
+        b = inner->base;
+    }
+    reverse(indices.begin(), indices.end());
+
+    string arrName;
+    if (auto* id = dynamic_cast<IdentifierNode*>(b))
+        arrName = id->name;
+
+    auto dimsIt = arrayDimensions.find(arrName);
+    if (!arrName.empty() && dimsIt != arrayDimensions.end() && indices.size() > 1) {
+        loadVar(arrName);
+        out << "  pushq %rax\n";
+        for (size_t d = 0; d < indices.size(); d++) {
+            indices[d]->accept(this);
+            int stride = 1;
+            for (size_t s = d + 1; s < dimsIt->second.size() && s < indices.size(); s++)
+                stride *= dimsIt->second[s];
+            if (stride > 1) {
+                out << "  movq $" << stride << ", %rcx\n";
+                out << "  imulq %rcx, %rax\n";
+            }
+            if (d > 0) {
+                out << "  addq %rax, %rdi\n";
+            } else {
+                out << "  movq %rax, %rdi\n";
+            }
+        }
+        out << "  popq %rax\n";
+        out << "  movq (%rax, %rdi, 8), %rax\n";
+        return;
+    }
+
     e->index->accept(this);
     out << "  movq %rax, %rdi\n";
-    if (auto *id = dynamic_cast<IdentifierNode *>(e->base)) {
-        if (memoriaGlobal.count(id->name))
-            out << "  movq " << id->name << "(%rip), %rax\n";
-        else
-            out << "  movq " << memoria[id->name] << "(%rbp), %rax\n";
-    } else {
+    if (auto *id = dynamic_cast<IdentifierNode *>(e->base))
+        loadVar(id->name);
+    else
         e->base->accept(this);
-    }
     out << "  movq (%rax, %rdi, 8), %rax\n";
 }
 
@@ -467,12 +505,8 @@ void GenCodeVisitor::visit(MemberAccessNode *e) {
         return;
     }
     if (auto *id = dynamic_cast<IdentifierNode *>(e->object)) {
-        int off = structFieldOffset[id->name][e->member];
-        if (memoriaGlobal.count(id->name))
-            out << "  movq " << id->name << "(%rip), %rax\n";
-        else
-            out << "  movq " << memoria[id->name] << "(%rbp), %rax\n";
-        out << "  movq " << off << "(%rax), %rax\n";
+        loadVar(id->name);
+        out << "  movq " << structFieldOffset[id->name][e->member] << "(%rax), %rax\n";
     }
 }
 
@@ -485,12 +519,8 @@ void GenCodeVisitor::visit(ArrowAccessNode *e) {
         return;
     }
     if (auto *id = dynamic_cast<IdentifierNode *>(e->pointer)) {
-        if (memoriaGlobal.count(id->name))
-            out << "  movq " << id->name << "(%rip), %rax\n";
-        else
-            out << "  movq " << memoria[id->name] << "(%rbp), %rax\n";
-        int off = structFieldOffset[id->name][e->member];
-        out << "  movq " << off << "(%rax), %rax\n";
+        loadVar(id->name);
+        out << "  movq " << structFieldOffset[id->name][e->member] << "(%rax), %rax\n";
     }
 }
 
@@ -501,9 +531,14 @@ void GenCodeVisitor::visit(MallocNode *e) {
 }
 
 void GenCodeVisitor::visit(CastNode *e) {
-    // Cast in x86: just evaluate the inner expression
-    // For now, return value as-is (no real type conversion at machine level)
     e->expr->accept(this);
+    if (auto *pt = dynamic_cast<PrimitiveTypeNode *>(e->target_type)) {
+        if (pt->prim == PrimitiveTypeNode::BOOL) {
+            out << "  cmpq $0, %rax\n";
+            out << "  setne %al\n";
+            out << "  movzbq %al, %rax\n";
+        }
+    }
 }
 
 void GenCodeVisitor::visit(SizeOfNode *e) {
@@ -535,7 +570,47 @@ void GenCodeVisitor::visit(NamedTypeNode *) {}
 
 void GenCodeVisitor::visit(TemplateTypeNode *) {}
 void GenCodeVisitor::visit(CaptureNode *) {}
-void GenCodeVisitor::visit(LambdaExprNode *) {}
+void GenCodeVisitor::visit(LambdaExprNode *e) {
+    int lbl = labelcont++;
+    string lambdaName = ".Llambda_" + to_string(lbl);
+
+    string savedFunc = funcName;
+    bool savedInFunc = inFunction;
+    int savedOffset = offset;
+    auto savedMemoria = memoria;
+
+    inFunction = true;
+    memoria.clear();
+    offset = -8;
+    funcName = lambdaName;
+
+    for (auto p : e->params) {
+        memoria[p->name] = offset;
+        offset -= 8;
+    }
+
+    int frameSize = (-offset + 15) & ~15;
+
+    out << lambdaName << ":\n";
+    out << "  pushq %rbp\n";
+    out << "  movq %rsp, %rbp\n";
+    if (frameSize > 0)
+        out << "  subq $" << frameSize << ", %rsp\n";
+
+    e->body->accept(this);
+
+    out << ".Llambda_end_" << lbl << ":\n";
+    out << "  movq $0, %rax\n";
+    out << "  leave\n";
+    out << "  ret\n";
+
+    inFunction = savedInFunc;
+    offset = savedOffset;
+    memoria = savedMemoria;
+    funcName = savedFunc;
+
+    out << "  leaq " << lambdaName << "(%rip), %rax\n";
+}
 
 // ============================================================
 // Statements
@@ -706,24 +781,26 @@ void GenCodeVisitor::visit(FreeStmt *s) {
 void GenCodeVisitor::visit(VarDecl *d) {
     if (!inFunction) {
         memoriaGlobal[d->name] = true;
-        out << d->name << ": .quad 0\n";
         return;
     }
 
     memoria[d->name] = offset;
+    offset -= 8;
 
     if (!d->array_sizes.empty()) {
-        int totalSize = 1;
-        for (size_t i = 0; i < d->array_sizes.size(); i++)
-            totalSize *= 8; // simplified: fixed size arrays
-        offset -= totalSize * 8;
-    } else {
-        offset -= 8;
+        vector<int> dims;
+        for (auto s : d->array_sizes) {
+            if (auto* il = dynamic_cast<IntegerLiteralNode*>(s))
+                dims.push_back((int)il->value);
+            else
+                dims.push_back(0);
+        }
+        arrayDimensions[d->name] = dims;
     }
 
     if (d->initializer) {
         d->initializer->accept(this);
-        out << "  movq %rax, " << memoria[d->name] << "(%rbp)\n";
+        storeVar(d->name);
     }
 }
 
@@ -734,20 +811,27 @@ void GenCodeVisitor::visit(FunDecl *d) {
     funcName = d->name;
     int paramCount = (int)d->params.size();
 
-    int frameSize = 2048; // conservative frame size
+    const vector<string> argRegs = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
+    for (int i = 0; i < paramCount && i < 6; i++) {
+        memoria[d->params[i]->name] = offset;
+        offset -= 8;
+    }
+
+    for (auto v : d->body->vdlist) {
+        memoria[v->name] = offset;
+        offset -= 8;
+    }
+    int frameSize = (-offset + 15) & ~15;
 
     out << "\n.globl " << d->name << "\n";
     out << d->name << ":\n";
     out << "  pushq %rbp\n";
     out << "  movq %rsp, %rbp\n";
-    out << "  subq $" << frameSize << ", %rsp\n";
+    if (frameSize > 0)
+        out << "  subq $" << frameSize << ", %rsp\n";
 
-    const vector<string> argRegs = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
-    for (int i = 0; i < paramCount && i < 6; i++) {
-        memoria[d->params[i]->name] = offset;
-        out << "  movq " << argRegs[i] << ", " << offset << "(%rbp)\n";
-        offset -= 8;
-    }
+    for (int i = 0; i < paramCount && i < 6; i++)
+        out << "  movq " << argRegs[i] << ", " << memoria[d->params[i]->name] << "(%rbp)\n";
 
     d->body->accept(this);
 
@@ -770,7 +854,19 @@ void GenCodeVisitor::visit(Program *p) {
     generate(p); // forward to entry point
 }
 
-void GenCodeVisitor::visit(TemplateDecl *) {}
+void GenCodeVisitor::visit(TemplateDecl *d) {
+    if (d->struct_decl) {
+        int fieldOff = 0;
+        for (auto m : d->struct_decl->members) {
+            structFieldOffset[d->struct_decl->name][m->name] = fieldOff;
+            fieldOff += 8;
+        }
+        structFieldCount[d->struct_decl->name] = (int)d->struct_decl->members.size();
+    }
+    if (d->func) {
+        d->func->accept(this);
+    }
+}
 
 // ============================================================
 // computeAddress — lvalue support for assignment
@@ -787,42 +883,27 @@ void GenCodeVisitor::computeAddress(IdentifierNode *e) {
         lvalTarget->name = e->name;
         return;
     }
-    if (memoriaGlobal.count(e->name))
-        out << "  leaq " << e->name << "(%rip), %rax\n";
-    else
-        out << "  leaq " << memoria[e->name] << "(%rbp), %rax\n";
+    leaVar(e->name);
 }
 
 void GenCodeVisitor::computeAddress(IndexNode *e) {
     e->index->accept(this);
     out << "  movq %rax, %rdi\n";
-    if (auto *id = dynamic_cast<IdentifierNode *>(e->base)) {
-        if (memoriaGlobal.count(id->name))
-            out << "  movq " << id->name << "(%rip), %rax\n";
-        else
-            out << "  movq " << memoria[id->name] << "(%rbp), %rax\n";
-    }
+    if (auto *id = dynamic_cast<IdentifierNode *>(e->base))
+        loadVar(id->name);
     out << "  leaq (%rax, %rdi, 8), %rax\n";
 }
 
 void GenCodeVisitor::computeAddress(MemberAccessNode *e) {
     if (auto *id = dynamic_cast<IdentifierNode *>(e->object)) {
-        int off = structFieldOffset[id->name][e->member];
-        if (memoriaGlobal.count(id->name))
-            out << "  leaq " << id->name << "(%rip), %rax\n";
-        else
-            out << "  leaq " << memoria[id->name] << "(%rbp), %rax\n";
-        out << "  addq $" << off << ", %rax\n";
+        leaVar(id->name);
+        out << "  addq $" << structFieldOffset[id->name][e->member] << ", %rax\n";
     }
 }
 
 void GenCodeVisitor::computeAddress(ArrowAccessNode *e) {
     if (auto *id = dynamic_cast<IdentifierNode *>(e->pointer)) {
-        int off = structFieldOffset[id->name][e->member];
-        if (memoriaGlobal.count(id->name))
-            out << "  movq " << id->name << "(%rip), %rax\n";
-        else
-            out << "  movq " << memoria[id->name] << "(%rbp), %rax\n";
-        out << "  addq $" << off << ", %rax\n";
+        loadVar(id->name);
+        out << "  addq $" << structFieldOffset[id->name][e->member] << ", %rax\n";
     }
 }
