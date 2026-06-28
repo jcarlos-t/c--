@@ -28,6 +28,7 @@ double FloatLiteralNode::accept(Visitor* v) { return v->visit(this); }
 double BoolLiteralNode::accept(Visitor* v) { return v->visit(this); }
 double CharLiteralNode::accept(Visitor* v) { return v->visit(this); }
 double StringLiteralNode::accept(Visitor* v) { return v->visit(this); }
+double PrintfNode::accept(Visitor* v) { return v->visit(this); }
 double ParenthesizedExprNode::accept(Visitor* v) { return v->visit(this); }
 double PrimitiveTypeNode::accept(Visitor* v) { return v->visit(this); }
 double PointerTypeNode::accept(Visitor* v) { return v->visit(this); }
@@ -231,27 +232,27 @@ double EVALVisitor::visit(TernaryOpNode* e) {
     return e->else_expr->accept(this);
 }
 
+double EVALVisitor::visit(PrintfNode* e) {
+    for (auto a : e->args) {
+        if (dynamic_cast<StringLiteralNode*>(a)) {
+            a->accept(this);
+            cout << last_string;
+        } else {
+            double val = a->accept(this);
+            string type = getType(a);
+            if (type == "bool")
+                cout << (val != 0 ? "true" : "false");
+            else
+                cout << val;
+        }
+    }
+    cout << endl;
+    return 0;
+}
+
 double EVALVisitor::visit(FcallNode* e) {
     if (auto* id = dynamic_cast<IdentifierNode*>(e->callee)) {
         string fname = id->name;
-        if (fname == "print" || fname == "printf") {
-            for (auto a : e->args) {
-                if (dynamic_cast<StringLiteralNode*>(a)) {
-                    a->accept(this);
-                    cout << last_string;
-                } else {
-                    double val = a->accept(this);
-                    string type = getType(a);
-                    if (type == "bool")
-                        cout << (val != 0 ? "true" : "false");
-                    else
-                        cout << val;
-                }
-            }
-            cout << endl;
-            return 0;
-        }
-
         vector<double> arg;
         for (auto a : e->args) arg.push_back(a->accept(this));
 

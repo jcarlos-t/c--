@@ -50,6 +50,7 @@ public:
     virtual double visit(BoolLiteralNode* e) = 0;
     virtual double visit(CharLiteralNode* e) = 0;
     virtual double visit(StringLiteralNode* e) = 0;
+    virtual double visit(PrintfNode* e) = 0;
     virtual double visit(ParenthesizedExprNode* e) = 0;
     virtual double visit(PrimitiveTypeNode* e) = 0;
     virtual double visit(PointerTypeNode* e) = 0;
@@ -114,6 +115,7 @@ public:
     double visit(BoolLiteralNode* e) override;
     double visit(CharLiteralNode* e) override;
     double visit(StringLiteralNode* e) override;
+    double visit(PrintfNode* e) override;
     double visit(ParenthesizedExprNode* e) override;
     double visit(PrimitiveTypeNode* e) override;
     double visit(PointerTypeNode* e) override;
@@ -191,6 +193,7 @@ public:
     virtual ::Type* visit(BoolLiteralNode* e) = 0;
     virtual ::Type* visit(CharLiteralNode* e) = 0;
     virtual ::Type* visit(StringLiteralNode* e) = 0;
+    virtual ::Type* visit(PrintfNode* e) = 0;
     virtual ::Type* visit(ParenthesizedExprNode* e) = 0;
     virtual ::Type* visit(PrimitiveTypeNode* e) = 0;
     virtual ::Type* visit(PointerTypeNode* e) = 0;
@@ -280,6 +283,7 @@ public:
     ::Type* visit(BoolLiteralNode* e) override;
     ::Type* visit(CharLiteralNode* e) override;
     ::Type* visit(StringLiteralNode* e) override;
+    ::Type* visit(PrintfNode* e) override;
     ::Type* visit(ParenthesizedExprNode* e) override;
     ::Type* visit(PrimitiveTypeNode* e) override;
     ::Type* visit(PointerTypeNode* e) override;
@@ -312,6 +316,7 @@ public:
     virtual void visit(BoolLiteralNode* e) = 0;
     virtual void visit(CharLiteralNode* e) = 0;
     virtual void visit(StringLiteralNode* e) = 0;
+    virtual void visit(PrintfNode* e) = 0;
     virtual void visit(ParenthesizedExprNode* e) = 0;
     virtual void visit(PrimitiveTypeNode* e) = 0;
     virtual void visit(PointerTypeNode* e) = 0;
@@ -408,6 +413,7 @@ public:
     void visit(BoolLiteralNode *e) override;
     void visit(CharLiteralNode *e) override;
     void visit(StringLiteralNode *e) override;
+    void visit(PrintfNode *e) override;
     void visit(ParenthesizedExprNode *e) override;
     void visit(PrimitiveTypeNode *e) override;
     void visit(PointerTypeNode *e) override;

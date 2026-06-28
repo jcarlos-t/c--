@@ -91,6 +91,10 @@ ParenthesizedExprNode::ParenthesizedExprNode(Exp* e)
     : Exp(NodeKind::ParenthesizedExpr), expr(e) {}
 ParenthesizedExprNode::~ParenthesizedExprNode() { delete expr; }
 
+// ===================== PrintfNode =====================
+PrintfNode::PrintfNode() : Exp(NodeKind::Printf) {}
+PrintfNode::~PrintfNode() { for (auto a : args) delete a; }
+
 // ===================== Stm base =====================
 Stm::~Stm() {}
 

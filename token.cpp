@@ -80,6 +80,7 @@ static const char* token_name(Token::Type t) {
         case Token::TRUE:   return "TRUE";
         case Token::FALSE:  return "FALSE";
         case Token::ID:     return "ID";
+        case Token::PRINTF: return "PRINTF";
         case Token::END:    return "END";
         case Token::ERR:    return "ERR";
         default:            return "UNKNOWN";

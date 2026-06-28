@@ -27,6 +27,7 @@ void FloatLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void BoolLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void CharLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void StringLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
+void PrintfNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void ParenthesizedExprNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void PrimitiveTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void PointerTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
@@ -411,26 +412,24 @@ void GenCodeVisitor::visit(TernaryOpNode *e) {
     out << "end_ternary_" << lbl << ":\n";
 }
 
+void GenCodeVisitor::visit(PrintfNode *e) {
+    for (size_t i = 0; i < e->args.size(); i++) {
+        e->args[i]->accept(this);
+        out << "  movq %rax, %rsi\n";
+        out << "  leaq print_fmt(%rip), %rdi\n";
+        out << "  movq $0, %rax\n";
+        out << "  call printf@PLT\n";
+    }
+    out << "  leaq println_fmt(%rip), %rdi\n";
+    out << "  movq $0, %rax\n";
+    out << "  call printf@PLT\n";
+    out << "  movq $0, %rax\n";
+}
+
 void GenCodeVisitor::visit(FcallNode *e) {
     const vector<string> argRegs = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
     auto *id = dynamic_cast<IdentifierNode *>(e->callee);
-
     string fname = id ? id->name : "";
-
-    if (fname == "print" || fname == "printf") {
-        for (size_t i = 0; i < e->args.size(); i++) {
-            e->args[i]->accept(this);
-            out << "  movq %rax, %rsi\n";
-            out << "  leaq print_fmt(%rip), %rdi\n";
-            out << "  movq $0, %rax\n";
-            out << "  call printf@PLT\n";
-        }
-        out << "  leaq println_fmt(%rip), %rdi\n";
-        out << "  movq $0, %rax\n";
-        out << "  call printf@PLT\n";
-        out << "  movq $0, %rax\n";
-        return;
-    }
 
     int nArgs = (int)e->args.size();
     for (int i = 0; i < nArgs && i < 6; i++) {

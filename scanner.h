@@ -12,7 +12,7 @@ private:
     int first;
     int current;
     int line, column; // index de scanner
-    int first_line, first_column; // inicio de token
+    int first_line, first_column; // index de token
 
     char peek() const;
     char advance();

@@ -7,14 +7,17 @@
 
 using namespace std;
 
+// Constructor: inicializa scanner con el string de entrada
 Scanner::Scanner(const char* s) : input(s), first(0), current(0), line(1), column(1), first_line(1), first_column(1) {}
 
 Scanner::~Scanner() {}
 
+// Retorna la posición actual (para retroceder en el parsing)
 Scanner::Pos Scanner::getPos() const {
     return {first, current, line, column};
 }
 
+// Restaura una posición previamente guardada
 void Scanner::setPos(Pos p) {
     first = p.first;
     current = p.current;
@@ -22,11 +25,13 @@ void Scanner::setPos(Pos p) {
     column = p.column;
 }
 
+// Retorna el caracter actual sin consumirlo
 char Scanner::peek() const {
     if (current >= (int)input.length()) return '\0';
     return input[current];
 }
 
+// Consume y retorna el siguiente caracter, actualizando línea/columna
 char Scanner::advance() {
     char c = input[current++];
     if (c == '\n') { line++; column = 1; }
@@ -34,6 +39,7 @@ char Scanner::advance() {
     return c;
 }
 
+// Si el siguiente caracter coincide, lo consume y retorna true
 bool Scanner::match_advance(char expected) {
     if (peek() != expected) return false;
     current++;
@@ -41,6 +47,7 @@ bool Scanner::match_advance(char expected) {
     return true;
 }
 
+// Salta espacios, tabs, saltos de línea y comentarios // /* */
 void Scanner::skip_whitespace() {
     while (current < (int)input.length()) {
         char c = input[current];
@@ -72,6 +79,7 @@ void Scanner::skip_whitespace() {
     }
 }
 
+// Crea un token con el lexema desde first hasta current
 Token* Scanner::make_token(Token::Type type) const {
     Token* t = new Token(type, input, first, current - first);
     t->line = first_line;
@@ -79,6 +87,7 @@ Token* Scanner::make_token(Token::Type type) const {
     return t;
 }
 
+// Crea un token de un solo caracter
 Token* Scanner::make_token(Token::Type type, char c) const {
     Token* t = new Token(type, c);
     t->line = first_line;
@@ -86,6 +95,7 @@ Token* Scanner::make_token(Token::Type type, char c) const {
     return t;
 }
 
+// Reconoce identificadores y palabras clave, retorna el token correspondiente
 Token* Scanner::identifier_or_keyword() {
     while (current < (int)input.length() && (isalnum(peek()) || peek() == '_'))
         advance();
@@ -100,6 +110,7 @@ Token* Scanner::identifier_or_keyword() {
     if (word == "bool")     return make_token(Token::BOOL);
     if (word == "auto")     return make_token(Token::AUTO);
     
+    // booleanos, estructuras de control
     if (word == "true")     return make_token(Token::TRUE);
     if (word == "false")    return make_token(Token::FALSE);
     if (word == "struct")   return make_token(Token::STRUCT);
@@ -120,9 +131,12 @@ Token* Scanner::identifier_or_keyword() {
     if (word == "template") return make_token(Token::TEMPLATE);
     if (word == "typename") return make_token(Token::TYPENAME);
 
+    if (word == "printf") return make_token(Token::PRINTF);
+
     return make_token(Token::ID);
 }
 
+// Reconoce literales numéricos: enteros y flotantes
 Token* Scanner::number() {
     bool is_float = false;
     while (current < (int)input.length() && isdigit(peek()))
@@ -146,24 +160,26 @@ Token* Scanner::number() {
     return make_token(is_float ? Token::FNUM : Token::NUM);
 }
 
+// Reconoce literales de caracter: 'a', '\n'
 Token* Scanner::char_literal() {
-    // nextToken() already consumed the opening '
+    // nextToken() ya consumió la comilla de apertura
     if (current < (int)input.length() && peek() == '\\') {
-        advance(); // skip backslash
-        if (current < (int)input.length()) advance(); // skip escaped char
+        advance();
+        if (current < (int)input.length()) advance();
     } else {
-        if (current < (int)input.length()) advance(); // skip content char
+        if (current < (int)input.length()) advance();
     }
     if (current < (int)input.length() && peek() == '\'')
-        advance(); // skip closing '
+        advance();
     else {
         return new Token(Token::ERR, input, first, current - first);
     }
     return make_token(Token::CHAR_LIT);
 }
 
+// Reconoce literales de cadena: "texto", con escapes
 Token* Scanner::string_literal() {
-    advance(); // skip opening "
+    advance(); // salta la comilla de apertura
     while (current < (int)input.length() && peek() != '"') {
         if (peek() == '\\') {
             advance();
@@ -173,35 +189,42 @@ Token* Scanner::string_literal() {
         }
     }
     if (current < (int)input.length())
-        advance(); // skip closing "
+        advance(); // salta la comilla de cierre
     else
         return new Token(Token::ERR, input, first, current - first);
     return make_token(Token::STRING_LIT);
 }
 
+// Función principal: retorna el siguiente token del fuente
 Token* Scanner::nextToken() {
+    // 1. saltar espacios y comentarios
     skip_whitespace();
 
+    // 2. fin de archivo
     if (current >= (int)input.length()) {
         Token* t = new Token(Token::END);
         t->line = line; t->col = column;
         return t;
     }
 
+    // 3. marcar inicio del lexema
     first = current;
     first_line = line;
     first_column = column;
     char c = advance();
 
+    // 4. identificador o palabra clave
     if (isalpha(c) || c == '_')
         return identifier_or_keyword();
 
+    // 5. número (entero o flotante)
     if (isdigit(c)) {
-        current--; // back up, number() will re-read
-        column--;  // back up column too
+        current--;
+        column--;
         return number();
     }
 
+    // 6. símbolos y operadores de uno o dos caracteres
     switch (c) {
         case '\'': return char_literal();
         case '"':  return string_literal();
@@ -269,6 +292,7 @@ Token* Scanner::nextToken() {
     }
 }
 
+// Escanea un archivo completo y escribe los resultados a un .txt
 void ejecutar_scanner(Scanner* scanner, const string& InputFile) {
     Token* tok;
 

@@ -28,6 +28,7 @@ Type* FloatLiteralNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* BoolLiteralNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* CharLiteralNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* StringLiteralNode::accept(TypeVisitor* v) { return v->visit(this); }
+Type* PrintfNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* ParenthesizedExprNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* PrimitiveTypeNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* PointerTypeNode::accept(TypeVisitor* v) { return v->visit(this); }
@@ -275,10 +276,7 @@ bool TypeChecker::check(Program* program) {
 // ============================================================
 
 static void register_builtins(unordered_map<string, FuncInfo>& functions) {
-    FuncInfo printInfo;
-    printInfo.returnType = new Type(Type::VOID);
-    functions["print"] = printInfo;
-    functions["printf"] = printInfo;
+    (void)functions;
 }
 
 // ============================================================
@@ -618,6 +616,11 @@ Type* TypeChecker::visit(MallocNode* e) {
     return intType; // returns int* (simplified)
 }
 
+Type* TypeChecker::visit(PrintfNode* e) {
+    for (auto a : e->args) a->accept(this);
+    return voidType;
+}
+
 Type* TypeChecker::visit(FcallNode* e) {
     if (auto* id = dynamic_cast<IdentifierNode*>(e->callee)) {
         string fname = id->name;
@@ -679,11 +682,6 @@ Type* TypeChecker::visit(FcallNode* e) {
             return intType;
         }
         FuncInfo& info = it->second;
-
-        if (fname == "print" || fname == "printf") {
-            for (auto a : e->args) a->accept(this);
-            return info.returnType;
-        }
 
         if (e->args.size() != info.paramTypes.size()) {
             error("número de argumentos incorrecto en llamada a '" + fname +

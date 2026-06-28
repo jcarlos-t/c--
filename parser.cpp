@@ -895,6 +895,17 @@ Exp* Parser::parse_primary() {
         consume(Token::RPAREN, "Se esperaba ')'");
         return new SizeOfNode(target);
     }
+    if (match(Token::PRINTF)) {
+        consume(Token::LPAREN, "Se esperaba '(' después de print/printf");
+        PrintfNode* pn = new PrintfNode();
+        if (!check(Token::RPAREN)) {
+            pn->args.push_back(parse_assignment());
+            while (match(Token::COMA))
+                pn->args.push_back(parse_assignment());
+        }
+        consume(Token::RPAREN, "Se esperaba ')'");
+        return pn;
+    }
     sync_error("Se esperaba una expresión");
     return nullptr;
 }

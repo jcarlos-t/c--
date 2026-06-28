@@ -9,43 +9,44 @@ using namespace std;
 class Token {
 public:
     enum Type {
-        // Types
+        // Tipos de dato
         VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, AUTO,
 
-        // Keywords
+        // Palabras clave de control y declaración
         STRUCT, IF, ELSE, WHILE, DO, FOR, SWITCH,
         CASE, DEFAULT, BREAK, CONTINUE, RETURN,
         SIZEOF, MALLOC, FREE, TEMPLATE, TYPENAME,
 
-        // Punctuation
+        // Puntuación y delimitadores
         LPAREN, RPAREN, LBRACE, RBRACE,
         LBRACKET, RBRACKET, SEMICOL, COMA, COLON, QUESTION,
 
-        // Arithmetic operators
+        // Operadores aritméticos
         PLUS, MINUS, STAR, DIV, MOD, POW,
 
-        // Assignment
+        // Operadores de asignación
         ASSIGN, ADD_ASSIGN, SUB_ASSIGN, MUL_ASSIGN, DIV_ASSIGN,
 
-        // Comparison
+        // Operadores de comparación
         EQ, NE, LT, GT, LE, GE,
 
-        // Logical
+        // Operadores lógicos
         AND, OR, NOT,
 
-        // Inc/Dec
+        // Incremento y decremento
         INC, DEC,
 
-        // Other operators
+        // Otros operadores
         AMPERSAND, ARROW, DOT,
 
-        // Literals
+        // Literales
         NUM, FNUM, CHAR_LIT, STRING_LIT,
 
-        // Literals
+        // Booleanos
         TRUE, FALSE,
 
-        // Other
+        // Otros
+        PRINTF,
         ID, END, ERR
     };
 

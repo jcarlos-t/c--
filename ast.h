@@ -38,6 +38,7 @@ enum class NodeKind {
     BinaryOp, UnaryOp, Assignment, TernaryOp, Call, Malloc,
     Subscript, MemberAccess, ArrowAccess,
     PostInc, PostDec, PreInc, PreDec, Cast, SizeOf,
+    Printf,
     Identifier, LambdaExpr, Capture,
     IntegerLiteral, FloatLiteral, BoolLiteral,
     CharLiteral, StringLiteral, ParenthesizedExpr,
@@ -62,7 +63,7 @@ enum class AssignOp {
 };
 
 // ============================================================
-// Clase base Exp (ast.md §3 — expressions)
+// Clase base Exp 
 // ============================================================
 class Exp {
 public:
@@ -266,6 +267,20 @@ public:
     Exp* expr;
     ParenthesizedExprNode(Exp* e);
     ~ParenthesizedExprNode();
+    double accept(Visitor* visitor);
+    Type* accept(TypeVisitor* visitor);
+    void accept(CodeGenVisitor* visitor);
+};
+
+// ============================================================
+// Printf (grammar.md §8)
+// ============================================================
+
+class PrintfNode : public Exp {
+public:
+    vector<Exp*> args;
+    PrintfNode();
+    ~PrintfNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
     void accept(CodeGenVisitor* visitor);
