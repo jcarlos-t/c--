@@ -28,7 +28,6 @@ void BoolLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void CharLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void StringLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void PrintfNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void ParenthesizedExprNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void PrimitiveTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void PointerTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void StructTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
@@ -39,14 +38,12 @@ void LambdaExprNode::accept(CodeGenVisitor* v) { v->visit(this); }
 
 void Body::accept(CodeGenVisitor* v) { v->visit(this); }
 void ExprStmtNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void DeclStmt::accept(CodeGenVisitor* v) { v->visit(this); }
 void IfStmt::accept(CodeGenVisitor* v) { v->visit(this); }
 void WhileStmt::accept(CodeGenVisitor* v) { v->visit(this); }
 void DoWhileStmt::accept(CodeGenVisitor* v) { v->visit(this); }
 void ForStmt::accept(CodeGenVisitor* v) { v->visit(this); }
 void SwitchStmt::accept(CodeGenVisitor* v) { v->visit(this); }
 void CaseClause::accept(CodeGenVisitor* v) { v->visit(this); }
-void DefaultClause::accept(CodeGenVisitor* v) { v->visit(this); }
 void BreakStmt::accept(CodeGenVisitor* v) { v->visit(this); }
 void ContinueStmt::accept(CodeGenVisitor* v) { v->visit(this); }
 void ReturnStmt::accept(CodeGenVisitor* v) { v->visit(this); }
@@ -558,10 +555,6 @@ void GenCodeVisitor::visit(SizeOfNode *e) {
         out << "  movq $0, %rax\n";
 }
 
-void GenCodeVisitor::visit(ParenthesizedExprNode *e) {
-    e->expr->accept(this);
-}
-
 void GenCodeVisitor::visit(PrimitiveTypeNode *) {}
 void GenCodeVisitor::visit(PointerTypeNode *) {}
 void GenCodeVisitor::visit(StructTypeNode *) {}
@@ -616,8 +609,6 @@ void GenCodeVisitor::visit(LambdaExprNode *e) {
 // ============================================================
 
 void GenCodeVisitor::visit(Body *s) {
-    for (auto v : s->vdlist)
-        v->accept(this);
     for (auto st : s->stmts)
         st->accept(this);
 }
@@ -625,10 +616,6 @@ void GenCodeVisitor::visit(Body *s) {
 void GenCodeVisitor::visit(ExprStmtNode *s) {
     if (s->expr)
         s->expr->accept(this);
-}
-
-void GenCodeVisitor::visit(DeclStmt *s) {
-    s->decl->accept(this);
 }
 
 void GenCodeVisitor::visit(IfStmt *s) {
@@ -704,16 +691,14 @@ void GenCodeVisitor::visit(SwitchStmt *s) {
     out << "  movq %rax, %r10\n";
 
     int caseIdx = 0;
-    for (auto c : s->cases) {
-        if (auto *cc = dynamic_cast<CaseClause *>(c)) {
-            if (auto *lit = dynamic_cast<IntegerLiteralNode *>(cc->value))
-                out << "  movq $" << lit->value << ", %rax\n";
-            else
-                out << "  movq $0, %rax\n";
-            out << "  cmpq %rax, %r10\n";
-            out << "  je case_" << lbl << "_" << caseIdx << "\n";
-            caseIdx++;
-        }
+    for (auto cc : s->cases) {
+        if (auto *lit = dynamic_cast<IntegerLiteralNode *>(cc->value))
+            out << "  movq $" << lit->value << ", %rax\n";
+        else
+            out << "  movq $0, %rax\n";
+        out << "  cmpq %rax, %r10\n";
+        out << "  je case_" << lbl << "_" << caseIdx << "\n";
+        caseIdx++;
     }
 
     out << "  jmp default_" << lbl << "\n";
@@ -722,29 +707,21 @@ void GenCodeVisitor::visit(SwitchStmt *s) {
     currentBreakLabel = "endswitch_" + to_string(lbl);
 
     caseIdx = 0;
-    for (auto c : s->cases) {
-        if (auto *cc = dynamic_cast<CaseClause *>(c)) {
-            out << "case_" << lbl << "_" << caseIdx << ":\n";
-            for (auto st : cc->body) st->accept(this);
-            out << "  jmp endswitch_" << lbl << "\n";
-            caseIdx++;
-        }
+    for (auto cc : s->cases) {
+        out << "case_" << lbl << "_" << caseIdx << ":\n";
+        for (auto st : cc->body) st->accept(this);
+        out << "  jmp endswitch_" << lbl << "\n";
+        caseIdx++;
     }
 
     out << "default_" << lbl << ":\n";
-    for (auto c : s->cases) {
-        if (auto *dc = dynamic_cast<DefaultClause *>(c)) {
-            for (auto st : dc->body) st->accept(this);
-        }
-    }
+    for (auto st : s->default_body) st->accept(this);
 
     currentBreakLabel = oldBreak;
     out << "endswitch_" << lbl << ":\n";
 }
 
 void GenCodeVisitor::visit(CaseClause *) {}
-void GenCodeVisitor::visit(DefaultClause *) {}
-
 void GenCodeVisitor::visit(BreakStmt *) {
     if (currentBreakLabel.empty()) {
         cerr << "Error: break fuera de ciclo o switch\n";
@@ -816,9 +793,11 @@ void GenCodeVisitor::visit(FunDecl *d) {
         offset -= 8;
     }
 
-    for (auto v : d->body->vdlist) {
-        memoria[v->name] = offset;
-        offset -= 8;
+    for (auto st : d->body->stmts) {
+        if (auto* v = dynamic_cast<VarDecl*>(st)) {
+            memoria[v->name] = offset;
+            offset -= 8;
+        }
     }
     int frameSize = (-offset + 15) & ~15;
 

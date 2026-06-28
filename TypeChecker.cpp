@@ -29,7 +29,6 @@ Type* BoolLiteralNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* CharLiteralNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* StringLiteralNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* PrintfNode::accept(TypeVisitor* v) { return v->visit(this); }
-Type* ParenthesizedExprNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* PrimitiveTypeNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* PointerTypeNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* StructTypeNode::accept(TypeVisitor* v) { return v->visit(this); }
@@ -38,14 +37,12 @@ Type* NamedTypeNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* TemplateTypeNode::accept(TypeVisitor* v) { return v->visit(this); }
 
 void ExprStmtNode::accept(TypeVisitor* v) { v->visit(this); }
-void DeclStmt::accept(TypeVisitor* v) { v->visit(this); }
 void IfStmt::accept(TypeVisitor* v) { v->visit(this); }
 void WhileStmt::accept(TypeVisitor* v) { v->visit(this); }
 void DoWhileStmt::accept(TypeVisitor* v) { v->visit(this); }
 void ForStmt::accept(TypeVisitor* v) { v->visit(this); }
 void SwitchStmt::accept(TypeVisitor* v) { v->visit(this); }
 void CaseClause::accept(TypeVisitor* v) { v->visit(this); }
-void DefaultClause::accept(TypeVisitor* v) { v->visit(this); }
 void BreakStmt::accept(TypeVisitor* v) { v->visit(this); }
 void ContinueStmt::accept(TypeVisitor* v) { v->visit(this); }
 void ReturnStmt::accept(TypeVisitor* v) { v->visit(this); }
@@ -161,7 +158,7 @@ StructType* TypeChecker::instantiate_template(const string& name, const vector<T
     StructDecl* orig = tdecl->struct_decl;
     unordered_map<string, Type*> subs;
     for (size_t i = 0; i < tdecl->params.size() && i < args.size(); i++) {
-        subs[tdecl->params[i]->name] = type_from_ast(args[i]);
+        subs[tdecl->params[i]] = type_from_ast(args[i]);
     }
 
     function<Type*(Exp*)> substitute = [&](Exp* ast_type) -> Type* {
@@ -384,17 +381,12 @@ void TypeChecker::visit(StructDecl* s) {
 
 void TypeChecker::visit(Body* b) {
     env.add_level();
-    for (auto v : b->vdlist) v->accept(this);
     for (auto s : b->stmts) s->accept(this);
     env.remove_level();
 }
 
 void TypeChecker::visit(ExprStmtNode* s) {
     if (s->expr) s->expr->accept(this);
-}
-
-void TypeChecker::visit(DeclStmt* s) {
-    s->decl->accept(this);
 }
 
 void TypeChecker::visit(IfStmt* s) {
@@ -448,7 +440,8 @@ void TypeChecker::visit(SwitchStmt* s) {
         error("expresión de switch debe ser int o char.");
     }
     switchDepth++;
-    for (auto c : s->cases) c->accept(this);
+    for (auto cc : s->cases) cc->accept(this);
+    for (auto st : s->default_body) st->accept(this);
     switchDepth--;
 }
 
@@ -457,10 +450,6 @@ void TypeChecker::visit(CaseClause* s) {
     if (!t->match(intType) && !t->match(charType)) {
         error("valor de case debe ser int o char.");
     }
-    for (auto st : s->body) st->accept(this);
-}
-
-void TypeChecker::visit(DefaultClause* s) {
     for (auto st : s->body) st->accept(this);
 }
 
@@ -635,7 +624,7 @@ Type* TypeChecker::visit(FcallNode* e) {
             FunDecl* tfunc = tdecl->func;
             unordered_map<string, Type*> subs;
             for (size_t i = 0; i < tdecl->params.size() && i < e->template_args.size(); i++)
-                subs[tdecl->params[i]->name] = type_from_ast(e->template_args[i]);
+                subs[tdecl->params[i]] = type_from_ast(e->template_args[i]);
 
             Type* concrete_ret;
             if (auto* nt = dynamic_cast<NamedTypeNode*>(tfunc->return_type)) {
@@ -778,7 +767,6 @@ Type* TypeChecker::visit(FloatLiteralNode* e) { return floatType; }
 Type* TypeChecker::visit(BoolLiteralNode* e) { return boolType; }
 Type* TypeChecker::visit(CharLiteralNode* e) { return charType; }
 Type* TypeChecker::visit(StringLiteralNode* e) { return intType; }
-Type* TypeChecker::visit(ParenthesizedExprNode* e) { return e->expr->accept(this); }
 Type* TypeChecker::visit(PrimitiveTypeNode* e) { return type_from_ast(e); }
 Type* TypeChecker::visit(PointerTypeNode* e) { return type_from_ast(e); }
 Type* TypeChecker::visit(StructTypeNode* e) { return type_from_ast(e); }

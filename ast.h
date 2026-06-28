@@ -11,43 +11,16 @@ class Visitor;
 class TypeVisitor;
 class CodeGenVisitor;
 class VarDecl;
-class DeclStmt;
 class TemplateDecl;
 class TypeNode;
 
-// ============================================================
-// Location (ast.md §2)
-// ============================================================
 struct Location {
     int line;
     int column;
     Location(int l = 0, int c = 0) : line(l), column(c) {}
 };
 
-// ============================================================
-// NodeKind (ast.md §2)
-// ============================================================
-enum class NodeKind {
-    Program,
-    FunctionDecl, VariableDecl, StructDecl, TemplateDecl,
-    PrimitiveType, PointerType, StructType, NamedType,
-    Body, ExprStmt,
-    IfStmt, WhileStmt, DoWhileStmt, ForStmt,
-    SwitchStmt, CaseClause, DefaultClause,
-    BreakStmt, ContinueStmt, ReturnStmt, FreeStmt,
-    BinaryOp, UnaryOp, Assignment, TernaryOp, Call, Malloc,
-    Subscript, MemberAccess, ArrowAccess,
-    PostInc, PostDec, PreInc, PreDec, Cast, SizeOf,
-    Printf,
-    Identifier, LambdaExpr, Capture,
-    IntegerLiteral, FloatLiteral, BoolLiteral,
-    CharLiteral, StringLiteral, ParenthesizedExpr,
-    Parameter, TemplateParam
-};
-
-// ============================================================
-// Operadores (ast.md §3)
-// ============================================================
+// Operadores binarios, unarios y de asignación
 enum class BinaryOp {
     ADD, SUB, MUL, DIV, MOD,
     EQ, NE, LT, GT, LE, GE,
@@ -62,40 +35,39 @@ enum class AssignOp {
     ASSIGN, ADD_ASSIGN, SUB_ASSIGN, MUL_ASSIGN, DIV_ASSIGN
 };
 
-// ============================================================
-// Clase base Exp 
-// ============================================================
+// Clase base para todos los nodos de expresión
 class Exp {
 public:
-    NodeKind kind;
     Location loc;
-    Exp(NodeKind k) : kind(k) {}
+    Exp() {}
     virtual ~Exp() = 0;
     virtual double accept(Visitor* visitor) = 0;
     virtual Type* accept(TypeVisitor* visitor) = 0;
     virtual void accept(CodeGenVisitor* visitor) = 0;
-    virtual void computeAddress(CodeGenVisitor* visitor);
+    virtual void computeAddress(CodeGenVisitor* visitor); // para nodos que necesitan la direccion de algo, como variables
 };
 
-// --- Expression nodes ---
+// --- Nodos de expresión ---
 
+// Operación binaria (a + b, a == b, etc.)
 class BinaryOpNode : public Exp {
 public:
-    ::BinaryOp op;
+    BinaryOp op;
     Exp* left;
     Exp* right;
-    BinaryOpNode(Exp* l, Exp* r, ::BinaryOp op);
+    BinaryOpNode(Exp* l, Exp* r, BinaryOp op);
     ~BinaryOpNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
     void accept(CodeGenVisitor* visitor);
 };
 
+// Operación unaria (*p, -x, !b, ++i, etc.)
 class UnaryOpNode : public Exp {
 public:
-    ::UnaryOp op;
+    UnaryOp op;
     Exp* operand;
-    UnaryOpNode(Exp* o, ::UnaryOp op);
+    UnaryOpNode(Exp* o, UnaryOp op);
     ~UnaryOpNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
@@ -103,6 +75,7 @@ public:
     void computeAddress(CodeGenVisitor* visitor);
 };
 
+// Asignación: =, +=, -=, *=, /=
 class AssignmentNode : public Exp {
 public:
     AssignOp op;
@@ -115,6 +88,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Operador ternario: cond ? then : else
 class TernaryOpNode : public Exp {
 public:
     Exp* condition;
@@ -127,18 +101,20 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Llamada a función: callee(args...)
 class FcallNode : public Exp {
 public:
-    Exp* callee;
-    vector<Exp*> args;
-    vector<TypeNode*> template_args;
-    FcallNode(Exp* c) : Exp(NodeKind::Call), callee(c) {}
+    Exp* callee; // nombre
+    vector<Exp*> args; // argumentos que recibe la llamada
+    vector<TypeNode*> template_args; // argumentos del template <arg, arg2...>
+    FcallNode(Exp* c);
     ~FcallNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
     void accept(CodeGenVisitor* visitor);
 };
 
+// Acceso por índice: base[index]
 class IndexNode : public Exp {
 public:
     Exp* base;
@@ -151,6 +127,7 @@ public:
     void computeAddress(CodeGenVisitor* visitor);
 };
 
+// Acceso a miembro de struct: obj.member
 class MemberAccessNode : public Exp {
 public:
     Exp* object;
@@ -163,6 +140,7 @@ public:
     void computeAddress(CodeGenVisitor* visitor);
 };
 
+// Acceso a miembro por puntero: ptr->member
 class ArrowAccessNode : public Exp {
 public:
     Exp* pointer;
@@ -175,6 +153,7 @@ public:
     void computeAddress(CodeGenVisitor* visitor);
 };
 
+// Asignación dinámica: malloc(expr)
 class MallocNode : public Exp {
 public:
     Exp* size;
@@ -185,6 +164,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Conversión de tipo: (target_type)expr
 class CastNode : public Exp {
 public:
     Exp* target_type;
@@ -196,6 +176,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// sizeof(tipo)
 class SizeOfNode : public Exp {
 public:
     Exp* target_type;
@@ -206,6 +187,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Referencia a variable por nombre
 class IdentifierNode : public Exp {
 public:
     string name;
@@ -217,6 +199,7 @@ public:
     void computeAddress(CodeGenVisitor* visitor);
 };
 
+// Literal entero
 class IntegerLiteralNode : public Exp {
 public:
     long long value;
@@ -226,6 +209,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Literal flotante
 class FloatLiteralNode : public Exp {
 public:
     double value;
@@ -235,6 +219,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Literal booleano (true/false)
 class BoolLiteralNode : public Exp {
 public:
     bool value;
@@ -244,6 +229,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Literal de caracter: 'a'
 class CharLiteralNode : public Exp {
 public:
     char value;
@@ -253,6 +239,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Literal de cadena: "texto"
 class StringLiteralNode : public Exp {
 public:
     string value;
@@ -262,20 +249,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
-class ParenthesizedExprNode : public Exp {
-public:
-    Exp* expr;
-    ParenthesizedExprNode(Exp* e);
-    ~ParenthesizedExprNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
-};
-
-// ============================================================
-// Printf (grammar.md §8)
-// ============================================================
-
+// Impresión: printf(args...), es exp porque se puede usar en cualquier lugar, en c es valido x = printf("xd");
 class PrintfNode : public Exp {
 public:
     vector<Exp*> args;
@@ -286,24 +260,21 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
-// ============================================================
-// Clase base Stm (ast.md §3 — statements)
-// ============================================================
+// Clase base para todos los statements
 class Stm {
 public:
-    NodeKind kind;
     Location loc;
-    Stm(NodeKind k) : kind(k) {}
+    Stm() {}
     virtual ~Stm() = 0;
     virtual int accept(Visitor* visitor) = 0;
     virtual void accept(TypeVisitor* visitor) = 0;
     virtual void accept(CodeGenVisitor* visitor) = 0;
 };
 
+// Bloque de código: { stmts... }
 class Body : public Stm {
 public:
     vector<Stm*> stmts;
-    vector<VarDecl*> vdlist;
     Body();
     ~Body();
     int accept(Visitor* visitor);
@@ -311,6 +282,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Statement expresión: expr; | wrapper para poder usar nodes como stmts 
 class ExprStmtNode : public Stm {
 public:
     Exp* expr;
@@ -321,16 +293,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
-class DeclStmt : public Stm {
-public:
-    VarDecl* decl;
-    DeclStmt(VarDecl* d);
-    ~DeclStmt();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
-};
-
+// Condicional: if (cond) then [else]
 class IfStmt : public Stm {
 public:
     Exp* condition;
@@ -343,6 +306,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Bucle while: while (cond) body
 class WhileStmt : public Stm {
 public:
     Exp* condition;
@@ -354,6 +318,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Bucle do-while: do body while (cond)
 class DoWhileStmt : public Stm {
 public:
     Stm* body;
@@ -365,6 +330,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Bucle for: for (init; cond; inc) body
 class ForStmt : public Stm {
 public:
     Stm* init;
@@ -378,17 +344,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
-class SwitchStmt : public Stm {
-public:
-    Exp* expr;
-    vector<Stm*> cases;
-    SwitchStmt(Exp* e);
-    ~SwitchStmt();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
-};
-
+// Caso de switch: case value: body
 class CaseClause : public Stm {
 public:
     Exp* value;
@@ -400,16 +356,20 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
-class DefaultClause : public Stm {
+// Switch: switch (expr) { cases... [default: body] }
+class SwitchStmt : public Stm {
 public:
-    vector<Stm*> body;
-    DefaultClause();
-    ~DefaultClause();
+    Exp* expr;
+    vector<CaseClause*> cases;
+    vector<Stm*> default_body;
+    SwitchStmt(Exp* e);
+    ~SwitchStmt();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);
     void accept(CodeGenVisitor* visitor);
 };
 
+// break
 class BreakStmt : public Stm {
 public:
     BreakStmt();
@@ -418,6 +378,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// continue
 class ContinueStmt : public Stm {
 public:
     ContinueStmt();
@@ -426,6 +387,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// return [expr]
 class ReturnStmt : public Stm {
 public:
     Exp* expr;
@@ -436,6 +398,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// free(expr)
 class FreeStmt : public Stm {
 public:
     Exp* expr;
@@ -446,17 +409,15 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
-// ============================================================
-// Declaration nodes (ast.md §3)
-// ============================================================
-class VarDecl {
+// --- Nodos de declaración ---
+
+// Declaración de variable (hereda de Stm para ir directo en Body::stmts)
+class VarDecl : public Stm {
 public:
-    NodeKind kind;
-    Location loc;
     Exp* type;
     string name;
-    vector<Exp*> array_sizes;
-    Exp* initializer;
+    vector<Exp*> array_sizes; // para tamaños en arreglos [size1][size2]...
+    Exp* initializer; // expresion inicial x = init;
 
     VarDecl(Exp* t, const string& n);
     ~VarDecl();
@@ -465,9 +426,9 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Declaración de función
 class FunDecl {
 public:
-    NodeKind kind;
     Location loc;
     Exp* return_type;
     string name;
@@ -482,9 +443,9 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Declaración de struct
 class StructDecl {
 public:
-    NodeKind kind;
     Location loc;
     string name;
     vector<VarDecl*> members;
@@ -496,9 +457,9 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Programa completo: lista de funciones, globales, structs y templates
 class Program {
 public:
-    NodeKind kind;
     Location loc;
     vector<FunDecl*> functions;
     vector<VarDecl*> globals;
@@ -512,14 +473,15 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
-// ============================================================
-// Type nodes (ast.md §3)
-// ============================================================
+// --- Nodos de tipo ---
+
+// Clase base para nodos de tipo
 class TypeNode : public Exp {
 public:
-    TypeNode(NodeKind k) : Exp(k) {}
+    TypeNode() : Exp() {}
 };
 
+// Tipo primitivo: void, int, char, float, double, bool, auto
 class PrimitiveTypeNode : public TypeNode {
 public:
     enum Prim { VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, AUTO };
@@ -530,6 +492,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Tipo puntero: T*
 class PointerTypeNode : public TypeNode {
 public:
     TypeNode* base;
@@ -540,6 +503,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Tipo struct por nombre, instanciar un struct: struct Point p;
 class StructTypeNode : public TypeNode {
 public:
     string name;
@@ -549,6 +513,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Tipo nombrado, nodos que representan tipos definidos por el usuario, por ejemplo en templates
 class NamedTypeNode : public TypeNode {
 public:
     string name;
@@ -559,6 +524,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// instanciacion concreta de template: Nombre<T1, T2, ...>
 class TemplateTypeNode : public TypeNode {
 public:
     string name;
@@ -571,10 +537,9 @@ public:
     double accept(Visitor* visitor);
 };
 
-// ============================================================
-// Lambda expressions (grammar.md §8)
-// ============================================================
+// --- Expresiones lambda ---
 
+// Captura de variable en lambda: [&x] o [x]
 class CaptureNode : public Exp {
 public:
     enum Mode { BY_VALUE, BY_REF };
@@ -586,6 +551,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
+// Expresión lambda: [captures](params) -> tipo { body }
 class LambdaExprNode : public Exp {
 public:
     vector<CaptureNode*> captures;
@@ -599,26 +565,17 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
-// ============================================================
-// Template declarations (grammar.md §10)
-// ============================================================
+// --- Declaraciones template ---
 
-class TemplateParam {
-public:
-    NodeKind kind;
-    string name;
-    TemplateParam(const string& n);
-};
-
+// Declaración template: template<params> func/struct
 class TemplateDecl {
 public:
-    NodeKind kind;
-    vector<TemplateParam*> params;
+    vector<string> params;
     FunDecl* func;
     StructDecl* struct_decl;
     bool is_function;
-    TemplateDecl(const vector<TemplateParam*>& p, FunDecl* f);
-    TemplateDecl(const vector<TemplateParam*>& p, StructDecl* s);
+    TemplateDecl(const vector<string>& p, FunDecl* f);
+    TemplateDecl(const vector<string>& p, StructDecl* s);
     ~TemplateDecl();
     int accept(Visitor* visitor);
     void accept(TypeVisitor* visitor);

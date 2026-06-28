@@ -29,7 +29,6 @@ double BoolLiteralNode::accept(Visitor* v) { return v->visit(this); }
 double CharLiteralNode::accept(Visitor* v) { return v->visit(this); }
 double StringLiteralNode::accept(Visitor* v) { return v->visit(this); }
 double PrintfNode::accept(Visitor* v) { return v->visit(this); }
-double ParenthesizedExprNode::accept(Visitor* v) { return v->visit(this); }
 double PrimitiveTypeNode::accept(Visitor* v) { return v->visit(this); }
 double PointerTypeNode::accept(Visitor* v) { return v->visit(this); }
 double StructTypeNode::accept(Visitor* v) { return v->visit(this); }
@@ -42,14 +41,12 @@ double TemplateTypeNode::accept(Visitor* v) { return v->visit(this); }
 // ============================================================
 int Body::accept(Visitor* v) { return v->visit(this); }
 int ExprStmtNode::accept(Visitor* v) { return v->visit(this); }
-int DeclStmt::accept(Visitor* v) { return v->visit(this); }
 int IfStmt::accept(Visitor* v) { return v->visit(this); }
 int WhileStmt::accept(Visitor* v) { return v->visit(this); }
 int DoWhileStmt::accept(Visitor* v) { return v->visit(this); }
 int ForStmt::accept(Visitor* v) { return v->visit(this); }
 int SwitchStmt::accept(Visitor* v) { return v->visit(this); }
 int CaseClause::accept(Visitor* v) { return v->visit(this); }
-int DefaultClause::accept(Visitor* v) { return v->visit(this); }
 int BreakStmt::accept(Visitor* v) { return v->visit(this); }
 int ContinueStmt::accept(Visitor* v) { return v->visit(this); }
 int ReturnStmt::accept(Visitor* v) { return v->visit(this); }
@@ -360,10 +357,6 @@ double EVALVisitor::visit(SizeOfNode* e) {
     return 0;
 }
 
-double EVALVisitor::visit(ParenthesizedExprNode* e) {
-    return e->expr->accept(this);
-}
-
 double EVALVisitor::visit(PrimitiveTypeNode* e) { return 0; }
 double EVALVisitor::visit(PointerTypeNode* e) { return 0; }
 double EVALVisitor::visit(StructTypeNode* e) { return 0; }
@@ -375,7 +368,6 @@ int EVALVisitor::visit(Body* s) {
     env.add_level();
     typeEnv.add_level();
     try {
-        for (auto v : s->vdlist) v->accept(this);
         for (auto st : s->stmts) st->accept(this);
     } catch (...) {
         typeEnv.remove_level();
@@ -390,10 +382,6 @@ int EVALVisitor::visit(Body* s) {
 int EVALVisitor::visit(ExprStmtNode* s) {
     if (s->expr) s->expr->accept(this);
     return 0;
-}
-
-int EVALVisitor::visit(DeclStmt* s) {
-    return s->decl->accept(this);
 }
 
 int EVALVisitor::visit(IfStmt* s) {
@@ -455,30 +443,24 @@ int EVALVisitor::visit(ForStmt* s) {
 int EVALVisitor::visit(SwitchStmt* s) {
     double val = s->expr->accept(this);
     bool matched = false;
-    for (auto c : s->cases) {
-        if (auto* cc = dynamic_cast<CaseClause*>(c)) {
-            double case_val = cc->value->accept(this);
-            if (matched || val == case_val) {
-                matched = true;
-                for (auto st : cc->body) {
-                    try { st->accept(this); } catch (BreakException&) { return 0; }
-                }
-            }
-        } else if (auto* dc = dynamic_cast<DefaultClause*>(c)) {
-            if (!matched) {
-                for (auto st : dc->body) {
-                    try { st->accept(this); } catch (BreakException&) { return 0; }
-                }
-            }
+    for (auto cc : s->cases) {
+        double case_val = cc->value->accept(this);
+        if (matched || val == case_val) {
             matched = true;
+            for (auto st : cc->body) {
+                try { st->accept(this); } catch (BreakException&) { return 0; }
+            }
+        }
+    }
+    if (!matched) {
+        for (auto st : s->default_body) {
+            try { st->accept(this); } catch (BreakException&) { return 0; }
         }
     }
     return 0;
 }
 
 int EVALVisitor::visit(CaseClause* s) { return 0; }
-int EVALVisitor::visit(DefaultClause* s) { return 0; }
-
 int EVALVisitor::visit(BreakStmt* s) { throw BreakException(); }
 int EVALVisitor::visit(ContinueStmt* s) { throw ContinueException(); }
 

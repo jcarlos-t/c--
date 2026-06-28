@@ -11,168 +11,157 @@ void Exp::computeAddress(CodeGenVisitor*) {
 }
 
 // ===================== BinaryOpNode =====================
-BinaryOpNode::BinaryOpNode(Exp* l, Exp* r, ::BinaryOp o)
-    : Exp(NodeKind::BinaryOp), left(l), right(r), op(o) {}
+BinaryOpNode::BinaryOpNode(Exp* l, Exp* r, BinaryOp o)
+    : Exp(), left(l), right(r), op(o) {}
 BinaryOpNode::~BinaryOpNode() { delete left; delete right; }
 
 // ===================== UnaryOpNode =====================
-UnaryOpNode::UnaryOpNode(Exp* o, ::UnaryOp uop)
-    : Exp(NodeKind::UnaryOp), operand(o), op(uop) {}
+UnaryOpNode::UnaryOpNode(Exp* o, UnaryOp uop)
+    : Exp(), operand(o), op(uop) {}
 UnaryOpNode::~UnaryOpNode() { delete operand; }
 
 // ===================== AssignmentNode =====================
 AssignmentNode::AssignmentNode(Exp* t, Exp* v, AssignOp o)
-    : Exp(NodeKind::Assignment), target(t), value(v), op(o) {}
+    : Exp(), target(t), value(v), op(o) {}
 AssignmentNode::~AssignmentNode() { delete target; delete value; }
 
 // ===================== TernaryOpNode =====================
 TernaryOpNode::TernaryOpNode(Exp* c, Exp* t, Exp* e)
-    : Exp(NodeKind::TernaryOp), condition(c), then_expr(t), else_expr(e) {}
+    : Exp(), condition(c), then_expr(t), else_expr(e) {}
 TernaryOpNode::~TernaryOpNode() { delete condition; delete then_expr; delete else_expr; }
 
 // ===================== FcallNode =====================
+FcallNode::FcallNode(Exp* c) : Exp(), callee(c) {}
 FcallNode::~FcallNode() { delete callee; for (auto a : args) delete a; }
 
 // ===================== MallocNode =====================
-MallocNode::MallocNode(Exp* s) : Exp(NodeKind::Malloc), size(s) {}
+MallocNode::MallocNode(Exp* s) : Exp(), size(s) {}
 MallocNode::~MallocNode() { delete size; }
 
 // ===================== IndexNode =====================
 IndexNode::IndexNode(Exp* b, Exp* i)
-    : Exp(NodeKind::Subscript), base(b), index(i) {}
+    : Exp(), base(b), index(i) {}
 IndexNode::~IndexNode() { delete base; delete index; }
 
 // ===================== MemberAccessNode =====================
 MemberAccessNode::MemberAccessNode(Exp* o, const string& m)
-    : Exp(NodeKind::MemberAccess), object(o), member(m) {}
+    : Exp(), object(o), member(m) {}
 MemberAccessNode::~MemberAccessNode() { delete object; }
 
 // ===================== ArrowAccessNode =====================
 ArrowAccessNode::ArrowAccessNode(Exp* p, const string& m)
-    : Exp(NodeKind::ArrowAccess), pointer(p), member(m) {}
+    : Exp(), pointer(p), member(m) {}
 ArrowAccessNode::~ArrowAccessNode() { delete pointer; }
 
 // ===================== CastNode =====================
 CastNode::CastNode(Exp* t, Exp* e)
-    : Exp(NodeKind::Cast), target_type(t), expr(e) {}
+    : Exp(), target_type(t), expr(e) {}
 CastNode::~CastNode() { delete target_type; delete expr; }
 
 // ===================== SizeOfNode =====================
-SizeOfNode::SizeOfNode(Exp* t) : Exp(NodeKind::SizeOf), target_type(t) {}
+SizeOfNode::SizeOfNode(Exp* t) : Exp(), target_type(t) {}
 SizeOfNode::~SizeOfNode() { delete target_type; }
 
 // ===================== IdentifierNode =====================
 IdentifierNode::IdentifierNode(const string& n)
-    : Exp(NodeKind::Identifier), name(n) {}
+    : Exp(), name(n) {}
 IdentifierNode::~IdentifierNode() {}
 
 // ===================== IntegerLiteralNode =====================
 IntegerLiteralNode::IntegerLiteralNode(long long v)
-    : Exp(NodeKind::IntegerLiteral), value(v) {}
+    : Exp(), value(v) {}
 
 // ===================== FloatLiteralNode =====================
 FloatLiteralNode::FloatLiteralNode(double v)
-    : Exp(NodeKind::FloatLiteral), value(v) {}
+    : Exp(), value(v) {}
 
 // ===================== BoolLiteralNode =====================
 BoolLiteralNode::BoolLiteralNode(bool v)
-    : Exp(NodeKind::BoolLiteral), value(v) {}
+    : Exp(), value(v) {}
 
 // ===================== CharLiteralNode =====================
 CharLiteralNode::CharLiteralNode(char v)
-    : Exp(NodeKind::CharLiteral), value(v) {}
+    : Exp(), value(v) {}
 
 // ===================== StringLiteralNode =====================
 StringLiteralNode::StringLiteralNode(const string& v)
-    : Exp(NodeKind::StringLiteral), value(v) {}
+    : Exp(), value(v) {}
 
-// ===================== ParenthesizedExprNode =====================
-ParenthesizedExprNode::ParenthesizedExprNode(Exp* e)
-    : Exp(NodeKind::ParenthesizedExpr), expr(e) {}
-ParenthesizedExprNode::~ParenthesizedExprNode() { delete expr; }
 
 // ===================== PrintfNode =====================
-PrintfNode::PrintfNode() : Exp(NodeKind::Printf) {}
+PrintfNode::PrintfNode() : Exp() {}
 PrintfNode::~PrintfNode() { for (auto a : args) delete a; }
 
 // ===================== Stm base =====================
 Stm::~Stm() {}
 
 // ===================== Body =====================
-Body::Body() : Stm(NodeKind::Body) {}
-Body::~Body() { for (auto s : stmts) delete s; for (auto v : vdlist) delete v; }
+Body::Body() : Stm() {}
+Body::~Body() { for (auto s : stmts) delete s; }
 
 // ===================== ExprStmtNode =====================
-ExprStmtNode::ExprStmtNode(Exp* e) : Stm(NodeKind::ExprStmt), expr(e) {}
+ExprStmtNode::ExprStmtNode(Exp* e) : Stm(), expr(e) {}
 ExprStmtNode::~ExprStmtNode() { delete expr; }
-
-// ===================== DeclStmt =====================
-DeclStmt::DeclStmt(VarDecl* d) : Stm(NodeKind::VariableDecl), decl(d) {}
-DeclStmt::~DeclStmt() { delete decl; }
 
 // ===================== IfStmt =====================
 IfStmt::IfStmt(Exp* c, Stm* t, Stm* e)
-    : Stm(NodeKind::IfStmt), condition(c), then_branch(t), else_branch(e) {}
+    : Stm(), condition(c), then_branch(t), else_branch(e) {}
 IfStmt::~IfStmt() { delete condition; delete then_branch; delete else_branch; }
 
 // ===================== WhileStmt =====================
 WhileStmt::WhileStmt(Exp* c, Stm* b)
-    : Stm(NodeKind::WhileStmt), condition(c), body(b) {}
+    : Stm(), condition(c), body(b) {}
 WhileStmt::~WhileStmt() { delete condition; delete body; }
 
 // ===================== DoWhileStmt =====================
 DoWhileStmt::DoWhileStmt(Stm* b, Exp* c)
-    : Stm(NodeKind::DoWhileStmt), body(b), condition(c) {}
+    : Stm(), body(b), condition(c) {}
 DoWhileStmt::~DoWhileStmt() { delete body; delete condition; }
 
 // ===================== ForStmt =====================
 ForStmt::ForStmt(Stm* i, Exp* c, Exp* inc, Stm* b)
-    : Stm(NodeKind::ForStmt), init(i), condition(c), increment(inc), body(b) {}
+    : Stm(), init(i), condition(c), increment(inc), body(b) {}
 ForStmt::~ForStmt() { delete init; delete condition; delete increment; delete body; }
 
 // ===================== SwitchStmt =====================
-SwitchStmt::SwitchStmt(Exp* e) : Stm(NodeKind::SwitchStmt), expr(e) {}
-SwitchStmt::~SwitchStmt() { delete expr; for (auto c : cases) delete c; }
+SwitchStmt::SwitchStmt(Exp* e) : Stm(), expr(e) {}
+SwitchStmt::~SwitchStmt() { delete expr; for (auto c : cases) delete c; for (auto s : default_body) delete s; }
 
 // ===================== CaseClause =====================
-CaseClause::CaseClause(Exp* v) : Stm(NodeKind::CaseClause), value(v) {}
+CaseClause::CaseClause(Exp* v) : Stm(), value(v) {}
 CaseClause::~CaseClause() { delete value; for (auto s : body) delete s; }
 
-// ===================== DefaultClause =====================
-DefaultClause::DefaultClause() : Stm(NodeKind::DefaultClause) {}
-DefaultClause::~DefaultClause() { for (auto s : body) delete s; }
-
 // ===================== BreakStmt =====================
-BreakStmt::BreakStmt() : Stm(NodeKind::BreakStmt) {}
+BreakStmt::BreakStmt() : Stm() {}
 
 // ===================== ContinueStmt =====================
-ContinueStmt::ContinueStmt() : Stm(NodeKind::ContinueStmt) {}
+ContinueStmt::ContinueStmt() : Stm() {}
 
 // ===================== ReturnStmt =====================
-ReturnStmt::ReturnStmt(Exp* e) : Stm(NodeKind::ReturnStmt), expr(e) {}
+ReturnStmt::ReturnStmt(Exp* e) : Stm(), expr(e) {}
 ReturnStmt::~ReturnStmt() { delete expr; }
 
 // ===================== FreeStmt =====================
-FreeStmt::FreeStmt(Exp* e) : Stm(NodeKind::FreeStmt), expr(e) {}
+FreeStmt::FreeStmt(Exp* e) : Stm(), expr(e) {}
 FreeStmt::~FreeStmt() { delete expr; }
 
 // ===================== VarDecl =====================
 VarDecl::VarDecl(Exp* t, const string& n)
-    : kind(NodeKind::VariableDecl), type(t), name(n), initializer(nullptr) {}
+    : Stm(), type(t), name(n), initializer(nullptr) {}
 VarDecl::~VarDecl() { delete type; for (auto s : array_sizes) delete s; delete initializer; }
 
 // ===================== FunDecl =====================
 FunDecl::FunDecl(Exp* rt, const string& n, Body* b)
-    : kind(NodeKind::FunctionDecl), return_type(rt), name(n), body(b), is_template(false) {}
+    : return_type(rt), name(n), body(b), is_template(false) {}
 FunDecl::~FunDecl() { delete return_type; for (auto p : params) delete p; delete body; }
 
 // ===================== StructDecl =====================
 StructDecl::StructDecl(const string& n)
-    : kind(NodeKind::StructDecl), name(n) {}
+    : name(n) {}
 StructDecl::~StructDecl() { for (auto m : members) delete m; }
 
 // ===================== Program =====================
-Program::Program() : kind(NodeKind::Program) {}
+Program::Program() {}
 Program::~Program() {
     for (auto f : functions) delete f;
     for (auto g : globals) delete g;
@@ -182,35 +171,35 @@ Program::~Program() {
 
 // ===================== PrimitiveTypeNode =====================
 PrimitiveTypeNode::PrimitiveTypeNode(Prim p)
-    : TypeNode(NodeKind::PrimitiveType), prim(p) {}
+    : TypeNode(), prim(p) {}
 
 // ===================== PointerTypeNode =====================
 PointerTypeNode::PointerTypeNode(TypeNode* b)
-    : TypeNode(NodeKind::PointerType), base(b) {}
+    : TypeNode(), base(b) {}
 PointerTypeNode::~PointerTypeNode() { delete base; }
 
 // ===================== StructTypeNode =====================
 StructTypeNode::StructTypeNode(const string& n)
-    : TypeNode(NodeKind::StructType), name(n) {}
+    : TypeNode(), name(n) {}
 
 // ===================== NamedTypeNode =====================
 NamedTypeNode::NamedTypeNode(const string& n)
-    : TypeNode(NodeKind::NamedType), name(n) {}
+    : TypeNode(), name(n) {}
 
 // ===================== TemplateTypeNode =====================
 TemplateTypeNode::TemplateTypeNode(const string& n, const vector<TypeNode*>& args)
-    : TypeNode(NodeKind::NamedType), name(n), type_args(args) {}
+    : TypeNode(), name(n), type_args(args) {}
 TemplateTypeNode::~TemplateTypeNode() {
     for (auto a : type_args) delete a;
 }
 
 // ===================== CaptureNode =====================
 CaptureNode::CaptureNode(Mode m, const string& n)
-    : Exp(NodeKind::Capture), mode(m), name(n) {}
+    : Exp(), mode(m), name(n) {}
 
 // ===================== LambdaExprNode =====================
 LambdaExprNode::LambdaExprNode(const vector<CaptureNode*>& caps, const vector<VarDecl*>& p, TypeNode* r, Body* b)
-    : Exp(NodeKind::LambdaExpr), captures(caps), params(p), return_type(r), body(b) {}
+    : Exp(), captures(caps), params(p), return_type(r), body(b) {}
 LambdaExprNode::~LambdaExprNode() {
     for (auto c : captures) delete c;
     for (auto p : params) delete p;
@@ -218,16 +207,12 @@ LambdaExprNode::~LambdaExprNode() {
     delete body;
 }
 
-// ===================== TemplateParam =====================
-TemplateParam::TemplateParam(const string& n) : kind(NodeKind::TemplateParam), name(n) {}
-
 // ===================== TemplateDecl =====================
-TemplateDecl::TemplateDecl(const vector<TemplateParam*>& p, FunDecl* f)
-    : kind(NodeKind::TemplateDecl), params(p), func(f), struct_decl(nullptr), is_function(true) {}
-TemplateDecl::TemplateDecl(const vector<TemplateParam*>& p, StructDecl* s)
-    : kind(NodeKind::TemplateDecl), params(p), func(nullptr), struct_decl(s), is_function(false) {}
+TemplateDecl::TemplateDecl(const vector<string>& p, FunDecl* f)
+    : params(p), func(f), struct_decl(nullptr), is_function(true) {}
+TemplateDecl::TemplateDecl(const vector<string>& p, StructDecl* s)
+    : params(p), func(nullptr), struct_decl(s), is_function(false) {}
 TemplateDecl::~TemplateDecl() {
-    for (auto p : params) delete p;
     delete func;
     delete struct_decl;
 }

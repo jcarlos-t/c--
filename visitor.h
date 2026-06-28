@@ -51,7 +51,6 @@ public:
     virtual double visit(CharLiteralNode* e) = 0;
     virtual double visit(StringLiteralNode* e) = 0;
     virtual double visit(PrintfNode* e) = 0;
-    virtual double visit(ParenthesizedExprNode* e) = 0;
     virtual double visit(PrimitiveTypeNode* e) = 0;
     virtual double visit(PointerTypeNode* e) = 0;
     virtual double visit(StructTypeNode* e) = 0;
@@ -60,14 +59,12 @@ public:
 
     virtual int visit(Body* s) = 0;
     virtual int visit(ExprStmtNode* s) = 0;
-    virtual int visit(DeclStmt* s) = 0;
     virtual int visit(IfStmt* s) = 0;
     virtual int visit(WhileStmt* s) = 0;
     virtual int visit(DoWhileStmt* s) = 0;
     virtual int visit(ForStmt* s) = 0;
     virtual int visit(SwitchStmt* s) = 0;
     virtual int visit(CaseClause* s) = 0;
-    virtual int visit(DefaultClause* s) = 0;
     virtual int visit(BreakStmt* s) = 0;
     virtual int visit(ContinueStmt* s) = 0;
     virtual int visit(ReturnStmt* s) = 0;
@@ -116,7 +113,6 @@ public:
     double visit(CharLiteralNode* e) override;
     double visit(StringLiteralNode* e) override;
     double visit(PrintfNode* e) override;
-    double visit(ParenthesizedExprNode* e) override;
     double visit(PrimitiveTypeNode* e) override;
     double visit(PointerTypeNode* e) override;
     double visit(StructTypeNode* e) override;
@@ -125,14 +121,12 @@ public:
 
     int visit(Body* s) override;
     int visit(ExprStmtNode* s) override;
-    int visit(DeclStmt* s) override;
     int visit(IfStmt* s) override;
     int visit(WhileStmt* s) override;
     int visit(DoWhileStmt* s) override;
     int visit(ForStmt* s) override;
     int visit(SwitchStmt* s) override;
     int visit(CaseClause* s) override;
-    int visit(DefaultClause* s) override;
     int visit(BreakStmt* s) override;
     int visit(ContinueStmt* s) override;
     int visit(ReturnStmt* s) override;
@@ -161,14 +155,12 @@ public:
     virtual void visit(TemplateDecl* d) = 0;
     virtual void visit(Body* b) = 0;
     virtual void visit(ExprStmtNode* s) = 0;
-    virtual void visit(DeclStmt* s) = 0;
     virtual void visit(IfStmt* s) = 0;
     virtual void visit(WhileStmt* s) = 0;
     virtual void visit(DoWhileStmt* s) = 0;
     virtual void visit(ForStmt* s) = 0;
     virtual void visit(SwitchStmt* s) = 0;
     virtual void visit(CaseClause* s) = 0;
-    virtual void visit(DefaultClause* s) = 0;
     virtual void visit(BreakStmt* s) = 0;
     virtual void visit(ContinueStmt* s) = 0;
     virtual void visit(ReturnStmt* s) = 0;
@@ -194,7 +186,6 @@ public:
     virtual ::Type* visit(CharLiteralNode* e) = 0;
     virtual ::Type* visit(StringLiteralNode* e) = 0;
     virtual ::Type* visit(PrintfNode* e) = 0;
-    virtual ::Type* visit(ParenthesizedExprNode* e) = 0;
     virtual ::Type* visit(PrimitiveTypeNode* e) = 0;
     virtual ::Type* visit(PointerTypeNode* e) = 0;
     virtual ::Type* visit(StructTypeNode* e) = 0;
@@ -251,14 +242,12 @@ public:
     void visit(TemplateDecl* d) override;
     void visit(Body* b) override;
     void visit(ExprStmtNode* s) override;
-    void visit(DeclStmt* s) override;
     void visit(IfStmt* s) override;
     void visit(WhileStmt* s) override;
     void visit(DoWhileStmt* s) override;
     void visit(ForStmt* s) override;
     void visit(SwitchStmt* s) override;
     void visit(CaseClause* s) override;
-    void visit(DefaultClause* s) override;
     void visit(BreakStmt* s) override;
     void visit(ContinueStmt* s) override;
     void visit(ReturnStmt* s) override;
@@ -284,7 +273,6 @@ public:
     ::Type* visit(CharLiteralNode* e) override;
     ::Type* visit(StringLiteralNode* e) override;
     ::Type* visit(PrintfNode* e) override;
-    ::Type* visit(ParenthesizedExprNode* e) override;
     ::Type* visit(PrimitiveTypeNode* e) override;
     ::Type* visit(PointerTypeNode* e) override;
     ::Type* visit(StructTypeNode* e) override;
@@ -317,7 +305,6 @@ public:
     virtual void visit(CharLiteralNode* e) = 0;
     virtual void visit(StringLiteralNode* e) = 0;
     virtual void visit(PrintfNode* e) = 0;
-    virtual void visit(ParenthesizedExprNode* e) = 0;
     virtual void visit(PrimitiveTypeNode* e) = 0;
     virtual void visit(PointerTypeNode* e) = 0;
     virtual void visit(StructTypeNode* e) = 0;
@@ -328,14 +315,12 @@ public:
 
     virtual void visit(Body* s) = 0;
     virtual void visit(ExprStmtNode* s) = 0;
-    virtual void visit(DeclStmt* s) = 0;
     virtual void visit(IfStmt* s) = 0;
     virtual void visit(WhileStmt* s) = 0;
     virtual void visit(DoWhileStmt* s) = 0;
     virtual void visit(ForStmt* s) = 0;
     virtual void visit(SwitchStmt* s) = 0;
     virtual void visit(CaseClause* s) = 0;
-    virtual void visit(DefaultClause* s) = 0;
     virtual void visit(BreakStmt* s) = 0;
     virtual void visit(ContinueStmt* s) = 0;
     virtual void visit(ReturnStmt* s) = 0;
@@ -414,7 +399,6 @@ public:
     void visit(CharLiteralNode *e) override;
     void visit(StringLiteralNode *e) override;
     void visit(PrintfNode *e) override;
-    void visit(ParenthesizedExprNode *e) override;
     void visit(PrimitiveTypeNode *e) override;
     void visit(PointerTypeNode *e) override;
     void visit(StructTypeNode *e) override;
@@ -425,14 +409,12 @@ public:
 
     void visit(Body *s) override;
     void visit(ExprStmtNode *s) override;
-    void visit(DeclStmt *s) override;
     void visit(IfStmt *s) override;
     void visit(WhileStmt *s) override;
     void visit(DoWhileStmt *s) override;
     void visit(ForStmt *s) override;
     void visit(SwitchStmt *s) override;
     void visit(CaseClause *s) override;
-    void visit(DefaultClause *s) override;
     void visit(BreakStmt *s) override;
     void visit(ContinueStmt *s) override;
     void visit(ReturnStmt *s) override;

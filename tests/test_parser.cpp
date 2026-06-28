@@ -82,7 +82,7 @@ void test_template_struct_parse() {
     TemplateDecl* td = p->templates[0];
     T_ASSERT(!td->is_function);
     T_ASSERT(td->params.size() == 1);
-    T_ASSERT(td->params[0]->name == "T");
+    T_ASSERT(td->params[0] == "T");
     T_ASSERT(td->struct_decl != nullptr);
     T_ASSERT(td->struct_decl->name == "Pair");
     T_ASSERT(td->struct_decl->members.size() == 2);
@@ -102,9 +102,9 @@ void test_template_type_instantiation() {
     Body* b = p->functions[0]->body;
     T_ASSERT(b != nullptr);
     T_ASSERT(b->stmts.size() == 1);
-    DeclStmt* ds = dynamic_cast<DeclStmt*>(b->stmts[0]);
-    T_ASSERT(ds != nullptr);
-    TemplateTypeNode* tt = dynamic_cast<TemplateTypeNode*>(ds->decl->type);
+    VarDecl* vd = dynamic_cast<VarDecl*>(b->stmts[0]);
+    T_ASSERT(vd != nullptr);
+    TemplateTypeNode* tt = dynamic_cast<TemplateTypeNode*>(vd->type);
     T_ASSERT(tt != nullptr);
     T_ASSERT(tt->name == "Box");
     T_ASSERT(tt->type_args.size() == 1);

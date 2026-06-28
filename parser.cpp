@@ -149,11 +149,11 @@ void Parser::parse_declaration(Program* p) {
     //                      ( function_declaration | struct_declaration )
     if (match(Token::TEMPLATE)) {
         consume(Token::LT, "Se esperaba '<' después de template");
-        vector<TemplateParam*> tparams;
+        vector<string> tparams;
         do {
             consume(Token::TYPENAME, "Se esperaba 'typename'");
             Token* tname = consume(Token::ID, "Se esperaba nombre del parámetro de template");
-            tparams.push_back(new TemplateParam(tname->text));
+            tparams.push_back(tname->text);
             current_template_params.insert(tname->text);
         } while (match(Token::COMA));
         consume(Token::GT, "Se esperaba '>' después de template");
@@ -172,7 +172,7 @@ void Parser::parse_declaration(Program* p) {
         }
 
         for (auto tp : tparams)
-            current_template_params.erase(tp->name);
+            current_template_params.erase(tp);
         return;
     }
 
@@ -346,7 +346,7 @@ bool Parser::can_start_type() {
 
 Stm* Parser::parse_statement() {
     if (can_start_type()) {
-        return new DeclStmt(parse_local_var_decl());
+        return parse_local_var_decl();
     }
     if (check(Token::LBRACE))
         return parse_compound_statement();
@@ -454,7 +454,7 @@ Stm* Parser::parse_for_statement() {
     Stm* init = nullptr;
     if (!check(Token::SEMICOL)) {
         if (can_start_type()) {
-            init = new DeclStmt(parse_local_var_decl());
+            init = parse_local_var_decl();
         } else {
             Exp* e = parse_expression();
             init = new ExprStmtNode(e);
@@ -497,10 +497,8 @@ Stm* Parser::parse_switch_statement() {
             ss->cases.push_back(cc);
         } else if (match(Token::DEFAULT)) {
             consume(Token::COLON, "Se esperaba ':' después de default");
-            DefaultClause* dc = new DefaultClause();
             while (!check(Token::CASE) && !check(Token::DEFAULT) && !check(Token::RBRACE) && !isAtEnd())
-                dc->body.push_back(parse_statement());
-            ss->cases.push_back(dc);
+                ss->default_body.push_back(parse_statement());
         }
     }
     consume(Token::RBRACE, "Se esperaba '}'");
@@ -734,7 +732,7 @@ Exp* Parser::parse_cast() {
         // current already points to the first token after '('
         Exp* expr = parse_expression();
         consume(Token::RPAREN, "Se esperaba ')'");
-        return new ParenthesizedExprNode(expr);
+        return expr;
     }
     return parse_unary();
 }
@@ -881,7 +879,7 @@ Exp* Parser::parse_primary() {
     if (match(Token::LPAREN)) {
         Exp* expr = parse_expression();
         consume(Token::RPAREN, "Se esperaba ')'");
-        return new ParenthesizedExprNode(expr);
+        return expr;
     }
     if (match(Token::MALLOC)) {
         consume(Token::LPAREN, "Se esperaba '(' después de malloc");
