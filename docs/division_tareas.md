@@ -12,7 +12,7 @@ Persona 3 -> Paulo
 |---|---|
 | **Lexer** | Implementar tokenización del código fuente: palabras clave, identificadores, literales (enteros, flotantes, chars, strings). Manejo de errores léxicos. |
 | **Parser** | Construir el AST (recursive descent) a partir de los tokens según la gramática EBNF especificada. Manejo de errores sintácticos. |
-| **AST Nodes** | Implementar todas las estructuras de nodos del AST (`ast.md`) y la función `freeNode` para liberación de memoria. |
+| **AST Nodes** | Implementar todas las estructuras de nodos del AST (ver `lenguaje.md` sección 4) y la liberación de memoria en destructores. |
 | **Aplicación (bono)** | Desarrollar la interfaz funcional con: editor de código, visualización del AST, visualización del assembly generado, y ejecución con resultados. |
 
 **Dependencias externas:** Ninguna. Puede trabajar con ASTs de prueba desde el día 1.
@@ -31,8 +31,8 @@ Persona 3 -> Paulo
 | **Verificación de Tipos** | Recorrer el AST validando compatibilidad de tipos en asignaciones, expresiones binarias, llamadas a función, retornos, etc. |
 | **Características Avanzadas** | Inferencia (`auto`), conversión/promoción automática, punteros, arreglos multidimensionales, plantillas (instanciación básica), lambdas. |
 | **Errores Semánticos** | Reportar: variable no declarada, tipo incompatible, argumentos incorrectos, break/continue fuera de ciclo, etc. |
+**Dependencias externas:** AST (ver `lenguaje.md` sección 4). Puede usar mocks del AST mientras Persona 1 termina.
 
-**Dependencias externas:** AST (`ast.md`). Puede usar mocks del AST mientras Persona 1 termina.
 **Contrato de entrada:** AST (`Program*`).
 **Contrato de salida:** AST semánticamente válido o lista de errores semánticos.
 

@@ -323,5 +323,5 @@ currentContinueLabel = oldContinue;
 ## 9. Referencias
 
 - `base_lab/Labactual/visitor.cpp` — implementación de referencia (GenCodeVisitor, 819 líneas)
-- `docs/ast.md` — documentación del AST y los visitors
+- `docs/lenguaje.md` (sección 4) — documentación del AST y los visitors
 - System V AMD64 ABI — convención de llamada

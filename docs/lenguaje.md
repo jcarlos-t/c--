@@ -73,7 +73,7 @@ post_expr   = prim_expr { "[" expr "]" | "(" [ arg_list ] ")"
                         | "." ID | "->" ID | "++" | "--" }
 arg_list    = assign_expr ("," assign_expr)*
 prim_expr   = ID | const | "(" expr ")" | "malloc" "(" expr ")"
-            | "sizeof" "(" type ")" | lambda_expr
+            | "sizeof" "(" type ")" | "printf" "(" arg_list ")" | lambda_expr
 
 // constantes
 const       = intc | floatc | charc | boolc | str
@@ -148,6 +148,7 @@ digit       = "0".."9"
 | Llamada a función          | Aridad y tipos coinciden con firma declarada         |
 | `return`                   | Tipo debe coincidir con tipo de retorno              |
 | `break` / `continue`       | Solo dentro de `while`, `for`, `do-while` o `switch` |
+| `malloc` / `free`          | `malloc` retorna `void*`; `free` recibe `void*`      |
 
 ### 2.4 Conversiones
 
@@ -177,13 +178,133 @@ Scanner (lexer) ──► tokens
     ▼
 Parser (recursive descent) ──► AST (Program*)
     │
-    ├─► PrintVisitor ──► pretty-print del AST (debug)
     ├─► EVALVisitor ──► interpretación directa (prototipado)
     ├─► TypeChecker ──► verificación semántica (errores acumulativos)
-    └─► CodeGenVisitor ──► código ensamblador x86-64 (AT&T/GAS)
+    └─► GenCodeVisitor ──► código ensamblador x86-64 (AT&T/GAS)
 ```
 
-El AST usa **triple dispatch**: cada nodo implementa `accept(Visitor*)`,
-`accept(TypeVisitor*)` y `accept(CodeGenVisitor*)`. La jerarquía de nodos es
-`Exp` (expresiones) y `Stm` (sentencias), con `VarDecl`, `FunDecl`, `StructDecl`,
-`Program`, `TemplateDecl` como nodos de declaración independientes.
+---
+
+## 4. Estructura del AST
+
+### 4.1 Jerarquía de nodos
+
+El AST usa **triple dispatch**: cada nodo implementa tres métodos `accept`:
+
+| Jerarquía | Clase Base | Retorno Exp | Retorno Stm | Propósito |
+|-----------|-----------|-------------|-------------|-----------|
+| `Visitor` | `Visitor` | `double` | `int` | Interpretación (`EVALVisitor`) |
+| `TypeVisitor` | `TypeVisitor` | `Type*` | `void` | Type checking (`TypeChecker`) |
+| `CodeGenVisitor` | `CodeGenVisitor` | `void` | `void` | Code generation x86-64 (`GenCodeVisitor`) |
+
+Las clases base del AST son:
+
+- **`Exp`** — expresión (retorna `double` en EVAL, `Type*` en TypeChecker)
+- **`Stm`** — sentencia (retorna `int` en EVAL, `void` en TypeChecker)
+- **Nodos independientes** — `VarDecl`, `FunDecl`, `StructDecl`, `Program`, `TemplateDecl`
+
+### 4.2 Árbol de relaciones
+
+```
+Program
+├── FunDecl
+│   ├── TypeNode (return_type: PrimitiveTypeNode / PointerTypeNode / StructTypeNode / ...)
+│   ├── VarDecl* params
+│   └── Body
+│       └── Stm*
+│
+├── VarDecl (globals)
+│   ├── TypeNode (type)
+│   ├── array_sizes[] (Expression)
+│   └── initializer (optional Expression)
+│
+├── StructDecl
+│   ├── name
+│   └── VarDecl* members
+│
+└── TemplateDecl
+    ├── params[] (strings: nombres de parámetros de tipo)
+    └── FunDecl / StructDecl (patrón)
+
+Statements (Stm)
+├── Body ── stmts[]
+├── ExprStmtNode ── expr (puede ser null: ;)
+├── IfStmt ── condition, then_branch, [else_branch]
+├── WhileStmt ── condition, body
+├── DoWhileStmt ── body, condition
+├── ForStmt ── init, condition, increment, body
+├── SwitchStmt ── expr, cases[], default_body[]
+├── CaseClause ── value, body[]
+├── BreakStmt
+├── ContinueStmt
+├── ReturnStmt ── [expr]
+├── FreeStmt ── expr
+└── VarDecl (declaración local)
+
+Expressions (Exp)
+├── BinaryOpNode ── left, right (ADD, SUB, MUL, DIV, MOD, EQ, NE, LT, GT, LE, GE, LOG_AND, LOG_OR, POW, COMMA)
+├── UnaryOpNode ── operand (ADDR, DEREF, MINUS, LOG_NOT, PRE_INC, PRE_DEC, POST_INC, POST_DEC)
+├── AssignmentNode ── target, value (ASSIGN, ADD_ASSIGN, SUB_ASSIGN, MUL_ASSIGN, DIV_ASSIGN)
+├── TernaryOpNode ── condition, then_expr, else_expr
+├── FcallNode ── callee, args[], template_args[]
+├── IndexNode ── base, index
+├── MemberAccessNode ── object, member
+├── ArrowAccessNode ── pointer, member
+├── MallocNode ── size
+├── CastNode ── target_type, expr
+├── SizeOfNode ── target_type
+├── PrintfNode ── args[]
+├── LambdaExprNode ── captures[], params[], return_type, body
+├── CaptureNode ── mode (BY_VALUE / BY_REF), name
+├── IdentifierNode ── name
+├── IntegerLiteralNode ── value
+├── FloatLiteralNode ── value
+├── BoolLiteralNode ── value
+├── CharLiteralNode ── value
+├── StringLiteralNode ── value
+└── TypeNode (base para tipos)
+    ├── PrimitiveTypeNode ── prim (VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, AUTO)
+    ├── PointerTypeNode ── base (TypeNode)
+    ├── StructTypeNode ── name
+    ├── NamedTypeNode ── name (placeholder para tipos no resueltos: params de template)
+    └── TemplateTypeNode ── name, type_args[] (instanciación concreta: vector<int>)
+```
+
+La identificación de tipos de nodos en tiempo de ejecución se hace mediante
+`dynamic_cast` (no se usa `enum class NodeKind`).
+
+### 4.3 Lvalue handling (`computeAddress`)
+
+Para generación de código, la asignación requiere distinguir entre:
+
+- **Rvalue** (`visit`) — evaluar una expresión, dejar el valor en `%rax`
+- **Lvalue** (`computeAddress`) — calcular la dirección efectiva de un lvalue y dejarla en `%rbx` para almacenar
+
+El método `computeAddress` está declarado en `Exp` con una implementación
+default que lanza error ("not an lvalue"). Los siguientes nodos lo overriddean:
+
+| Nodo | Descripción |
+|------|-------------|
+| `UnaryOpNode` (solo DEREF) | Dirección del apuntado (`*ptr`) |
+| `IdentifierNode` | Dirección de variable (`x`) |
+| `IndexNode` | Dirección de elemento de array (`arr[i]`) |
+| `MemberAccessNode` | Dirección de miembro de struct (`s.m`) |
+| `ArrowAccessNode` | Dirección de miembro vía puntero (`p->m`) |
+
+Patrón de uso en asignación simple (`=`):
+
+```
+visit(RHS)             → valor en %rax
+target->computeAddress(this) → dirección en %rbx
+emit "movq %rax, (%rbx)"     → almacenar
+```
+
+Para asignación compuesta (`+=`, etc.), primero se calcula la dirección,
+luego se carga el valor actual, se aplica la operación, y se almacena
+el resultado.
+
+### 4.4 Memoria
+
+El AST usa **propiedad exclusiva** via raw pointers. `Program` es el nodo
+raíz y es responsable de liberar todo el árbol: cada destructor elimina
+sus hijos recursivamente.
