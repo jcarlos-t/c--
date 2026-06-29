@@ -9,7 +9,7 @@
 using namespace std;
 
 // =============================
-// Constructor & helpers
+// Constructor y helpers
 // =============================
 
 Parser::Parser(Scanner* sc) : scanner(sc) {
@@ -20,6 +20,7 @@ Parser::Parser(Scanner* sc) : scanner(sc) {
     }
 }
 
+// match: si el token actual es ttype, avanza y retorna true
 bool Parser::match(Token::Type ttype) {
     if (check(ttype)) {
         advance();
@@ -28,11 +29,13 @@ bool Parser::match(Token::Type ttype) {
     return false;
 }
 
+// check: true si el token actual es ttype (sin consumir)
 bool Parser::check(Token::Type ttype) const {
     if (isAtEnd()) return false;
     return current->type == ttype;
 }
 
+// advance: avanza al siguiente token, libera el anterior
 bool Parser::advance() {
     if (!isAtEnd()) {
         Token* temp = current;
@@ -47,10 +50,12 @@ bool Parser::advance() {
     return false;
 }
 
+// isAtEnd: true si el token actual es END
 bool Parser::isAtEnd() const {
     return current->type == Token::END;
 }
 
+// consume: si coincide, avanza; si no, lanza error con msg
 Token* Parser::consume(Token::Type ttype, const string& msg) {
     if (check(ttype)) {
         Token* t = current;
@@ -63,16 +68,41 @@ Token* Parser::consume(Token::Type ttype, const string& msg) {
     throw runtime_error(oss.str());
 }
 
+// sync_error: lanza error sintáctico con línea/columna
 void Parser::sync_error(const string& msg) {
     ostringstream oss;
     oss << "line " << current->line << ":" << current->col << " - Error sintáctico: " << msg;
     throw runtime_error(oss.str());
 }
 
+// Helper: is_type_start
+
+// is_type_start: true si el token actual puede iniciar un tipo
+bool Parser::is_type_start() const {
+    return check(Token::VOID) || check(Token::INT) || check(Token::CHAR) ||
+           check(Token::FLOAT) || check(Token::DOUBLE) || check(Token::BOOL) ||
+           check(Token::AUTO) || check(Token::STRUCT);
+}
+
+// can_start_type: true si el siguiente token puede ser tipo o tipo temlate ID<>
+bool Parser::can_start_type() {
+    if (is_type_start()) return true;
+    if (check(Token::ID)) {
+        Scanner::Pos saved = scanner->getPos();
+        Token* next = scanner->nextToken();
+        bool result = (next->type == Token::LT);
+        delete next;
+        scanner->setPos(saved);
+        return result;
+    }
+    return false;
+}
+
 // =============================
-// Types (grammar.md §3)
+// Types
 // =============================
 
+// parse_type: parsea tipo básico + cero o más '*' (punteros)
 TypeNode* Parser::parse_type() {
     TypeNode* base = parse_basic_type();
     while (match(Token::STAR)) {
@@ -81,6 +111,7 @@ TypeNode* Parser::parse_type() {
     return base;
 }
 
+// parse_basic_type: parsea void/int/char/float/double/bool/auto/struct/template
 TypeNode* Parser::parse_basic_type() {
     if (match(Token::VOID))
         return new PrimitiveTypeNode(PrimitiveTypeNode::VOID);
@@ -96,18 +127,22 @@ TypeNode* Parser::parse_basic_type() {
         return new PrimitiveTypeNode(PrimitiveTypeNode::BOOL);
     if (match(Token::AUTO))
         return new PrimitiveTypeNode(PrimitiveTypeNode::AUTO);
+    // struct person <- esto es un tipo
     if (match(Token::STRUCT)) {
         Token* name = consume(Token::ID, "Se esperaba nombre de struct");
         return new StructTypeNode(name->text);
     }
+    // para tipos por template
     if (check(Token::ID)) {
         string tname = current->text;
+        // hay tipo template con ese id
         if (current_template_params.count(tname)) {
             advance();
             return new NamedTypeNode(tname);
         }
         Scanner::Pos saved = scanner->getPos();
         advance();
+        // instancia concreta de template: Nombre<T1, T2, ...>
         if (match(Token::LT)) {
             vector<TypeNode*> targs;
             do {
@@ -116,6 +151,7 @@ TypeNode* Parser::parse_basic_type() {
             consume(Token::GT, "Se esperaba '>' en instanciación de template");
             return new TemplateTypeNode(tname, targs);
         }
+        // rollback: no era un template, puede ser un id
         scanner->setPos(saved);
         delete current;
         delete previous;
@@ -127,7 +163,7 @@ TypeNode* Parser::parse_basic_type() {
 }
 
 // =============================
-// Program & Declarations (grammar.md §1-2)
+// Program y Declarations
 // =============================
 
 Program* Parser::parse_program() {
@@ -144,6 +180,7 @@ Program* Parser::parseProgram() {
     return p;
 }
 
+// parse_declaration: parsea template, struct, función o variable global
 void Parser::parse_declaration(Program* p) {
     // Template declaration: "template" "<" template_parameter_list ">"
     //                      ( function_declaration | struct_declaration )
@@ -158,10 +195,12 @@ void Parser::parse_declaration(Program* p) {
         } while (match(Token::COMA));
         consume(Token::GT, "Se esperaba '>' después de template");
 
+        // template<> strunct
         if (check(Token::STRUCT)) {
             StructDecl* sd = parse_struct_decl();
             TemplateDecl* td = new TemplateDecl(tparams, sd);
             p->templates.push_back(td);
+        // template<> function
         } else {
             TypeNode* ttype = parse_type();
             Token* tname = consume(Token::ID, "Se esperaba nombre de función");
@@ -199,8 +238,7 @@ void Parser::parse_declaration(Program* p) {
                 return;
             }
         }
-        // Not a struct declaration — restore scanner and fall through to parse_type
-        // Note: parser state (current/previous) is corrupt, so we rebuild by re-scanning
+        // rollback: no era declaracion de struct, puede ser instanciación: struct name x;
         scanner->setPos(saved);
         delete current;
         delete previous;
@@ -208,7 +246,7 @@ void Parser::parse_declaration(Program* p) {
         current = scanner->nextToken();
     }
 
-    // Parse type first
+    // funct | vardec
     TypeNode* type = parse_type();
 
     if (check(Token::ID)) {
@@ -231,9 +269,10 @@ void Parser::parse_declaration(Program* p) {
 }
 
 // =============================
-// Function declaration (grammar.md §2)
+// Function declaration
 // =============================
 
+// parse_function_decl: parsea params y cuerpo de función
 FunDecl* Parser::parse_function_decl(Exp* ret_type, const string& name) {
     FunDecl* fd = new FunDecl(ret_type, name, nullptr);
     fd->loc.line = current->line; fd->loc.column = current->col;
@@ -253,15 +292,12 @@ FunDecl* Parser::parse_function_decl(Exp* ret_type, const string& name) {
     return fd;
 }
 
-// =============================
-// Variable declaration (grammar.md §2)
-// =============================
-
+// parse_variable_decl: parsea arreglos opcionales e inicializador
 VarDecl* Parser::parse_variable_decl(Exp* type, const string& name) {
     VarDecl* vd = new VarDecl(type, name);
     vd->loc.line = current->line; vd->loc.column = current->col;
 
-    // array_suffix
+    // array_suffixz
     while (match(Token::LBRACKET)) {
         if (!check(Token::RBRACKET)) {
             vd->array_sizes.push_back(parse_expression());
@@ -282,6 +318,7 @@ VarDecl* Parser::parse_variable_decl(Exp* type, const string& name) {
 // Struct declaration
 // =============================
 
+// parse_struct_decl: parsea struct ID { miembros }
 StructDecl* Parser::parse_struct_decl() {
     consume(Token::STRUCT, "Se esperaba 'struct'");
     Token* name = consume(Token::ID, "Se esperaba nombre del struct");
@@ -300,9 +337,10 @@ StructDecl* Parser::parse_struct_decl() {
 }
 
 // =============================
-// Parameters (grammar.md §4)
+// Parameters
 // =============================
 
+// parse_parameter: parsea type id [array_suffix] para parámetros
 VarDecl* Parser::parse_parameter() {
     TypeNode* type = parse_type();
     Token* name = consume(Token::ID, "Se esperaba nombre del parámetro");
@@ -317,37 +355,17 @@ VarDecl* Parser::parse_parameter() {
     return param;
 }
 
-// =============================
-// Helper: is_type_start
-// =============================
-
-bool Parser::is_type_start() const {
-    return check(Token::VOID) || check(Token::INT) || check(Token::CHAR) ||
-           check(Token::FLOAT) || check(Token::DOUBLE) || check(Token::BOOL) ||
-           check(Token::AUTO) || check(Token::STRUCT);
-}
-
-bool Parser::can_start_type() {
-    if (is_type_start()) return true;
-    if (check(Token::ID)) {
-        Scanner::Pos saved = scanner->getPos();
-        Token* next = scanner->nextToken();
-        bool result = (next->type == Token::LT);
-        delete next;
-        scanner->setPos(saved);
-        return result;
-    }
-    return false;
-}
 
 // =============================
-// Statements (grammar.md §5)
+// Statements
 // =============================
 
+// parse_statement: parsea cualquier sentencia (if, while, for, switch, break, continue, return, free, expr, decl local)
 Stm* Parser::parse_statement() {
     if (can_start_type()) {
         return parse_local_var_decl();
     }
+    // body {....}
     if (check(Token::LBRACE))
         return parse_compound_statement();
     if (check(Token::IF))
@@ -398,12 +416,14 @@ Stm* Parser::parse_statement() {
     return new ExprStmtNode(expr);
 }
 
+// parse_local_var_decl: parsea declaración de variable local
 VarDecl* Parser::parse_local_var_decl() {
     TypeNode* type = parse_type();
     Token* name = consume(Token::ID, "Se esperaba identificador");
     return parse_variable_decl(type, name->text);
 }
 
+// parse_compound_statement: parsea { stmts }
 Stm* Parser::parse_compound_statement() {
     Body* cs = new Body();
     consume(Token::LBRACE, "Se esperaba '{'");
@@ -414,6 +434,7 @@ Stm* Parser::parse_compound_statement() {
     return cs;
 }
 
+// parse_if_statement: parsea if (cond) stmt [else stmt]
 Stm* Parser::parse_if_statement() {
     consume(Token::IF, "Se esperaba 'if'");
     consume(Token::LPAREN, "Se esperaba '(' después de if");
@@ -427,6 +448,7 @@ Stm* Parser::parse_if_statement() {
     return new IfStmt(cond, then_branch, else_branch);
 }
 
+// parse_while_statement: parsea while (cond) stmt
 Stm* Parser::parse_while_statement() {
     consume(Token::WHILE, "Se esperaba 'while'");
     consume(Token::LPAREN, "Se esperaba '(' después de while");
@@ -436,6 +458,7 @@ Stm* Parser::parse_while_statement() {
     return new WhileStmt(cond, body);
 }
 
+// parse_do_while_statement: parsea do stmt while (cond);
 Stm* Parser::parse_do_while_statement() {
     consume(Token::DO, "Se esperaba 'do'");
     Stm* body = parse_statement();
@@ -447,6 +470,7 @@ Stm* Parser::parse_do_while_statement() {
     return new DoWhileStmt(body, cond);
 }
 
+// parse_for_statement: parsea for (init; cond; inc) stmt
 Stm* Parser::parse_for_statement() {
     consume(Token::FOR, "Se esperaba 'for'");
     consume(Token::LPAREN, "Se esperaba '(' después de for");
@@ -478,6 +502,7 @@ Stm* Parser::parse_for_statement() {
     return new ForStmt(init, condition, increment, body);
 }
 
+// parse_switch_statement: parsea switch (expr) { case/default: ... }
 Stm* Parser::parse_switch_statement() {
     consume(Token::SWITCH, "Se esperaba 'switch'");
     consume(Token::LPAREN, "Se esperaba '(' después de switch");
@@ -505,6 +530,7 @@ Stm* Parser::parse_switch_statement() {
     return ss;
 }
 
+// parse_return_statement: parsea return [expr];
 Stm* Parser::parse_return_statement() {
     consume(Token::RETURN, "Se esperaba 'return'");
     int rl = previous->line, rc = previous->col;
@@ -519,9 +545,10 @@ Stm* Parser::parse_return_statement() {
 }
 
 // =============================
-// Expressions (grammar.md §6)
+// Expressions
 // =============================
 
+// parse_expression: parsea expresiones separadas por coma
 Exp* Parser::parse_expression() {
     Exp* l = parse_assignment();
     while (match(Token::COMA)) {
@@ -531,6 +558,7 @@ Exp* Parser::parse_expression() {
     return l;
 }
 
+// parse_assignment: parsea = += -= *= /= (asociativo a derecha)
 Exp* Parser::parse_assignment() {
     Exp* l = parse_conditional();
     if (match(Token::ASSIGN)) {
@@ -552,6 +580,7 @@ Exp* Parser::parse_assignment() {
     return l;
 }
 
+// parse_conditional: parsea operador ternario ? :
 Exp* Parser::parse_conditional() {
     Exp* cond = parse_logical_or();
     if (match(Token::QUESTION)) {
@@ -563,6 +592,7 @@ Exp* Parser::parse_conditional() {
     return cond;
 }
 
+// parse_logical_or: parsea ||
 Exp* Parser::parse_logical_or() {
     Exp* l = parse_logical_and();
     while (match(Token::OR)) {
@@ -572,6 +602,7 @@ Exp* Parser::parse_logical_or() {
     return l;
 }
 
+// parse_logical_and: parsea &&
 Exp* Parser::parse_logical_and() {
     Exp* l = parse_equality();
     while (match(Token::AND)) {
@@ -581,6 +612,7 @@ Exp* Parser::parse_logical_and() {
     return l;
 }
 
+// parse_equality: parsea == !=
 Exp* Parser::parse_equality() {
     Exp* l = parse_relational();
     while (true) {
@@ -595,6 +627,7 @@ Exp* Parser::parse_equality() {
     return l;
 }
 
+// parse_relational: parsea < > <= >=
 Exp* Parser::parse_relational() {
     Exp* l = parse_additive();
     while (true) {
@@ -615,6 +648,7 @@ Exp* Parser::parse_relational() {
     return l;
 }
 
+// parse_additive: parsea + -
 Exp* Parser::parse_additive() {
     Exp* l = parse_multiplicative();
     while (true) {
@@ -629,6 +663,7 @@ Exp* Parser::parse_additive() {
     return l;
 }
 
+// parse_multiplicative: parsea * / %
 Exp* Parser::parse_multiplicative() {
     Exp* l = parse_pow();
     while (true) {
@@ -646,6 +681,7 @@ Exp* Parser::parse_multiplicative() {
     return l;
 }
 
+// parse_pow: parsea ^ (potencia, asociativo a derecha)
 Exp* Parser::parse_pow() {
     Exp* l = parse_cast();
     if (match(Token::POW)) {
@@ -655,9 +691,8 @@ Exp* Parser::parse_pow() {
     return l;
 }
 
+// parse_cast: parsea (type)expr o expresión parentizada: (int)x, (struct x)y, (p<z>)x
 Exp* Parser::parse_cast() {
-    // C-style cast: (type) expr
-    // Check by looking at what follows '('
     if (check(Token::LPAREN)) {
         Scanner::Pos saved = scanner->getPos();
         advance(); // consume '('
@@ -668,8 +703,7 @@ Exp* Parser::parse_cast() {
         if (check(Token::VOID) || check(Token::INT) || check(Token::CHAR) ||
             check(Token::FLOAT) || check(Token::DOUBLE) || check(Token::BOOL) ||
             check(Token::AUTO)) {
-            // Could be cast like (int)expr
-            advance(); // consume type keyword
+            advance();
             if (check(Token::RPAREN)) {
                 is_cast = true;
                 cast_type = new PrimitiveTypeNode(
@@ -727,9 +761,7 @@ Exp* Parser::parse_cast() {
             Exp* operand = parse_cast();
             return new CastNode(cast_type, operand);
         }
-
-        // Not a cast — parse as parenthesized expression.
-        // current already points to the first token after '('
+        
         Exp* expr = parse_expression();
         consume(Token::RPAREN, "Se esperaba ')'");
         return expr;
@@ -737,6 +769,7 @@ Exp* Parser::parse_cast() {
     return parse_unary();
 }
 
+// parse_unary: parsea ++x --x & * - ! (prefijo)
 Exp* Parser::parse_unary() {
     if (match(Token::INC)) {
         Exp* operand = parse_unary();
@@ -765,6 +798,7 @@ Exp* Parser::parse_unary() {
     return parse_postfix();
 }
 
+// parse_postfix: parsea [] () . -> x++ x-- (postfijo)
 Exp* Parser::parse_postfix() {
     Exp* l = parse_primary();
 
@@ -798,6 +832,7 @@ Exp* Parser::parse_postfix() {
     return l;
 }
 
+// parse_primary: parsea literales, id, lambdas, (expr), malloc, sizeof, printf
 Exp* Parser::parse_primary() {
     if (match(Token::TRUE)) {
         return new BoolLiteralNode(true);

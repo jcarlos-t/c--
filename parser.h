@@ -42,7 +42,7 @@ private:
     Stm* parse_switch_statement();
     Stm* parse_return_statement();
 
-    // Expressions (precedence climbing per grammar.md §6)
+    // Expressions
     Exp* parse_expression();
     Exp* parse_assignment();
     Exp* parse_conditional();
