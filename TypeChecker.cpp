@@ -703,6 +703,7 @@ Type* TypeChecker::visit(BinaryOpNode* e) {
     Type* left = e->left->accept(this);
     Type* right = e->right->accept(this);
 
+    Type* resultType;
     switch (e->op) {
         // Operaciones aritméticas: permiten int, float o double, promueven al tipo más grande
         case BinaryOp::ADD: case BinaryOp::SUB:
@@ -712,14 +713,17 @@ Type* TypeChecker::visit(BinaryOpNode* e) {
                 (right->ttype == Type::INT || right->ttype == Type::FLOAT || right->ttype == Type::DOUBLE)) {
                 // Promoción automática: si alguno es double, resultado double
                 if (left->ttype == Type::DOUBLE || right->ttype == Type::DOUBLE)
-                    return doubleType;
+                    resultType = doubleType;
                 // Si alguno es float, resultado float
-                if (left->ttype == Type::FLOAT || right->ttype == Type::FLOAT)
-                    return floatType;
-                return intType;
+                else if (left->ttype == Type::FLOAT || right->ttype == Type::FLOAT)
+                    resultType = floatType;
+                else
+                    resultType = intType;
+            } else {
+                error("operación aritmética requiere int, float o double.");
+                resultType = intType;
             }
-            error("operación aritmética requiere int, float o double.");
-            return intType;
+            break;
 
         // Comparaciones: int, float o double, resultado bool
         case BinaryOp::EQ: case BinaryOp::NE:
@@ -727,52 +731,79 @@ Type* TypeChecker::visit(BinaryOpNode* e) {
         case BinaryOp::LE: case BinaryOp::GE:
             if ((left->ttype == Type::INT || left->ttype == Type::FLOAT || left->ttype == Type::DOUBLE) &&
                 (right->ttype == Type::INT || right->ttype == Type::FLOAT || right->ttype == Type::DOUBLE))
-                return boolType;
-            error("comparación requiere int, float o double.");
-            return boolType;
+                resultType = boolType;
+            else {
+                error("comparación requiere int, float o double.");
+                resultType = boolType;
+            }
+            break;
 
         // Lógicos: operandos bool, resultado bool
         case BinaryOp::LOG_AND: case BinaryOp::LOG_OR:
             if (left->match(boolType) && right->match(boolType))
-                return boolType;
-            error("operación lógica requiere bool.");
-            return boolType;
+                resultType = boolType;
+            else {
+                error("operación lógica requiere bool.");
+                resultType = boolType;
+            }
+            break;
 
         default:
-            return intType;
+            resultType = intType;
+            break;
     }
+    
+    e->resolvedType = resultType;
+    return resultType;
 }
 
 Type* TypeChecker::visit(UnaryOpNode* e) {
     Type* t = e->operand->accept(this);
+    Type* resultType;
     switch (e->op) {
         case UnaryOp::MINUS:
         case UnaryOp::PRE_INC: case UnaryOp::PRE_DEC:
         case UnaryOp::POST_INC: case UnaryOp::POST_DEC:
-            if (t->ttype == Type::INT || t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE) return t;
-            error("operación unaria requiere int, float o double.");
-            return t;
+            if (t->ttype == Type::INT || t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE) {
+                resultType = t;
+            } else {
+                error("operación unaria requiere int, float o double.");
+                resultType = t;
+            }
+            break;
         case UnaryOp::LOG_NOT:
-            if (t->match(boolType)) return boolType;
-            error("! requiere bool.");
-            return boolType;
+            if (t->match(boolType)) {
+                resultType = boolType;
+            } else {
+                error("! requiere bool.");
+                resultType = boolType;
+            }
+            break;
         case UnaryOp::ADDR:
             // &x devuelve puntero al tipo de x
             {
                 PointerType* ptr = new PointerType(t);
                 typeCache.push_back(ptr);
-                return ptr;
+                resultType = ptr;
             }
+            break;
         case UnaryOp::DEREF:
             // *p devuelve el tipo base del puntero
             if (t->ttype == Type::POINTER) {
                 PointerType* pt = (PointerType*)t;
-                return pt->base;
+                resultType = pt->base;
+            } else {
+                error("operando de * debe ser puntero.");
+                resultType = intType;
             }
-            error("operando de * debe ser puntero.");
-            return intType;
+            break;
+        default:
+            resultType = intType;
+            break;
     }
-    return intType;
+    
+    e->resolvedType = resultType;
+    return resultType;
 }
 
 Type* TypeChecker::visit(AssignmentNode* e) {

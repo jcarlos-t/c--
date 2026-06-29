@@ -295,11 +295,15 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
     out << "  movq %rax, %rcx\n";
     out << "  popq %rax\n";
 
-    // Determinar tamaño de operación (usar 8 bytes por defecto para seguridad)
-    // En el futuro se puede optimizar según los tipos de los operandos
-    string suffix = "q";
-    string reg1 = "%rax";
-    string reg2 = "%rcx";
+    // Determinar tamaño de operación según resolvedType
+    int size = 8;  // default
+    if (e->resolvedType) {
+        size = e->resolvedType->size();
+    }
+    
+    string suffix = (size == 1) ? "b" : (size == 4) ? "l" : "q";
+    string reg1 = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
+    string reg2 = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
 
     switch (e->op) {
     case BinaryOp::ADD: out << "  add" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
@@ -373,9 +377,11 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
     
     e->operand->accept(this);
 
-    // Determinar tamaño del operando
+    // Determinar tamaño del operando según resolvedType
     int size = 8;  // default
-    if (auto* id = dynamic_cast<IdentifierNode*>(e->operand)) {
+    if (e->resolvedType) {
+        size = e->resolvedType->size();
+    } else if (auto* id = dynamic_cast<IdentifierNode*>(e->operand)) {
         if (variableSizes.count(id->name)) {
             size = variableSizes[id->name];
         }

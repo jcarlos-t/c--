@@ -20,14 +20,14 @@ dowhile_0:
   movslq -8(%rbp), %rax
   movq %rax, %rcx
   popq %rax
-  addq %rcx, %rax
+  addl %ecx, %eax
   movl %eax, -12(%rbp)
   movslq -8(%rbp), %rax
   pushq %rax
   movq $1, %rax
   movq %rax, %rcx
   popq %rax
-  addq %rcx, %rax
+  addl %ecx, %eax
   movl %eax, -8(%rbp)
 docond_0:
   movslq -8(%rbp), %rax
@@ -35,7 +35,7 @@ docond_0:
   movq $5, %rax
   movq %rax, %rcx
   popq %rax
-  cmpq %rcx, %rax
+  cmpb %cl, %al
   movq $0, %rax
   setle %al
   movzbq %al, %rax
@@ -50,7 +50,7 @@ for_1:
   movq $10, %rax
   movq %rax, %rcx
   popq %rax
-  cmpq %rcx, %rax
+  cmpb %cl, %al
   movq $0, %rax
   setle %al
   movzbq %al, %rax
@@ -61,7 +61,7 @@ for_1:
   movq $8, %rax
   movq %rax, %rcx
   popq %rax
-  cmpq %rcx, %rax
+  cmpb %cl, %al
   movq $0, %rax
   setg %al
   movzbq %al, %rax
@@ -76,7 +76,7 @@ endif_2:
   movq $7, %rax
   movq %rax, %rcx
   popq %rax
-  cmpq %rcx, %rax
+  cmpb %cl, %al
   movq $0, %rax
   sete %al
   movzbq %al, %rax
@@ -91,7 +91,7 @@ endif_3:
   movslq -8(%rbp), %rax
   movq %rax, %rcx
   popq %rax
-  addq %rcx, %rax
+  addl %ecx, %eax
   movl %eax, -12(%rbp)
 forinc_1:
   movslq -8(%rbp), %rax
@@ -99,7 +99,7 @@ forinc_1:
   movq $1, %rax
   movq %rax, %rcx
   popq %rax
-  addq %rcx, %rax
+  addl %ecx, %eax
   movl %eax, -8(%rbp)
   jmp for_1
 endfor_1:

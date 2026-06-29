@@ -19,7 +19,7 @@ main:
   movslq -12(%rbp), %rax
   movq %rax, %rcx
   popq %rax
-  cmpq %rcx, %rax
+  cmpb %cl, %al
   movq $0, %rax
   setg %al
   movzbq %al, %rax
@@ -30,7 +30,7 @@ main:
   movslq -12(%rbp), %rax
   movq %rax, %rcx
   popq %rax
-  addq %rcx, %rax
+  addl %ecx, %eax
   movl %eax, -16(%rbp)
   jmp endif_0
 else_0:
@@ -39,7 +39,7 @@ else_0:
   movslq -12(%rbp), %rax
   movq %rax, %rcx
   popq %rax
-  subq %rcx, %rax
+  subl %ecx, %eax
   movl %eax, -16(%rbp)
 endif_0:
   movslq -16(%rbp), %rax
@@ -56,7 +56,7 @@ endif_0:
   movq $5, %rax
   movq %rax, %rcx
   popq %rax
-  addq %rcx, %rax
+  addl %ecx, %eax
   movl %eax, -8(%rbp)
   movslq -8(%rbp), %rax
   movq %rax, %rsi
@@ -72,7 +72,7 @@ endif_0:
   movq $2, %rax
   movq %rax, %rcx
   popq %rax
-  imulq %rcx, %rax
+  imull %ecx, %eax
   movl %eax, -12(%rbp)
   movslq -12(%rbp), %rax
   movq %rax, %rsi
@@ -89,7 +89,7 @@ endif_0:
   movq %rax, %rcx
   popq %rax
   cqto
-  idivq %rcx
+  idivl %ecx
   movl %eax, -8(%rbp)
   movslq -8(%rbp), %rax
   movq %rax, %rsi
@@ -105,7 +105,7 @@ endif_0:
   movq $1, %rax
   movq %rax, %rcx
   popq %rax
-  subq %rcx, %rax
+  subl %ecx, %eax
   movl %eax, -12(%rbp)
   movslq -12(%rbp), %rax
   movq %rax, %rsi

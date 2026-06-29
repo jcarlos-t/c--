@@ -16,7 +16,7 @@ triple:
   movslq -8(%rbp), %rax
   movq %rax, %rcx
   popq %rax
-  imulq %rcx, %rax
+  imull %ecx, %eax
   jmp .end_triple
 .end_triple:
   leave
@@ -33,7 +33,7 @@ factorial:
   movq $0, %rax
   movq %rax, %rcx
   popq %rax
-  cmpq %rcx, %rax
+  cmpb %cl, %al
   movq $0, %rax
   sete %al
   movzbq %al, %rax
@@ -49,14 +49,14 @@ endif_0:
   movq $1, %rax
   movq %rax, %rcx
   popq %rax
-  subq %rcx, %rax
+  subl %ecx, %eax
   movq %rax, %rdi
   call factorial
   pushq %rax
   movslq -8(%rbp), %rax
   movq %rax, %rcx
   popq %rax
-  imulq %rcx, %rax
+  imull %ecx, %eax
   jmp .end_factorial
 .end_factorial:
   leave
@@ -74,7 +74,7 @@ suma:
   movslq -12(%rbp), %rax
   movq %rax, %rcx
   popq %rax
-  addq %rcx, %rax
+  addl %ecx, %eax
   jmp .end_suma
 .end_suma:
   leave
@@ -90,7 +90,7 @@ main:
   movq $2, %rax
   movq %rax, %rcx
   popq %rax
-  imulq %rcx, %rax
+  imull %ecx, %eax
   movl %eax, -8(%rbp)
   movslq -8(%rbp), %rax
   movq %rax, %rsi

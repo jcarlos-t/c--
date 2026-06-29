@@ -41,6 +41,7 @@ public:
     Location loc;
     bool isConstant = false;
     double constantValue = 0.0;
+    Type* resolvedType = nullptr;  // tipo semántico resuelto por TypeChecker
     
     Exp() {}
     virtual ~Exp() {}
