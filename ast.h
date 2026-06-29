@@ -39,12 +39,15 @@ enum class AssignOp {
 class Exp {
 public:
     Location loc;
+    bool isConstant = false;
+    double constantValue = 0.0;
+    
     Exp() {}
-    virtual ~Exp() = 0;
-    virtual double accept(Visitor* visitor) = 0;
-    virtual Type* accept(TypeVisitor* visitor) = 0;
-    virtual void accept(CodeGenVisitor* visitor) = 0;
-    virtual void computeAddress(CodeGenVisitor* visitor); // para nodos que necesitan la direccion de algo, como variables
+    virtual ~Exp() {}
+    virtual double accept(Visitor* visitor);
+    virtual Type* accept(TypeVisitor* visitor);
+    virtual void accept(CodeGenVisitor* visitor);
+    virtual void computeAddress(CodeGenVisitor* visitor);
 };
 
 // --- Nodos de expresión ---

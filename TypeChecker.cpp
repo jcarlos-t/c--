@@ -64,6 +64,7 @@ TypeChecker::TypeChecker() {
     boolType = new Type(Type::BOOL);
     voidType = new Type(Type::VOID);
     floatType = new Type(Type::FLOAT);
+    doubleType = new Type(Type::DOUBLE);
     charType = new Type(Type::INT); // treat char as int for now
     retornodefuncion = nullptr;
     loopDepth = 0;
@@ -80,6 +81,8 @@ TypeChecker::~TypeChecker() {
     delete boolType;
     delete voidType;
     delete floatType;
+    delete doubleType;
+    delete charType;
 }
 
 // ============================================================
@@ -93,7 +96,7 @@ Type* TypeChecker::type_from_ast(Exp* t) {
             case PrimitiveTypeNode::INT:    return intType;
             case PrimitiveTypeNode::CHAR:   return charType;
             case PrimitiveTypeNode::FLOAT:  return floatType;
-            case PrimitiveTypeNode::DOUBLE: return floatType;
+            case PrimitiveTypeNode::DOUBLE: return doubleType;
             case PrimitiveTypeNode::BOOL:   return boolType;
             case PrimitiveTypeNode::AUTO:   return intType; // default, se infiere después
         }
@@ -205,6 +208,10 @@ bool TypeChecker::check_assign(Type* target, Type* value) {
     if (target->match(value)) return true;
     // Promoción: int → float
     if (target->ttype == Type::FLOAT && value->ttype == Type::INT) return true;
+    // Promoción: int → double
+    if (target->ttype == Type::DOUBLE && value->ttype == Type::INT) return true;
+    // Promoción: float → double
+    if (target->ttype == Type::DOUBLE && value->ttype == Type::FLOAT) return true;
     return false;
 }
 
@@ -665,28 +672,31 @@ Type* TypeChecker::visit(BinaryOpNode* e) {
     Type* right = e->right->accept(this);
 
     switch (e->op) {
-        // Operaciones aritméticas: permiten int o float, promueven a float
+        // Operaciones aritméticas: permiten int, float o double, promueven al tipo más grande
         case BinaryOp::ADD: case BinaryOp::SUB:
         case BinaryOp::MUL: case BinaryOp::DIV: case BinaryOp::MOD:
         case BinaryOp::POW:
-            if ((left->ttype == Type::INT || left->ttype == Type::FLOAT) &&
-                (right->ttype == Type::INT || right->ttype == Type::FLOAT)) {
-                // Promoción automática: si alguno es float, resultado float
+            if ((left->ttype == Type::INT || left->ttype == Type::FLOAT || left->ttype == Type::DOUBLE) &&
+                (right->ttype == Type::INT || right->ttype == Type::FLOAT || right->ttype == Type::DOUBLE)) {
+                // Promoción automática: si alguno es double, resultado double
+                if (left->ttype == Type::DOUBLE || right->ttype == Type::DOUBLE)
+                    return doubleType;
+                // Si alguno es float, resultado float
                 if (left->ttype == Type::FLOAT || right->ttype == Type::FLOAT)
                     return floatType;
                 return intType;
             }
-            error("operación aritmética requiere int o float.");
+            error("operación aritmética requiere int, float o double.");
             return intType;
 
-        // Comparaciones: int o float, resultado bool
+        // Comparaciones: int, float o double, resultado bool
         case BinaryOp::EQ: case BinaryOp::NE:
         case BinaryOp::LT: case BinaryOp::GT:
         case BinaryOp::LE: case BinaryOp::GE:
-            if ((left->ttype == Type::INT || left->ttype == Type::FLOAT) &&
-                (right->ttype == Type::INT || right->ttype == Type::FLOAT))
+            if ((left->ttype == Type::INT || left->ttype == Type::FLOAT || left->ttype == Type::DOUBLE) &&
+                (right->ttype == Type::INT || right->ttype == Type::FLOAT || right->ttype == Type::DOUBLE))
                 return boolType;
-            error("comparación requiere int o float.");
+            error("comparación requiere int, float o double.");
             return boolType;
 
         // Lógicos: operandos bool, resultado bool
@@ -707,8 +717,8 @@ Type* TypeChecker::visit(UnaryOpNode* e) {
         case UnaryOp::MINUS:
         case UnaryOp::PRE_INC: case UnaryOp::PRE_DEC:
         case UnaryOp::POST_INC: case UnaryOp::POST_DEC:
-            if (t->ttype == Type::INT || t->ttype == Type::FLOAT) return t;
-            error("operación unaria requiere int o float.");
+            if (t->ttype == Type::INT || t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE) return t;
+            error("operación unaria requiere int, float o double.");
             return t;
         case UnaryOp::LOG_NOT:
             if (t->match(boolType)) return boolType;
@@ -751,7 +761,11 @@ Type* TypeChecker::visit(TernaryOpNode* e) {
     Type* thenType = e->then_expr->accept(this);
     Type* elseType = e->else_expr->accept(this);
     if (!thenType->match(elseType)) {
-        // Permitir int→float en ternary
+        // Permitir promociones: int→float, int→double, float→double
+        if (thenType->ttype == Type::DOUBLE || elseType->ttype == Type::DOUBLE)
+            return doubleType;
+        if (thenType->ttype == Type::FLOAT || elseType->ttype == Type::FLOAT)
+            return floatType;
         if (thenType->ttype == Type::FLOAT && elseType->ttype == Type::INT)
             return floatType;
         if (thenType->ttype == Type::INT && elseType->ttype == Type::FLOAT)

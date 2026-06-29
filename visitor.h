@@ -142,6 +142,57 @@ public:
     string getType(Exp* e);
 };
 
+class ConstantFolding : public Visitor {
+public:
+    // Expresiones
+    double visit(BinaryOpNode* e) override;
+    double visit(UnaryOpNode* e) override;
+    double visit(AssignmentNode* e) override;
+    double visit(TernaryOpNode* e) override;
+    double visit(FcallNode* e) override;
+    double visit(MallocNode* e) override;
+    double visit(IndexNode* e) override;
+    double visit(MemberAccessNode* e) override;
+    double visit(ArrowAccessNode* e) override;
+    double visit(CastNode* e) override;
+    double visit(SizeOfNode* e) override;
+    double visit(LambdaExprNode* e) override;
+    double visit(CaptureNode* e) override;
+    double visit(IdentifierNode* e) override;
+    double visit(IntegerLiteralNode* e) override;
+    double visit(FloatLiteralNode* e) override;
+    double visit(BoolLiteralNode* e) override;
+    double visit(CharLiteralNode* e) override;
+    double visit(StringLiteralNode* e) override;
+    double visit(PrintfNode* e) override;
+    double visit(PrimitiveTypeNode* e) override;
+    double visit(PointerTypeNode* e) override;
+    double visit(StructTypeNode* e) override;
+    double visit(NamedTypeNode* e) override;
+    double visit(TemplateTypeNode* e) override;
+    
+    // Statements
+    int visit(Body* s) override;
+    int visit(ExprStmtNode* s) override;
+    int visit(IfStmt* s) override;
+    int visit(WhileStmt* s) override;
+    int visit(DoWhileStmt* s) override;
+    int visit(ForStmt* s) override;
+    int visit(SwitchStmt* s) override;
+    int visit(CaseClause* s) override;
+    int visit(BreakStmt* s) override;
+    int visit(ContinueStmt* s) override;
+    int visit(ReturnStmt* s) override;
+    int visit(FreeStmt* s) override;
+    
+    // Declarations
+    int visit(VarDecl* d) override;
+    int visit(FunDecl* d) override;
+    int visit(StructDecl* d) override;
+    int visit(TemplateDecl* d) override;
+    int visit(Program* p) override;
+};
+
 // ============================================================
 // Abstract TypeVisitor — semantic type checking
 // ============================================================
@@ -215,6 +266,7 @@ private:
     ::Type* boolType;
     ::Type* voidType;
     ::Type* floatType;
+    ::Type* doubleType;
     ::Type* charType;
     vector<::Type*> typeCache;
     int loopDepth;
@@ -385,6 +437,7 @@ private:
     int labelcont = 0;
     bool inFunction = false;
     string currentBreakLabel;
+    string currentContinueLabel;
     string funcName;
 
 public:
