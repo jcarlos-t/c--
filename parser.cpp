@@ -691,82 +691,100 @@ Exp* Parser::parse_pow() {
     return l;
 }
 
-// parse_cast: parsea (type)expr o expresión parentizada: (int)x, (struct x)y, (p<z>)x
-Exp* Parser::parse_cast() {
-    if (check(Token::LPAREN)) {
-        Scanner::Pos saved = scanner->getPos();
-        advance(); // consume '('
-
-        bool is_cast = false;
-        TypeNode* cast_type = nullptr;
-
-        if (check(Token::VOID) || check(Token::INT) || check(Token::CHAR) ||
-            check(Token::FLOAT) || check(Token::DOUBLE) || check(Token::BOOL) ||
-            check(Token::AUTO)) {
-            advance();
-            if (check(Token::RPAREN)) {
-                is_cast = true;
-                cast_type = new PrimitiveTypeNode(
-                    previous->type == Token::VOID ? PrimitiveTypeNode::VOID :
-                    previous->type == Token::INT ? PrimitiveTypeNode::INT :
-                    previous->type == Token::CHAR ? PrimitiveTypeNode::CHAR :
-                    previous->type == Token::FLOAT ? PrimitiveTypeNode::FLOAT :
-                    previous->type == Token::DOUBLE ? PrimitiveTypeNode::DOUBLE :
-                    previous->type == Token::BOOL ? PrimitiveTypeNode::BOOL :
-                    PrimitiveTypeNode::AUTO);
-                advance(); // consume ')'
-            }
-        } else if (check(Token::STRUCT)) {
-            advance();
-            if (check(Token::ID)) {
-                string sname = current->text;
-                advance();
-                if (check(Token::RPAREN)) {
-                    is_cast = true;
-                    cast_type = new StructTypeNode(sname);
-                    advance();
-                }
-            }
-        } else if (check(Token::ID)) {
-            string tname = current->text;
-            Scanner::Pos psaved = scanner->getPos();
-            Token* peek1 = scanner->nextToken();
-            bool is_template = false;
-            if (peek1->type == Token::LT) {
-                Token* peek2 = scanner->nextToken();
-                is_template = (peek2->type == Token::INT || peek2->type == Token::FLOAT ||
-                               peek2->type == Token::CHAR || peek2->type == Token::DOUBLE ||
-                               peek2->type == Token::BOOL || peek2->type == Token::AUTO ||
-                               peek2->type == Token::VOID || peek2->type == Token::STRUCT ||
-                               peek2->type == Token::ID);
-                delete peek2;
-            }
-            delete peek1;
-            scanner->setPos(psaved);
-            if (is_template) {
-                advance();
-                consume(Token::LT, "Se esperaba '<'");
-                vector<TypeNode*> targs;
-                do {
-                    targs.push_back(parse_type());
-                } while (match(Token::COMA));
-                consume(Token::GT, "Se esperaba '>'");
-                consume(Token::RPAREN, "Se esperaba ')' en cast de template");
-                is_cast = true;
-                cast_type = new TemplateTypeNode(tname, targs);
-            }
-        }
-
-        if (is_cast) {
-            Exp* operand = parse_cast();
-            return new CastNode(cast_type, operand);
-        }
-        
-        Exp* expr = parse_expression();
-        consume(Token::RPAREN, "Se esperaba ')'");
-        return expr;
+// Helpers para cast
+static PrimitiveTypeNode::Prim kind_from_token(Token::Type t) {
+    switch (t) {
+        case Token::VOID:   return PrimitiveTypeNode::VOID;
+        case Token::INT:    return PrimitiveTypeNode::INT;
+        case Token::CHAR:   return PrimitiveTypeNode::CHAR;
+        case Token::FLOAT:  return PrimitiveTypeNode::FLOAT;
+        case Token::DOUBLE: return PrimitiveTypeNode::DOUBLE;
+        case Token::BOOL:   return PrimitiveTypeNode::BOOL;
+        default:            return PrimitiveTypeNode::AUTO;
     }
-    return parse_unary();
+}
+
+static bool is_type_keyword(Token::Type t) {
+    return t == Token::VOID || t == Token::INT || t == Token::CHAR ||
+           t == Token::FLOAT || t == Token::DOUBLE || t == Token::BOOL ||
+           t == Token::AUTO;
+}
+
+// try_parse_cast_type: estando justo después de '(',
+//   intenta reconocer un tipo (primitivo, struct o template).
+//   Si lo reconoce, deja el scanner apuntando a ')' y retorna el TypeNode*.
+//   Si no, restaura el scanner a la posición original y retorna nullptr.
+TypeNode* Parser::try_parse_cast_type() {
+    Scanner::Pos saved = scanner->getPos();
+
+    if (is_type_keyword(current->type)) {
+        Token::Type t = current->type;
+        advance();
+        if (check(Token::RPAREN))
+            return new PrimitiveTypeNode(kind_from_token(t));
+    } else if (check(Token::STRUCT)) {
+        advance();
+        if (check(Token::ID)) {
+            string name = current->text;
+            advance();
+            if (check(Token::RPAREN))
+                return new StructTypeNode(name);
+        }
+    } else if (check(Token::ID)) {
+        string tname = current->text;
+        Scanner::Pos psaved = scanner->getPos();
+        Token* peek1 = scanner->nextToken();
+        bool is_template = peek1->type == Token::LT;
+        if (is_template) {
+            Token* peek2 = scanner->nextToken();
+            is_template = is_type_keyword(peek2->type) ||
+                          peek2->type == Token::STRUCT ||
+                          peek2->type == Token::ID;
+            delete peek2;
+        }
+        delete peek1;
+        scanner->setPos(psaved);
+
+        if (is_template) {
+            advance();
+            consume(Token::LT, "Se esperaba '<' en cast de template");
+            vector<TypeNode*> targs;
+            do {
+                targs.push_back(parse_type());
+            } while (match(Token::COMA));
+            consume(Token::GT, "Se esperaba '>' en cast de template");
+            if (check(Token::RPAREN))
+                return new TemplateTypeNode(tname, targs);
+        }
+    }
+
+    scanner->setPos(saved);
+    return nullptr;
+}
+
+// parse_cast: parsea (type)expr o expresión parentizada
+Exp* Parser::parse_cast() {
+    if (!check(Token::LPAREN))
+        return parse_unary();
+
+    Scanner::Pos saved = scanner->getPos();
+    advance();
+
+    if (TypeNode* cast_type = try_parse_cast_type()) {
+        if (match(Token::RPAREN))
+            return new CastNode(cast_type, parse_cast());
+        delete cast_type;
+    }
+
+    scanner->setPos(saved);
+    delete current;
+    delete previous;
+    previous = nullptr;
+    current = scanner->nextToken();
+    advance();
+    Exp* expr = parse_expression();
+    consume(Token::RPAREN, "Se esperaba ')'");
+    return expr;
 }
 
 // parse_unary: parsea ++x --x & * - ! (prefijo)

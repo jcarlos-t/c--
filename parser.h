@@ -54,6 +54,7 @@ private:
     Exp* parse_multiplicative();
     Exp* parse_pow();
     Exp* parse_cast();
+    TypeNode* try_parse_cast_type();
     Exp* parse_unary();
     Exp* parse_postfix();
     Exp* parse_primary();
