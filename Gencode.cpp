@@ -13,13 +13,11 @@ using namespace std;
 void BinaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void UnaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void AssignmentNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void TernaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void FcallNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void IndexNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void MemberAccessNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void ArrowAccessNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void MallocNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void CastNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void SizeOfNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void IdentifierNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void IntegerLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
@@ -363,8 +361,6 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
     case BinaryOp::LOG_OR:
         out << "  or" << suffix << " " << reg2 << ", " << reg1 << "\n";
         break;
-    case BinaryOp::COMMA:
-        break; // comma: left already evaluated, result is right (already in %rax)
     }
 }
 
@@ -451,48 +447,9 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
     switch (e->op) {
     case AssignOp::ASSIGN:
         break;
-    case AssignOp::ADD_ASSIGN:
-    case AssignOp::SUB_ASSIGN:
-    case AssignOp::MUL_ASSIGN:
-    case AssignOp::DIV_ASSIGN:
-        out << "  pushq %rax\n";
-        e->target->accept(this); // load current value
-        out << "  popq %rcx\n";
-        switch (e->op) {
-        case AssignOp::ADD_ASSIGN: out << "  add" << suffix << " " << reg << ", %rcx\n"; break;
-        case AssignOp::SUB_ASSIGN: out << "  sub" << suffix << " " << reg << ", %rcx\n"; break;
-        case AssignOp::MUL_ASSIGN: out << "  imul" << suffix << " " << reg << ", %rcx\n"; break;
-        case AssignOp::DIV_ASSIGN:
-            out << "  movq %rcx, %rax\n";
-            out << "  cqto\n";
-            out << "  movq %rax, %rcx\n";
-            out << "  idiv" << suffix << " " << reg << "\n";
-            break;
-        default: break;
-        }
-        out << "  movq %rcx, %rax\n";
-        break;
     }
 
     storeTarget(target);
-}
-
-void GenCodeVisitor::visit(TernaryOpNode *e) {
-    // Constant folding: si es constante, generar directamente el valor
-    if (e->isConstant) {
-        out << "  movq $" << (long long)e->constantValue << ", %rax\n";
-        return;
-    }
-    
-    int lbl = labelcont++;
-    e->condition->accept(this);
-    out << "  cmpq $0, %rax\n";
-    out << "  je else_" << lbl << "\n";
-    e->then_expr->accept(this);
-    out << "  jmp end_ternary_" << lbl << "\n";
-    out << "else_" << lbl << ":\n";
-    e->else_expr->accept(this);
-    out << "end_ternary_" << lbl << ":\n";
 }
 
 void GenCodeVisitor::visit(PrintfNode *e) {
@@ -610,23 +567,6 @@ void GenCodeVisitor::visit(MallocNode *e) {
     e->size->accept(this);
     out << "  movq %rax, %rdi\n";
     out << "  call malloc@PLT\n";
-}
-
-void GenCodeVisitor::visit(CastNode *e) {
-    // Constant folding: si es constante, generar directamente el valor
-    if (e->isConstant) {
-        out << "  movq $" << (long long)e->constantValue << ", %rax\n";
-        return;
-    }
-    
-    e->expr->accept(this);
-    if (auto *pt = dynamic_cast<PrimitiveTypeNode *>(e->target_type)) {
-        if (pt->prim == PrimitiveTypeNode::BOOL) {
-            out << "  cmpq $0, %rax\n";
-            out << "  setne %al\n";
-            out << "  movzbq %al, %rax\n";
-        }
-    }
 }
 
 void GenCodeVisitor::visit(SizeOfNode *e) {

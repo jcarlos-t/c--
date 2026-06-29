@@ -71,7 +71,7 @@ void test_control_flow() {
 
 void test_operators() {
     test("operators");
-    Scanner sc("+ - * / % ** = += -= *= /= == != < > <= >= && || ! & -> . ++ --");
+    Scanner sc("+ - * / % ** = == != < > <= >= && || ! & -> . ++ --");
     check_tok(sc.nextToken(), Token::PLUS, 1, 1, "+");
     check_tok(sc.nextToken(), Token::MINUS, 1, 3, "-");
     check_tok(sc.nextToken(), Token::STAR, 1, 5, "*");
@@ -79,24 +79,20 @@ void test_operators() {
     check_tok(sc.nextToken(), Token::MOD, 1, 9, "%");
     check_tok(sc.nextToken(), Token::POW, 1, 11, "**");
     check_tok(sc.nextToken(), Token::ASSIGN, 1, 14, "=");
-    check_tok(sc.nextToken(), Token::ADD_ASSIGN, 1, 16, "+=");
-    check_tok(sc.nextToken(), Token::SUB_ASSIGN, 1, 19, "-=");
-    check_tok(sc.nextToken(), Token::MUL_ASSIGN, 1, 22, "*=");
-    check_tok(sc.nextToken(), Token::DIV_ASSIGN, 1, 25, "/=");
-    check_tok(sc.nextToken(), Token::EQ, 1, 28, "==");
-    check_tok(sc.nextToken(), Token::NE, 1, 31, "!=");
-    check_tok(sc.nextToken(), Token::LT, 1, 34, "<");
-    check_tok(sc.nextToken(), Token::GT, 1, 36, ">");
-    check_tok(sc.nextToken(), Token::LE, 1, 38, "<=");
-    check_tok(sc.nextToken(), Token::GE, 1, 41, ">=");
-    check_tok(sc.nextToken(), Token::AND, 1, 44, "&&");
-    check_tok(sc.nextToken(), Token::OR, 1, 47, "||");
-    check_tok(sc.nextToken(), Token::NOT, 1, 50, "!");
-    check_tok(sc.nextToken(), Token::AMPERSAND, 1, 52, "&");
-    check_tok(sc.nextToken(), Token::ARROW, 1, 54, "->");
-    check_tok(sc.nextToken(), Token::DOT, 1, 57, ".");
-    check_tok(sc.nextToken(), Token::INC, 1, 59, "++");
-    check_tok(sc.nextToken(), Token::DEC, 1, 62, "--");
+    check_tok(sc.nextToken(), Token::EQ, 1, 16, "==");
+    check_tok(sc.nextToken(), Token::NE, 1, 19, "!=");
+    check_tok(sc.nextToken(), Token::LT, 1, 22, "<");
+    check_tok(sc.nextToken(), Token::GT, 1, 24, ">");
+    check_tok(sc.nextToken(), Token::LE, 1, 26, "<=");
+    check_tok(sc.nextToken(), Token::GE, 1, 29, ">=");
+    check_tok(sc.nextToken(), Token::AND, 1, 32, "&&");
+    check_tok(sc.nextToken(), Token::OR, 1, 35, "||");
+    check_tok(sc.nextToken(), Token::NOT, 1, 38, "!");
+    check_tok(sc.nextToken(), Token::AMPERSAND, 1, 40, "&");
+    check_tok(sc.nextToken(), Token::ARROW, 1, 42, "->");
+    check_tok(sc.nextToken(), Token::DOT, 1, 45, ".");
+    check_tok(sc.nextToken(), Token::INC, 1, 47, "++");
+    check_tok(sc.nextToken(), Token::DEC, 1, 50, "--");
     check_type(sc.nextToken(), Token::END);
     pass();
 }

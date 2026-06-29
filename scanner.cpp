@@ -243,22 +243,18 @@ Token* Scanner::nextToken() {
 
         case '+':
             if (peek() == '+') { advance(); return make_token(Token::INC); }
-            if (peek() == '=') { advance(); return make_token(Token::ADD_ASSIGN); }
             return make_token(Token::PLUS, c);
 
         case '-':
             if (peek() == '-') { advance(); return make_token(Token::DEC); }
-            if (peek() == '=') { advance(); return make_token(Token::SUB_ASSIGN); }
             if (peek() == '>') { advance(); return make_token(Token::ARROW); }
             return make_token(Token::MINUS, c);
 
         case '*':
             if (peek() == '*') { advance(); return make_token(Token::POW); }
-            if (peek() == '=') { advance(); return make_token(Token::MUL_ASSIGN); }
             return make_token(Token::STAR, c);
 
         case '/':
-            if (peek() == '=') { advance(); return make_token(Token::DIV_ASSIGN); }
             return make_token(Token::DIV, c);
 
         case '%': return make_token(Token::MOD, c);

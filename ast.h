@@ -24,7 +24,7 @@ struct Location {
 enum class BinaryOp {
     ADD, SUB, MUL, DIV, MOD,
     EQ, NE, LT, GT, LE, GE,
-    LOG_AND, LOG_OR, POW, COMMA
+    LOG_AND, LOG_OR, POW
 };
 
 enum class UnaryOp {
@@ -32,7 +32,7 @@ enum class UnaryOp {
 };
 
 enum class AssignOp {
-    ASSIGN, ADD_ASSIGN, SUB_ASSIGN, MUL_ASSIGN, DIV_ASSIGN
+    ASSIGN
 };
 
 // Clase base para todos los nodos de expresión
@@ -91,18 +91,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
-// Operador ternario: cond ? then : else
-class TernaryOpNode : public Exp {
-public:
-    Exp* condition;
-    Exp* then_expr;
-    Exp* else_expr;
-    TernaryOpNode(Exp* c, Exp* t, Exp* e);
-    ~TernaryOpNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
-};
+
 
 // Llamada a función: callee(args...)
 class FcallNode : public Exp {
@@ -167,17 +156,7 @@ public:
     void accept(CodeGenVisitor* visitor);
 };
 
-// Conversión de tipo: (target_type)expr
-class CastNode : public Exp {
-public:
-    Exp* target_type;
-    Exp* expr;
-    CastNode(Exp* t, Exp* e);
-    ~CastNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
-};
+
 
 // sizeof(tipo)
 class SizeOfNode : public Exp {

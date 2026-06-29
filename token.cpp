@@ -55,10 +55,7 @@ static const char* token_name(Token::Type t) {
         case Token::MOD:    return "MOD";
         case Token::POW:    return "POW";
         case Token::ASSIGN: return "ASSIGN";
-        case Token::ADD_ASSIGN: return "ADD_ASSIGN";
-        case Token::SUB_ASSIGN: return "SUB_ASSIGN";
-        case Token::MUL_ASSIGN: return "MUL_ASSIGN";
-        case Token::DIV_ASSIGN: return "DIV_ASSIGN";
+
         case Token::EQ:     return "EQ";
         case Token::NE:     return "NE";
         case Token::LT:     return "LT";

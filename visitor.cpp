@@ -12,13 +12,11 @@ using namespace std;
 double BinaryOpNode::accept(Visitor* v) { return v->visit(this); }
 double UnaryOpNode::accept(Visitor* v) { return v->visit(this); }
 double AssignmentNode::accept(Visitor* v) { return v->visit(this); }
-double TernaryOpNode::accept(Visitor* v) { return v->visit(this); }
 double FcallNode::accept(Visitor* v) { return v->visit(this); }
 double MallocNode::accept(Visitor* v) { return v->visit(this); }
 double IndexNode::accept(Visitor* v) { return v->visit(this); }
 double MemberAccessNode::accept(Visitor* v) { return v->visit(this); }
 double ArrowAccessNode::accept(Visitor* v) { return v->visit(this); }
-double CastNode::accept(Visitor* v) { return v->visit(this); }
 double SizeOfNode::accept(Visitor* v) { return v->visit(this); }
 double LambdaExprNode::accept(Visitor* v) { return v->visit(this); }
 double CaptureNode::accept(Visitor* v) { return v->visit(this); }
@@ -176,13 +174,6 @@ double EVALVisitor::visit(AssignmentNode* e) {
             }
             switch (e->op) {
                 case AssignOp::ASSIGN: it->second[idx] = val; return val;
-                case AssignOp::ADD_ASSIGN: it->second[idx] += val; return it->second[idx];
-                case AssignOp::SUB_ASSIGN: it->second[idx] -= val; return it->second[idx];
-                case AssignOp::MUL_ASSIGN: it->second[idx] *= val; return it->second[idx];
-                case AssignOp::DIV_ASSIGN:
-                    if (val == 0) { cerr << "Error: división por cero" << endl; return 0; }
-                    it->second[idx] /= val;
-                    return it->second[idx];
             }
         }
         return 0;
@@ -193,40 +184,9 @@ double EVALVisitor::visit(AssignmentNode* e) {
             case AssignOp::ASSIGN:
                 env.update(id->name, val);
                 return val;
-            case AssignOp::ADD_ASSIGN: {
-                double cur = env.lookup(id->name);
-                double res = cur + val;
-                env.update(id->name, res);
-                return res;
-            }
-            case AssignOp::SUB_ASSIGN: {
-                double cur = env.lookup(id->name);
-                double res = cur - val;
-                env.update(id->name, res);
-                return res;
-            }
-            case AssignOp::MUL_ASSIGN: {
-                double cur = env.lookup(id->name);
-                double res = cur * val;
-                env.update(id->name, res);
-                return res;
-            }
-            case AssignOp::DIV_ASSIGN: {
-                double cur = env.lookup(id->name);
-                if (val == 0) { cerr << "Error: división por cero" << endl; return 0; }
-                double res = cur / val;
-                env.update(id->name, res);
-                return res;
-            }
         }
     }
     return 0;
-}
-
-double EVALVisitor::visit(TernaryOpNode* e) {
-    double cond = e->condition->accept(this);
-    if (cond != 0) return e->then_expr->accept(this);
-    return e->else_expr->accept(this);
 }
 
 double EVALVisitor::visit(PrintfNode* e) {
@@ -327,18 +287,6 @@ double EVALVisitor::visit(ArrowAccessNode* e) {
     }
     cerr << "Error: acceso por flecha no soportado en evaluación" << endl;
     return 0;
-}
-
-double EVALVisitor::visit(CastNode* e) {
-    double val = e->expr->accept(this);
-    if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(e->target_type)) {
-        if (pt->prim == PrimitiveTypeNode::INT) return (int)val;
-        if (pt->prim == PrimitiveTypeNode::FLOAT) return (float)val;
-        if (pt->prim == PrimitiveTypeNode::DOUBLE) return (double)val;
-        if (pt->prim == PrimitiveTypeNode::CHAR) return (char)val;
-        if (pt->prim == PrimitiveTypeNode::BOOL) return val != 0 ? 1.0 : 0.0;
-    }
-    return val;
 }
 
 double EVALVisitor::visit(SizeOfNode* e) {

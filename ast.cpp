@@ -35,10 +35,7 @@ AssignmentNode::AssignmentNode(Exp* t, Exp* v, AssignOp o)
     : Exp(), target(t), value(v), op(o) {}
 AssignmentNode::~AssignmentNode() { delete target; delete value; }
 
-// ===================== TernaryOpNode =====================
-TernaryOpNode::TernaryOpNode(Exp* c, Exp* t, Exp* e)
-    : Exp(), condition(c), then_expr(t), else_expr(e) {}
-TernaryOpNode::~TernaryOpNode() { delete condition; delete then_expr; delete else_expr; }
+
 
 // ===================== FcallNode =====================
 FcallNode::FcallNode(Exp* c) : Exp(), callee(c) {}
@@ -63,10 +60,7 @@ ArrowAccessNode::ArrowAccessNode(Exp* p, const string& m)
     : Exp(), pointer(p), member(m) {}
 ArrowAccessNode::~ArrowAccessNode() { delete pointer; }
 
-// ===================== CastNode =====================
-CastNode::CastNode(Exp* t, Exp* e)
-    : Exp(), target_type(t), expr(e) {}
-CastNode::~CastNode() { delete target_type; delete expr; }
+
 
 // ===================== SizeOfNode =====================
 SizeOfNode::SizeOfNode(Exp* t) : Exp(), target_type(t) {}

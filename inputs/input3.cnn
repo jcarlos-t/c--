@@ -4,19 +4,23 @@ int main() {
     int z;
     x = 10;
     y = 3;
-    z = (x > y) ? (x + y) : (x - y);
+    if (x > y) {
+        z = x + y;
+    } else {
+        z = x - y;
+    }
     printf(z);
 
-    x += 5;
+    x = x + 5;
     printf(x);
 
-    y *= 2;
+    y = y * 2;
     printf(y);
 
-    x /= 3;
+    x = x / 3;
     printf(x);
 
-    y -= 1;
+    y = y - 1;
     printf(y);
 
     return 0;

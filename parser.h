@@ -45,7 +45,6 @@ private:
     // Expressions
     Exp* parse_expression();
     Exp* parse_assignment();
-    Exp* parse_conditional();
     Exp* parse_logical_or();
     Exp* parse_logical_and();
     Exp* parse_equality();
@@ -53,8 +52,6 @@ private:
     Exp* parse_additive();
     Exp* parse_multiplicative();
     Exp* parse_pow();
-    Exp* parse_cast();
-    TypeNode* try_parse_cast_type();
     Exp* parse_unary();
     Exp* parse_postfix();
     Exp* parse_primary();

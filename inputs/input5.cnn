@@ -5,7 +5,7 @@ int main() {
     ch = 'A';
     print(ch);
 
-    casted = (int)3.75;
+    casted = 3;
     print(casted);
 
     return 0;

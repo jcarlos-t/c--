@@ -105,9 +105,6 @@ double ConstantFolding::visit(BinaryOpNode* e) {
             case BinaryOp::LOG_OR:
                 e->constantValue = (left != 0 || right != 0) ? 1.0 : 0.0;
                 break;
-            case BinaryOp::COMMA:
-                e->constantValue = right;
-                break;
             default:
                 e->isConstant = false;
                 return 0.0;
@@ -166,26 +163,6 @@ double ConstantFolding::visit(AssignmentNode* e) {
     return 0.0;
 }
 
-// Ternaria - constante si la condición lo es
-double ConstantFolding::visit(TernaryOpNode* e) {
-    double cond = e->condition->accept(this);
-    e->then_expr->accept(this);
-    e->else_expr->accept(this);
-    
-    if (e->condition->isConstant) {
-        e->isConstant = true;
-        if (cond != 0) {
-            e->constantValue = e->then_expr->constantValue;
-        } else {
-            e->constantValue = e->else_expr->constantValue;
-        }
-        return e->constantValue;
-    }
-    
-    e->isConstant = false;
-    return 0.0;
-}
-
 // Llamadas a funciones - nunca son constantes (pueden tener side effects)
 double ConstantFolding::visit(FcallNode* e) {
     e->callee->accept(this);
@@ -220,20 +197,6 @@ double ConstantFolding::visit(MemberAccessNode* e) {
 
 double ConstantFolding::visit(ArrowAccessNode* e) {
     e->pointer->accept(this);
-    e->isConstant = false;
-    return 0.0;
-}
-
-// Cast - constante si la expresión lo es
-double ConstantFolding::visit(CastNode* e) {
-    double val = e->expr->accept(this);
-    
-    if (e->expr->isConstant) {
-        e->isConstant = true;
-        e->constantValue = val;
-        return val;
-    }
-    
     e->isConstant = false;
     return 0.0;
 }

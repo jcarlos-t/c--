@@ -25,7 +25,7 @@ public:
         PLUS, MINUS, STAR, DIV, MOD, POW,
 
         // Operadores de asignación
-        ASSIGN, ADD_ASSIGN, SUB_ASSIGN, MUL_ASSIGN, DIV_ASSIGN,
+        ASSIGN,
 
         // Operadores de comparación
         EQ, NE, LT, GT, LE, GE,

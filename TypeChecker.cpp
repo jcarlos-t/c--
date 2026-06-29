@@ -13,13 +13,11 @@ using namespace std;
 Type* BinaryOpNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* UnaryOpNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* AssignmentNode::accept(TypeVisitor* v) { return v->visit(this); }
-Type* TernaryOpNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* FcallNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* MallocNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* IndexNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* MemberAccessNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* ArrowAccessNode::accept(TypeVisitor* v) { return v->visit(this); }
-Type* CastNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* SizeOfNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* LambdaExprNode::accept(TypeVisitor* v) { return v->visit(this); }
 Type* CaptureNode::accept(TypeVisitor* v) { return v->visit(this); }
@@ -753,28 +751,6 @@ Type* TypeChecker::visit(AssignmentNode* e) {
     return targetType;
 }
 
-Type* TypeChecker::visit(TernaryOpNode* e) {
-    Type* cond = e->condition->accept(this);
-    if (!cond->match(boolType)) {
-        error("condición ternaria debe ser bool.");
-    }
-    Type* thenType = e->then_expr->accept(this);
-    Type* elseType = e->else_expr->accept(this);
-    if (!thenType->match(elseType)) {
-        // Permitir promociones: int→float, int→double, float→double
-        if (thenType->ttype == Type::DOUBLE || elseType->ttype == Type::DOUBLE)
-            return doubleType;
-        if (thenType->ttype == Type::FLOAT || elseType->ttype == Type::FLOAT)
-            return floatType;
-        if (thenType->ttype == Type::FLOAT && elseType->ttype == Type::INT)
-            return floatType;
-        if (thenType->ttype == Type::INT && elseType->ttype == Type::FLOAT)
-            return floatType;
-        error("tipos incompatibles en expresión ternaria.");
-    }
-    return thenType;
-}
-
 Type* TypeChecker::visit(MallocNode* e) {
     e->size->accept(this);
     return intType; // returns int* (simplified)
@@ -923,10 +899,6 @@ Type* TypeChecker::visit(ArrowAccessNode* e) {
         return intType;
     }
     return it->second;
-}
-
-Type* TypeChecker::visit(CastNode* e) {
-    return type_from_ast(e->target_type);
 }
 
 Type* TypeChecker::visit(IdentifierNode* e) {

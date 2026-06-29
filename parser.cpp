@@ -557,48 +557,19 @@ Stm* Parser::parse_return_statement() {
 // Expressions
 // =============================
 
-// parse_expression: parsea expresiones separadas por coma
+// parse_expression: punto de entrada para expresiones
 Exp* Parser::parse_expression() {
-    Exp* l = parse_assignment();
-    while (match(Token::COMA)) {
-        Exp* r = parse_assignment();
-        l = new BinaryOpNode(l, r, BinaryOp::COMMA);
-    }
-    return l;
+    return parse_assignment();
 }
 
-// parse_assignment: parsea = += -= *= /= (asociativo a derecha)
+// parse_assignment: parsea = (asociativo a derecha)
 Exp* Parser::parse_assignment() {
-    Exp* l = parse_conditional();
+    Exp* l = parse_logical_or();
     if (match(Token::ASSIGN)) {
         Exp* r = parse_assignment();
         l = new AssignmentNode(l, r, AssignOp::ASSIGN);
-    } else if (match(Token::ADD_ASSIGN)) {
-        Exp* r = parse_assignment();
-        l = new AssignmentNode(l, r, AssignOp::ADD_ASSIGN);
-    } else if (match(Token::SUB_ASSIGN)) {
-        Exp* r = parse_assignment();
-        l = new AssignmentNode(l, r, AssignOp::SUB_ASSIGN);
-    } else if (match(Token::MUL_ASSIGN)) {
-        Exp* r = parse_assignment();
-        l = new AssignmentNode(l, r, AssignOp::MUL_ASSIGN);
-    } else if (match(Token::DIV_ASSIGN)) {
-        Exp* r = parse_assignment();
-        l = new AssignmentNode(l, r, AssignOp::DIV_ASSIGN);
     }
     return l;
-}
-
-// parse_conditional: parsea operador ternario ? :
-Exp* Parser::parse_conditional() {
-    Exp* cond = parse_logical_or();
-    if (match(Token::QUESTION)) {
-        Exp* then_expr = parse_expression();
-        consume(Token::COLON, "Se esperaba ':' en expresión ternaria");
-        Exp* else_expr = parse_conditional();
-        cond = new TernaryOpNode(cond, then_expr, else_expr);
-    }
-    return cond;
 }
 
 // parse_logical_or: parsea ||
@@ -692,104 +663,12 @@ Exp* Parser::parse_multiplicative() {
 
 // parse_pow: parsea ^ (potencia, asociativo a derecha)
 Exp* Parser::parse_pow() {
-    Exp* l = parse_cast();
+    Exp* l = parse_unary();
     if (match(Token::POW)) {
         Exp* r = parse_pow();
         l = new BinaryOpNode(l, r, BinaryOp::POW);
     }
     return l;
-}
-
-// try_parse_cast_type: estando justo después de '(',
-//   intenta reconocer un tipo (primitivo, struct o template).
-//   Si lo reconoce, deja el scanner apuntando a ')' y retorna el TypeNode*.
-//   Si no, restaura el scanner a la posición original y retorna nullptr.
-TypeNode* Parser::try_parse_cast_type() {
-    Scanner::Pos saved = scanner->getPos();
-
-    if (is_type_keyword(current->type)) {
-        Token::Type t = current->type;
-        advance();
-        if (check(Token::RPAREN))
-            return new PrimitiveTypeNode(kind_from_token(t));
-    } else if (check(Token::STRUCT)) {
-        advance();
-        if (check(Token::ID)) {
-            string name = current->text;
-            advance();
-            if (check(Token::RPAREN))
-                return new StructTypeNode(name);
-        }
-    } else if (check(Token::ID)) {
-        string tname = current->text;
-        Scanner::Pos psaved = scanner->getPos();
-        Token* peek1 = scanner->nextToken();
-        bool is_template = peek1->type == Token::LT;
-        if (is_template) {
-            Token* peek2 = scanner->nextToken();
-            is_template = is_type_keyword(peek2->type) ||
-                          peek2->type == Token::STRUCT ||
-                          peek2->type == Token::ID;
-            delete peek2;
-        }
-        delete peek1;
-        scanner->setPos(psaved);
-
-        if (is_template) {
-            advance();
-            consume(Token::LT, "Se esperaba '<' en cast de template");
-            vector<TypeNode*> targs;
-            do {
-                targs.push_back(parse_type());
-            } while (match(Token::COMA));
-            consume(Token::GT, "Se esperaba '>' en cast de template");
-            if (check(Token::RPAREN))
-                return new TemplateTypeNode(tname, targs);
-        }
-    }
-
-    scanner->setPos(saved);
-    return nullptr;
-}
-
-// parse_cast: parsea (type)expr o expresión parentizada
-Exp* Parser::parse_cast() {
-    if (!check(Token::LPAREN))
-        return parse_unary();
-
-    // Peek: si el token después de '(' no puede iniciar un tipo,
-    // es (expression), no cast. Esto evita que rollback + advance
-    // salte el primer token interno (bug con rollback).
-    Scanner::Pos saved = scanner->getPos();
-    Token* peek = scanner->nextToken();
-    bool maybe_cast = is_type_keyword(peek->type) ||
-                      peek->type == Token::STRUCT ||
-                      peek->type == Token::ID;
-    scanner->setPos(saved);
-    delete peek;
-
-    if (!maybe_cast) {
-        // Seguro: es expresión parentizada, no cast
-        advance(); // consume (
-        Exp* expr = parse_expression();
-        consume(Token::RPAREN, "Se esperaba ')'");
-        return expr;
-    }
-
-    // Podría ser cast — intentar con la lógica original
-    advance(); // consume (
-    if (TypeNode* cast_type = try_parse_cast_type()) {
-        if (match(Token::RPAREN))
-            return new CastNode(cast_type, parse_cast());
-        delete cast_type;
-    }
-
-    // No era cast — rollback y parsear como (expression)
-    rollback(saved);
-    advance();
-    Exp* expr = parse_expression();
-    consume(Token::RPAREN, "Se esperaba ')'");
-    return expr;
 }
 
 // parse_unary: parsea ++x --x & * - ! (prefijo)
@@ -803,19 +682,19 @@ Exp* Parser::parse_unary() {
         return new UnaryOpNode(operand, UnaryOp::PRE_DEC);
     }
     if (match(Token::AMPERSAND)) {
-        Exp* operand = parse_cast();
+        Exp* operand = parse_unary();
         return new UnaryOpNode(operand, UnaryOp::ADDR);
     }
     if (match(Token::STAR)) {
-        Exp* operand = parse_cast();
+        Exp* operand = parse_unary();
         return new UnaryOpNode(operand, UnaryOp::DEREF);
     }
     if (match(Token::MINUS)) {
-        Exp* operand = parse_cast();
+        Exp* operand = parse_unary();
         return new UnaryOpNode(operand, UnaryOp::MINUS);
     }
     if (match(Token::NOT)) {
-        Exp* operand = parse_cast();
+        Exp* operand = parse_unary();
         return new UnaryOpNode(operand, UnaryOp::LOG_NOT);
     }
     return parse_postfix();

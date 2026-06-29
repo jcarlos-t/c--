@@ -55,19 +55,17 @@ ret_stmt    = "return" [ expr ] ";"
 free_stmt   = "free" "(" expr ")" ";"
 
 // expresiones
-expr        = assign_expr ("," assign_expr)*
-assign_expr = cond_expr | unary_expr assign_op assign_expr
-assign_op   = "=" | "+=" | "-=" | "*=" | "/="
-cond_expr   = lor_expr | lor_expr "?" expr ":" cond_expr
+expr        = assign_expr
+assign_expr = unary_expr assign_op assign_expr
+assign_op   = "="
 lor_expr    = land_expr ("||" land_expr)*
 land_expr   = eq_expr ("&&" eq_expr)*
 eq_expr     = rel_expr { ("==" | "!=") rel_expr }
 rel_expr    = add_expr { ("<" | ">" | "<=" | ">=") add_expr }
 add_expr    = mul_expr { ("+" | "-") mul_expr }
 mul_expr    = pow_expr { ("*" | "/" | "%") pow_expr }
-pow_expr    = cast_expr [ "**" pow_expr ]
-cast_expr   = unary_expr | "(" type ")" cast_expr
-unary_expr  = post_expr | "++" unary_expr | "--" unary_expr | unary_op cast_expr
+pow_expr    = unary_expr [ "**" pow_expr ]
+unary_expr  = post_expr | "++" unary_expr | "--" unary_expr | unary_op unary_expr
 unary_op    = "&" | "*" | "-" | "!"
 post_expr   = prim_expr { "[" expr "]" | "(" [ arg_list ] ")"
                         | "." ID | "->" ID | "++" | "--" }
@@ -137,8 +135,8 @@ digit       = "0".."9"
 
 | Constructo                 | Regla                                                |
 |----------------------------|------------------------------------------------------|
-| Asignación `=` `+=` etc.   | Tipos compatibles; `int → float` es promovido        |
-| Condición `if` `while` `for` `?:` | Debe ser `bool`                              |
+| Asignación `=`            | Tipos compatibles; `int → float` es promovido        |
+| Condición `if` `while` `for` | Debe ser `bool`                              |
 | `&&` `\|\|` `!`            | Operandos `bool`; resultado `bool`                   |
 | `==` `!=` `<` `>` `<=` `>=` | Operandos `int` o `float`; resultado `bool`          |
 | `+` `-` `*` `/` `%` `**`   | `int` o `float`; mixto → `float`                     |
@@ -153,8 +151,6 @@ digit       = "0".."9"
 ### 2.4 Conversiones
 
 - **Promoción automática**: `int → float` en aritmética mixta y asignaciones.
-- **Promoción ternaria**: si una rama es `float` y otra `int`, resultado `float`.
-- **Cast explícito**: `(tipo) expr` convierte al tipo indicado.
 - **`sizeof`**: retorna `int` con el tamaño en bytes del tipo.
 
 ### 2.5 Manejo de errores
@@ -242,16 +238,14 @@ Statements (Stm)
 └── VarDecl (declaración local)
 
 Expressions (Exp)
-├── BinaryOpNode ── left, right (ADD, SUB, MUL, DIV, MOD, EQ, NE, LT, GT, LE, GE, LOG_AND, LOG_OR, POW, COMMA)
+├── BinaryOpNode ── left, right (ADD, SUB, MUL, DIV, MOD, EQ, NE, LT, GT, LE, GE, LOG_AND, LOG_OR, POW)
 ├── UnaryOpNode ── operand (ADDR, DEREF, MINUS, LOG_NOT, PRE_INC, PRE_DEC, POST_INC, POST_DEC)
-├── AssignmentNode ── target, value (ASSIGN, ADD_ASSIGN, SUB_ASSIGN, MUL_ASSIGN, DIV_ASSIGN)
-├── TernaryOpNode ── condition, then_expr, else_expr
+├── AssignmentNode ── target, value (ASSIGN)
 ├── FcallNode ── callee, args[], template_args[]
 ├── IndexNode ── base, index
 ├── MemberAccessNode ── object, member
 ├── ArrowAccessNode ── pointer, member
 ├── MallocNode ── size
-├── CastNode ── target_type, expr
 ├── SizeOfNode ── target_type
 ├── PrintfNode ── args[]
 ├── LambdaExprNode ── captures[], params[], return_type, body
@@ -298,10 +292,6 @@ visit(RHS)             → valor en %rax
 target->computeAddress(this) → dirección en %rbx
 emit "movq %rax, (%rbx)"     → almacenar
 ```
-
-Para asignación compuesta (`+=`, etc.), primero se calcula la dirección,
-luego se carga el valor actual, se aplica la operación, y se almacena
-el resultado.
 
 ### 4.4 Memoria
 
