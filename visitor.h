@@ -221,6 +221,7 @@ private:
     int switchDepth;
     vector<string> errors;
     bool hasError;
+    int currentOffset = 0;  // offset actual para variables locales
 
     void add_function(FunDecl* fd);
     ::Type* type_from_ast(Exp* t);
@@ -228,6 +229,10 @@ private:
     void error(const string& msg);
     void error(const string& msg, const Location& loc);
     StructType* instantiate_template(const string& name, const vector<TypeNode*>& args);
+    
+    // Bin packing: recolectar variables y calcular offsets optimizados
+    void collectVars(Stm* stmt, vector<VarDecl*>& vars);
+    void assignOffsetsWithBinPacking(vector<VarDecl*>& vars, int startOffset);
 
 public:
     TypeChecker();
@@ -361,9 +366,15 @@ private:
     void loadVar(const string& name);
     void storeVar(const string& name);
     void leaVar(const string& name);
+    
+    // Helper para obtener sufijo de instrucción según tamaño
+    string instrSuffix(int size);
+    string loadInstr(int size);  // movzbq, movslq, movq
+    string storeInstr(int size); // movb, movl, movq
 
     unordered_map<string, int> memoria;
     unordered_map<string, bool> memoriaGlobal;
+    unordered_map<string, int> variableSizes;  // tamaño de cada variable
     unordered_map<string, int> arraySizes;
     unordered_map<string, vector<int>> arrayDimensions;
     unordered_map<string, int> structFieldCount;

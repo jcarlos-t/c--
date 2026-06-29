@@ -33,6 +33,17 @@ public:
             default:     return "unknown";
         }
     }
+
+    virtual int size() const {
+        switch (ttype) {
+            case VOID:   return 0;
+            case INT:    return 4;
+            case BOOL:   return 1;
+            case FLOAT:  return 4;
+            case POINTER: return 8;
+            default:     return 8;
+        }
+    }
 };
 
 // Tipo puntero: base es el tipo apuntado
@@ -57,8 +68,8 @@ public:
 class ArrayType : public Type {
 public:
     Type* base;
-    int size; // -1 si tamaño desconocido
-    ArrayType(Type* b, int s = -1) : Type(ARRAY), base(b), size(s) {}
+    int length; // -1 si tamaño desconocido
+    ArrayType(Type* b, int l = -1) : Type(ARRAY), base(b), length(l) {}
     ~ArrayType() override { }
 
     bool match(Type* t) const override {
@@ -68,9 +79,14 @@ public:
     }
 
     string str() const override {
-        if (size >= 0)
-            return base->str() + "[" + to_string(size) + "]";
+        if (length >= 0)
+            return base->str() + "[" + to_string(length) + "]";
         return base->str() + "[]";
+    }
+
+    int size() const override {
+        if (length >= 0) return base->size() * length;
+        return 8; // array sin tamaño conocido, tratar como puntero
     }
 };
 
@@ -91,6 +107,14 @@ public:
 
     string str() const override {
         return "struct " + name;
+    }
+
+    int size() const override {
+        int total = 0;
+        for (auto& pair : members) {
+            total += pair.second->size();
+        }
+        return total;
     }
 };
 
