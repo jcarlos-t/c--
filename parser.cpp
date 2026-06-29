@@ -757,15 +757,34 @@ Exp* Parser::parse_cast() {
     if (!check(Token::LPAREN))
         return parse_unary();
 
+    // Peek: si el token después de '(' no puede iniciar un tipo,
+    // es (expression), no cast. Esto evita que rollback + advance
+    // salte el primer token interno (bug con rollback).
     Scanner::Pos saved = scanner->getPos();
-    advance();
+    Token* peek = scanner->nextToken();
+    bool maybe_cast = is_type_keyword(peek->type) ||
+                      peek->type == Token::STRUCT ||
+                      peek->type == Token::ID;
+    scanner->setPos(saved);
+    delete peek;
 
+    if (!maybe_cast) {
+        // Seguro: es expresión parentizada, no cast
+        advance(); // consume (
+        Exp* expr = parse_expression();
+        consume(Token::RPAREN, "Se esperaba ')'");
+        return expr;
+    }
+
+    // Podría ser cast — intentar con la lógica original
+    advance(); // consume (
     if (TypeNode* cast_type = try_parse_cast_type()) {
         if (match(Token::RPAREN))
             return new CastNode(cast_type, parse_cast());
         delete cast_type;
     }
 
+    // No era cast — rollback y parsear como (expression)
     rollback(saved);
     advance();
     Exp* expr = parse_expression();
