@@ -4,7 +4,17 @@
 using namespace std;
 
 // ===================== Exp base =====================
-Exp::~Exp() {}
+
+double Exp::accept(Visitor*) {
+    return 0.0;
+}
+
+Type* Exp::accept(TypeVisitor*) {
+    return nullptr;
+}
+
+void Exp::accept(CodeGenVisitor*) {
+}
 
 void Exp::computeAddress(CodeGenVisitor*) {
     cerr << "Error: el nodo no es un lvalue" << endl;
