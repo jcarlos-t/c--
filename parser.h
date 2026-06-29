@@ -58,13 +58,13 @@ private:
     Exp* parse_unary();
     Exp* parse_postfix();
     Exp* parse_primary();
-    Exp* parse_constant();
 
     // Helpers
-    Exp* parse_argument_list();
     bool is_type_start() const;
     bool can_start_type();
     VarDecl* parse_local_var_decl();
+    void rollback(Scanner::Pos saved);
+    void parse_array_suffix(VarDecl* vd);
 
 public:
     Parser(Scanner* scanner);

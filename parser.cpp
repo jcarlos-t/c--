@@ -77,11 +77,30 @@ void Parser::sync_error(const string& msg) {
 
 // Helper: is_type_start
 
+// is_type_keyword: true si el token es un tipo primitivo (sin struct)
+static bool is_type_keyword(Token::Type t) {
+    return t == Token::VOID || t == Token::INT || t == Token::CHAR ||
+           t == Token::FLOAT || t == Token::DOUBLE || t == Token::BOOL ||
+           t == Token::AUTO;
+}
+
+// kind_from_token: convierte Token::Type a PrimitiveTypeNode::Prim
+static PrimitiveTypeNode::Prim kind_from_token(Token::Type t) {
+    switch (t) {
+        case Token::VOID:   return PrimitiveTypeNode::VOID;
+        case Token::INT:    return PrimitiveTypeNode::INT;
+        case Token::CHAR:   return PrimitiveTypeNode::CHAR;
+        case Token::FLOAT:  return PrimitiveTypeNode::FLOAT;
+        case Token::DOUBLE: return PrimitiveTypeNode::DOUBLE;
+        case Token::BOOL:   return PrimitiveTypeNode::BOOL;
+        default:            return PrimitiveTypeNode::AUTO;
+    }
+}
+
 // is_type_start: true si el token actual puede iniciar un tipo
 bool Parser::is_type_start() const {
-    return check(Token::VOID) || check(Token::INT) || check(Token::CHAR) ||
-           check(Token::FLOAT) || check(Token::DOUBLE) || check(Token::BOOL) ||
-           check(Token::AUTO) || check(Token::STRUCT);
+    if (isAtEnd()) return false;
+    return is_type_keyword(current->type) || check(Token::STRUCT);
 }
 
 // can_start_type: true si el siguiente token puede ser tipo o tipo temlate ID<>
@@ -96,6 +115,24 @@ bool Parser::can_start_type() {
         return result;
     }
     return false;
+}
+
+// rollback: restaura scanner y reconstruye estado current/previous
+void Parser::rollback(Scanner::Pos saved) {
+    scanner->setPos(saved);
+    delete current;
+    delete previous;
+    previous = nullptr;
+    current = scanner->nextToken();
+}
+
+// parse_array_suffix: parsea [expr] opcional en variables/parámetros
+void Parser::parse_array_suffix(VarDecl* vd) {
+    while (match(Token::LBRACKET)) {
+        if (!check(Token::RBRACKET))
+            vd->array_sizes.push_back(parse_expression());
+        consume(Token::RBRACKET, "Se esperaba ']'");
+    }
 }
 
 // =============================
@@ -113,20 +150,11 @@ TypeNode* Parser::parse_type() {
 
 // parse_basic_type: parsea void/int/char/float/double/bool/auto/struct/template
 TypeNode* Parser::parse_basic_type() {
-    if (match(Token::VOID))
-        return new PrimitiveTypeNode(PrimitiveTypeNode::VOID);
-    if (match(Token::INT))
-        return new PrimitiveTypeNode(PrimitiveTypeNode::INT);
-    if (match(Token::CHAR))
-        return new PrimitiveTypeNode(PrimitiveTypeNode::CHAR);
-    if (match(Token::FLOAT))
-        return new PrimitiveTypeNode(PrimitiveTypeNode::FLOAT);
-    if (match(Token::DOUBLE))
-        return new PrimitiveTypeNode(PrimitiveTypeNode::DOUBLE);
-    if (match(Token::BOOL))
-        return new PrimitiveTypeNode(PrimitiveTypeNode::BOOL);
-    if (match(Token::AUTO))
-        return new PrimitiveTypeNode(PrimitiveTypeNode::AUTO);
+    if (is_type_keyword(current->type)) {
+        Token::Type t = current->type;
+        advance();
+        return new PrimitiveTypeNode(kind_from_token(t));
+    }
     // struct person <- esto es un tipo
     if (match(Token::STRUCT)) {
         Token* name = consume(Token::ID, "Se esperaba nombre de struct");
@@ -152,11 +180,7 @@ TypeNode* Parser::parse_basic_type() {
             return new TemplateTypeNode(tname, targs);
         }
         // rollback: no era un template, puede ser un id
-        scanner->setPos(saved);
-        delete current;
-        delete previous;
-        previous = nullptr;
-        current = scanner->nextToken();
+        rollback(saved);
     }
     sync_error("Se esperaba un tipo (int, float, void, char, double, auto, struct)");
     return nullptr;
@@ -239,11 +263,7 @@ void Parser::parse_declaration(Program* p) {
             }
         }
         // rollback: no era declaracion de struct, puede ser instanciación: struct name x;
-        scanner->setPos(saved);
-        delete current;
-        delete previous;
-        previous = nullptr;
-        current = scanner->nextToken();
+        rollback(saved);
     }
 
     // funct | vardec
@@ -297,13 +317,8 @@ VarDecl* Parser::parse_variable_decl(Exp* type, const string& name) {
     VarDecl* vd = new VarDecl(type, name);
     vd->loc.line = current->line; vd->loc.column = current->col;
 
-    // array_suffixz
-    while (match(Token::LBRACKET)) {
-        if (!check(Token::RBRACKET)) {
-            vd->array_sizes.push_back(parse_expression());
-        }
-        consume(Token::RBRACKET, "Se esperaba ']' en declaración de arreglo");
-    }
+    // array_suffix
+    parse_array_suffix(vd);
 
     // optional initializer
     if (match(Token::ASSIGN)) {
@@ -345,13 +360,7 @@ VarDecl* Parser::parse_parameter() {
     TypeNode* type = parse_type();
     Token* name = consume(Token::ID, "Se esperaba nombre del parámetro");
     VarDecl* param = new VarDecl(type, name->text);
-
-    while (match(Token::LBRACKET)) {
-        if (!check(Token::RBRACKET)) {
-            param->array_sizes.push_back(parse_expression());
-        }
-        consume(Token::RBRACKET, "Se esperaba ']'");
-    }
+    parse_array_suffix(param);
     return param;
 }
 
@@ -691,25 +700,6 @@ Exp* Parser::parse_pow() {
     return l;
 }
 
-// Helpers para cast
-static PrimitiveTypeNode::Prim kind_from_token(Token::Type t) {
-    switch (t) {
-        case Token::VOID:   return PrimitiveTypeNode::VOID;
-        case Token::INT:    return PrimitiveTypeNode::INT;
-        case Token::CHAR:   return PrimitiveTypeNode::CHAR;
-        case Token::FLOAT:  return PrimitiveTypeNode::FLOAT;
-        case Token::DOUBLE: return PrimitiveTypeNode::DOUBLE;
-        case Token::BOOL:   return PrimitiveTypeNode::BOOL;
-        default:            return PrimitiveTypeNode::AUTO;
-    }
-}
-
-static bool is_type_keyword(Token::Type t) {
-    return t == Token::VOID || t == Token::INT || t == Token::CHAR ||
-           t == Token::FLOAT || t == Token::DOUBLE || t == Token::BOOL ||
-           t == Token::AUTO;
-}
-
 // try_parse_cast_type: estando justo después de '(',
 //   intenta reconocer un tipo (primitivo, struct o template).
 //   Si lo reconoce, deja el scanner apuntando a ')' y retorna el TypeNode*.
@@ -776,11 +766,7 @@ Exp* Parser::parse_cast() {
         delete cast_type;
     }
 
-    scanner->setPos(saved);
-    delete current;
-    delete previous;
-    previous = nullptr;
-    current = scanner->nextToken();
+    rollback(saved);
     advance();
     Exp* expr = parse_expression();
     consume(Token::RPAREN, "Se esperaba ')'");
