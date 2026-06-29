@@ -146,7 +146,7 @@ string GenCodeVisitor::loadInstr(int size) {
     switch (size) {
         case 1: return "movzbq";  // zero-extend 1 byte -> 8 bytes
         case 4: return "movslq";  // sign-extend 4 bytes -> 8 bytes
-        case 8: return "movq";
+        case 8: return "movq";    // 8 bytes (punteros, double)
         default: return "movq";
     }
 }
@@ -270,6 +270,12 @@ void GenCodeVisitor::visit(IdentifierNode *e) {
 }
 
 void GenCodeVisitor::visit(BinaryOpNode *e) {
+    // Constant folding: si es constante, generar directamente el valor
+    if (e->isConstant) {
+        out << "  movq $" << (long long)e->constantValue << ", %rax\n";
+        return;
+    }
+    
     if (e->op == BinaryOp::POW) {
         auto *rightNum = dynamic_cast<IntegerLiteralNode *>(e->right);
         if (rightNum && rightNum->value == 2) {
@@ -363,6 +369,12 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
 }
 
 void GenCodeVisitor::visit(UnaryOpNode *e) {
+    // Constant folding: si es constante, generar directamente el valor
+    if (e->isConstant) {
+        out << "  movq $" << (long long)e->constantValue << ", %rax\n";
+        return;
+    }
+    
     e->operand->accept(this);
 
     // Determinar tamaño del operando
@@ -466,6 +478,12 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
 }
 
 void GenCodeVisitor::visit(TernaryOpNode *e) {
+    // Constant folding: si es constante, generar directamente el valor
+    if (e->isConstant) {
+        out << "  movq $" << (long long)e->constantValue << ", %rax\n";
+        return;
+    }
+    
     int lbl = labelcont++;
     e->condition->accept(this);
     out << "  cmpq $0, %rax\n";
@@ -595,6 +613,12 @@ void GenCodeVisitor::visit(MallocNode *e) {
 }
 
 void GenCodeVisitor::visit(CastNode *e) {
+    // Constant folding: si es constante, generar directamente el valor
+    if (e->isConstant) {
+        out << "  movq $" << (long long)e->constantValue << ", %rax\n";
+        return;
+    }
+    
     e->expr->accept(this);
     if (auto *pt = dynamic_cast<PrimitiveTypeNode *>(e->target_type)) {
         if (pt->prim == PrimitiveTypeNode::BOOL) {
@@ -742,7 +766,9 @@ void GenCodeVisitor::visit(IfStmt *s) {
 void GenCodeVisitor::visit(WhileStmt *s) {
     int lbl = labelcont++;
     string oldBreak = currentBreakLabel;
+    string oldContinue = currentContinueLabel;
     currentBreakLabel = "endwhile_" + to_string(lbl);
+    currentContinueLabel = "while_" + to_string(lbl);
 
     out << "while_" << lbl << ":\n";
     s->condition->accept(this);
@@ -753,27 +779,34 @@ void GenCodeVisitor::visit(WhileStmt *s) {
     out << "endwhile_" << lbl << ":\n";
 
     currentBreakLabel = oldBreak;
+    currentContinueLabel = oldContinue;
 }
 
 void GenCodeVisitor::visit(DoWhileStmt *s) {
     int lbl = labelcont++;
     string oldBreak = currentBreakLabel;
+    string oldContinue = currentContinueLabel;
     currentBreakLabel = "endwhile_" + to_string(lbl);
+    currentContinueLabel = "docond_" + to_string(lbl);
 
     out << "dowhile_" << lbl << ":\n";
     s->body->accept(this);
+    out << "docond_" << lbl << ":\n";
     s->condition->accept(this);
     out << "  cmpq $0, %rax\n";
     out << "  jne dowhile_" << lbl << "\n";
     out << "endwhile_" << lbl << ":\n";
 
     currentBreakLabel = oldBreak;
+    currentContinueLabel = oldContinue;
 }
 
 void GenCodeVisitor::visit(ForStmt *s) {
     int lbl = labelcont++;
     string oldBreak = currentBreakLabel;
+    string oldContinue = currentContinueLabel;
     currentBreakLabel = "endfor_" + to_string(lbl);
+    currentContinueLabel = "forinc_" + to_string(lbl);
 
     if (s->init)
         s->init->accept(this);
@@ -785,12 +818,14 @@ void GenCodeVisitor::visit(ForStmt *s) {
         out << "  je endfor_" << lbl << "\n";
     }
     s->body->accept(this);
+    out << "forinc_" << lbl << ":\n";
     if (s->increment)
         s->increment->accept(this);
     out << "  jmp for_" << lbl << "\n";
     out << "endfor_" << lbl << ":\n";
 
     currentBreakLabel = oldBreak;
+    currentContinueLabel = oldContinue;
 }
 
 void GenCodeVisitor::visit(SwitchStmt *s) {
@@ -839,9 +874,11 @@ void GenCodeVisitor::visit(BreakStmt *) {
 }
 
 void GenCodeVisitor::visit(ContinueStmt *) {
-    // continue jumps back to loop condition
-    // This is complex; simplified as jmp to the loop label
-    out << "  ; continue (simplified)\n";
+    if (currentContinueLabel.empty()) {
+        cerr << "Error: continue fuera de ciclo\n";
+        exit(1);
+    }
+    out << "  jmp " << currentContinueLabel << "\n";
 }
 
 void GenCodeVisitor::visit(ReturnStmt *s) {
