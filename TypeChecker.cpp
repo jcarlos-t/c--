@@ -310,7 +310,6 @@ void TypeChecker::visit(FunDecl* f) {
         p->memSize = t->size();
         p->resolvedType = t;
         params.push_back(p);
-        env.add_var(p->name, t);
     }
     
     // Asignar offsets a parámetros con bin packing
@@ -321,13 +320,38 @@ void TypeChecker::visit(FunDecl* f) {
         if (end > paramSize) paramSize = end;
     }
     
-    // Recolectar todas las variables locales del body
+    // Recolectar todas las variables locales del body para calcular offsets
     vector<VarDecl*> localVars;
     collectVars(f->body, localVars);
     
-    // Verificar tipos de variables locales
+    // Asignar tipos y tamaños a variables locales (sin agregar al environment)
     for (auto v : localVars) {
-        v->accept(this);
+        if (v->resolvedType == nullptr) {
+            Type* t = type_from_ast(v->type);
+            if (t->match(voidType)) {
+                error("no se puede declarar variable de tipo void.");
+                t = intType;
+            }
+            // Wrap en ArrayType si tiene dimensiones
+            for (auto s : v->array_sizes) {
+                ArrayType* at = new ArrayType(t, -1);
+                typeCache.push_back(at);
+                t = at;
+            }
+            // Inferencia auto
+            if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(v->type)) {
+                if (pt->prim == PrimitiveTypeNode::AUTO) {
+                    if (!v->initializer) {
+                        error("variable 'auto' necesita inicializador para inferir tipo.");
+                        t = intType;
+                    } else {
+                        t = v->initializer->accept(this);
+                    }
+                }
+            }
+            v->resolvedType = t;
+            v->memSize = t->size();
+        }
     }
     
     // Asignar offsets a variables locales con bin packing (después de parámetros)
@@ -341,9 +365,8 @@ void TypeChecker::visit(FunDecl* f) {
     }
     
     // Convertir offsets a negativos (stack frame)
-    // El primer slot va en -8(%rbp), el segundo en -16(%rbp), etc.
     for (auto p : params) {
-        p->offset = -(p->offset + 8);  // offset 0 -> -8, offset 4 -> -12, etc.
+        p->offset = -(p->offset + 8);
     }
     for (auto v : localVars) {
         v->offset = -(v->offset + 8);
@@ -351,7 +374,12 @@ void TypeChecker::visit(FunDecl* f) {
     
     retornodefuncion = type_from_ast(f->return_type);
     
-    // Procesar body
+    // Agregar parámetros al environment
+    for (auto p : params) {
+        env.add_var(p->name, p->resolvedType);
+    }
+    
+    // Procesar body (las variables locales se agregarán al environment cuando se visiten)
     f->body->accept(this);
 
     if (!retornodefuncion->match(voidType)) {
@@ -438,6 +466,7 @@ void TypeChecker::assignOffsetsWithBinPacking(vector<VarDecl*>& vars, int startO
     // Asignar cada variable al primer slot donde quepa
     for (auto v : vars) {
         int size = v->memSize;
+        if (size == 0) continue; // Skip variables with size 0 (void)
         bool placed = false;
         
         for (size_t i = 0; i < slots.size(); i++) {
@@ -472,8 +501,13 @@ void TypeChecker::assignOffsetsWithBinPacking(vector<VarDecl*>& vars, int startO
 
 void TypeChecker::visit(VarDecl* v) {
     // Si ya tiene resolvedType, fue procesado por visit(FunDecl*) con bin packing
+    // Verificar duplicados antes de agregar al environment
     if (v->resolvedType != nullptr) {
-        // Solo verificar inicializador
+        if (env.check_current(v->name)) {
+            error("variable '" + v->name + "' ya declarada en este ámbito.");
+            return;
+        }
+        env.add_var(v->name, v->resolvedType);
         if (v->initializer) {
             Type* initType = v->initializer->accept(this);
             if (!check_assign(v->resolvedType, initType)) {
