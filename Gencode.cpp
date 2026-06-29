@@ -472,12 +472,25 @@ void GenCodeVisitor::visit(FcallNode *e) {
     string fname = id ? id->name : "";
 
     int nArgs = (int)e->args.size();
+    
+    // Primero, push argumentos extra (>6) en orden inverso
+    for (int i = nArgs - 1; i >= 6; i--) {
+        e->args[i]->accept(this);
+        out << "  pushq %rax\n";
+    }
+    
+    // Luego, cargar los primeros 6 argumentos en registros
     for (int i = 0; i < nArgs && i < 6; i++) {
         e->args[i]->accept(this);
         out << "  movq %rax, " << argRegs[i] << "\n";
     }
-    // extra args beyond 6 go on stack (simplified: not implemented)
+    
     out << "  call " << fname << "\n";
+    
+    // Limpiar argumentos extra del stack
+    if (nArgs > 6) {
+        out << "  addq $" << ((nArgs - 6) * 8) << ", %rsp\n";
+    }
 }
 
 void GenCodeVisitor::visit(IndexNode *e) {
@@ -583,6 +596,24 @@ void GenCodeVisitor::visit(SizeOfNode *e) {
     }
     if (dynamic_cast<PointerTypeNode *>(e->target_type))
         out << "  movq $8, %rax\n";
+    else if (auto *st = dynamic_cast<StructTypeNode *>(e->target_type)) {
+        // Calcular tamaño del struct sumando tamaños de miembros
+        auto it = structFieldCount.find(st->name);
+        if (it != structFieldCount.end()) {
+            out << "  movq $" << (it->second * 8) << ", %rax\n";
+        } else {
+            out << "  movq $0, %rax\n";
+        }
+    }
+    else if (auto *nt = dynamic_cast<NamedTypeNode *>(e->target_type)) {
+        // Podría ser un struct instanciado
+        auto it = structFieldCount.find(nt->name);
+        if (it != structFieldCount.end()) {
+            out << "  movq $" << (it->second * 8) << ", %rax\n";
+        } else {
+            out << "  movq $0, %rax\n";
+        }
+    }
     else
         out << "  movq $0, %rax\n";
 }
@@ -645,7 +676,8 @@ void GenCodeVisitor::visit(LambdaExprNode *e) {
     // Calcular frame size para lambda (asume 8 bytes por variable)
     int localVarCount = countLambdaVars(e->body);
     int paramCount = (int)e->params.size();
-    int totalVars = paramCount + localVarCount;
+    int captureCount = (int)e->captures.size();
+    int totalVars = paramCount + localVarCount + captureCount;
     int frameSize = (totalVars * 8 + 15) & ~15;
 
     out << lambdaName << ":\n";
@@ -654,13 +686,44 @@ void GenCodeVisitor::visit(LambdaExprNode *e) {
     if (frameSize > 0)
         out << "  subq $" << frameSize << ", %rsp\n";
 
-    // Asignar offsets a parámetros
+    // Asignar offsets a parámetros (en stack positivo)
     for (auto p : e->params) {
         offset -= 8;
         memoria[p->name] = offset;
     }
 
-    // Generar código
+    // Asignar offsets a capturas (en stack negativo)
+    for (auto cap : e->captures) {
+        offset -= 8;
+        memoria[cap->name] = offset;
+    }
+
+    // Generar código para inicializar capturas
+    for (auto cap : e->captures) {
+        if (cap->mode == CaptureNode::BY_VALUE) {
+            // Capturar por valor: copiar el valor actual
+            if (memoriaGlobal.count(cap->name)) {
+                // Variable global
+                out << "  movq " << cap->name << "(%rip), %rax\n";
+            } else if (savedMemoria.count(cap->name)) {
+                // Variable local del scope exterior
+                out << "  movq " << savedMemoria[cap->name] << "(%rbp), %rax\n";
+            }
+            out << "  movq %rax, " << memoria[cap->name] << "(%rbp)\n";
+        } else if (cap->mode == CaptureNode::BY_REF) {
+            // Capturar por referencia: guardar la dirección
+            if (memoriaGlobal.count(cap->name)) {
+                // Variable global
+                out << "  leaq " << cap->name << "(%rip), %rax\n";
+            } else if (savedMemoria.count(cap->name)) {
+                // Variable local del scope exterior
+                out << "  leaq " << savedMemoria[cap->name] << "(%rbp), %rax\n";
+            }
+            out << "  movq %rax, " << memoria[cap->name] << "(%rbp)\n";
+        }
+    }
+
+    // Generar código del body
     e->body->accept(this);
 
     out << ".Llambda_end_" << lbl << ":\n";
@@ -928,6 +991,9 @@ void GenCodeVisitor::visit(TemplateDecl *d) {
         structFieldCount[d->struct_decl->name] = (int)d->struct_decl->members.size();
     }
     if (d->func) {
+        // Para template functions, generar código para cada instanciación encontrada
+        // Las instanciaciones se registran durante el typechecking
+        // Por ahora, generamos el código base del template
         d->func->accept(this);
     }
 }
