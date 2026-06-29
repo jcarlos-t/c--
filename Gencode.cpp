@@ -81,11 +81,13 @@ void GenCodeVisitor::generate(Program *p) {
         out << name << ": .quad 0\n";
 
     out << "\n.text\n";
-    out << ".globl _start\n";
+    /* out << ".globl _start\n";
     out << "_start:\n";
     out << "  call main\n";
     out << "  movq %rax, %rdi\n";
-    out << "  call exit@PLT\n";
+    out << "  call exit@PLT\n"; */
+
+    out << ".globl main\n";
 
     for (auto f : p->functions)
         f->accept(this);
@@ -129,6 +131,36 @@ void GenCodeVisitor::generate(Program *p) {
 // Lvalue capture & store
 // ============================================================
 
+// Helper: sufijo de instrucción según tamaño
+string GenCodeVisitor::instrSuffix(int size) {
+    switch (size) {
+        case 1: return "b";
+        case 4: return "l";
+        case 8: return "q";
+        default: return "q";
+    }
+}
+
+// Helper: instrucción de carga según tamaño
+string GenCodeVisitor::loadInstr(int size) {
+    switch (size) {
+        case 1: return "movzbq";  // zero-extend 1 byte -> 8 bytes
+        case 4: return "movslq";  // sign-extend 4 bytes -> 8 bytes
+        case 8: return "movq";
+        default: return "movq";
+    }
+}
+
+// Helper: instrucción de almacenamiento según tamaño
+string GenCodeVisitor::storeInstr(int size) {
+    switch (size) {
+        case 1: return "movb";
+        case 4: return "movl";
+        case 8: return "movq";
+        default: return "movq";
+    }
+}
+
 string GenCodeVisitor::varMem(const string& name) {
     if (memoriaGlobal.count(name))
         return name + "(%rip)";
@@ -136,11 +168,20 @@ string GenCodeVisitor::varMem(const string& name) {
 }
 
 void GenCodeVisitor::loadVar(const string& name) {
-    out << "  movq " << varMem(name) << ", %rax\n";
+    int size = 8;  // default
+    if (variableSizes.count(name)) {
+        size = variableSizes[name];
+    }
+    out << "  " << loadInstr(size) << " " << varMem(name) << ", %rax\n";
 }
 
 void GenCodeVisitor::storeVar(const string& name) {
-    out << "  movq %rax, " << varMem(name) << "\n";
+    int size = 8;  // default
+    if (variableSizes.count(name)) {
+        size = variableSizes[name];
+    }
+    string reg = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
+    out << "  " << storeInstr(size) << " " << reg << ", " << varMem(name) << "\n";
 }
 
 void GenCodeVisitor::leaVar(const string& name) {
@@ -250,17 +291,23 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
     out << "  movq %rax, %rcx\n";
     out << "  popq %rax\n";
 
+    // Determinar tamaño de operación (usar 8 bytes por defecto para seguridad)
+    // En el futuro se puede optimizar según los tipos de los operandos
+    string suffix = "q";
+    string reg1 = "%rax";
+    string reg2 = "%rcx";
+
     switch (e->op) {
-    case BinaryOp::ADD: out << "  addq %rcx, %rax\n"; break;
-    case BinaryOp::SUB: out << "  subq %rcx, %rax\n"; break;
-    case BinaryOp::MUL: out << "  imulq %rcx, %rax\n"; break;
+    case BinaryOp::ADD: out << "  add" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
+    case BinaryOp::SUB: out << "  sub" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
+    case BinaryOp::MUL: out << "  imul" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
     case BinaryOp::DIV:
         out << "  cqto\n";
-        out << "  idivq %rcx\n";
+        out << "  idiv" << suffix << " " << reg2 << "\n";
         break;
     case BinaryOp::MOD:
         out << "  cqto\n";
-        out << "  idivq %rcx\n";
+        out << "  idiv" << suffix << " " << reg2 << "\n";
         out << "  movq %rdx, %rax\n";
         break;
     case BinaryOp::POW:
@@ -269,46 +316,46 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
         out << "  call potencia\n";
         break;
     case BinaryOp::EQ:
-        out << "  cmpq %rcx, %rax\n";
+        out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
         out << "  movq $0, %rax\n";
         out << "  sete %al\n";
         out << "  movzbq %al, %rax\n";
         break;
     case BinaryOp::NE:
-        out << "  cmpq %rcx, %rax\n";
+        out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
         out << "  movq $0, %rax\n";
         out << "  setne %al\n";
         out << "  movzbq %al, %rax\n";
         break;
     case BinaryOp::LT:
-        out << "  cmpq %rcx, %rax\n";
+        out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
         out << "  movq $0, %rax\n";
         out << "  setl %al\n";
         out << "  movzbq %al, %rax\n";
         break;
     case BinaryOp::GT:
-        out << "  cmpq %rcx, %rax\n";
+        out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
         out << "  movq $0, %rax\n";
         out << "  setg %al\n";
         out << "  movzbq %al, %rax\n";
         break;
     case BinaryOp::LE:
-        out << "  cmpq %rcx, %rax\n";
+        out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
         out << "  movq $0, %rax\n";
         out << "  setle %al\n";
         out << "  movzbq %al, %rax\n";
         break;
     case BinaryOp::GE:
-        out << "  cmpq %rcx, %rax\n";
+        out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
         out << "  movq $0, %rax\n";
         out << "  setge %al\n";
         out << "  movzbq %al, %rax\n";
         break;
     case BinaryOp::LOG_AND:
-        out << "  andq %rcx, %rax\n";
+        out << "  and" << suffix << " " << reg2 << ", " << reg1 << "\n";
         break;
     case BinaryOp::LOG_OR:
-        out << "  orq %rcx, %rax\n";
+        out << "  or" << suffix << " " << reg2 << ", " << reg1 << "\n";
         break;
     case BinaryOp::COMMA:
         break; // comma: left already evaluated, result is right (already in %rax)
@@ -318,9 +365,20 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
 void GenCodeVisitor::visit(UnaryOpNode *e) {
     e->operand->accept(this);
 
+    // Determinar tamaño del operando
+    int size = 8;  // default
+    if (auto* id = dynamic_cast<IdentifierNode*>(e->operand)) {
+        if (variableSizes.count(id->name)) {
+            size = variableSizes[id->name];
+        }
+    }
+    
+    string suffix = (size == 1) ? "b" : (size == 4) ? "l" : "q";
+    string reg = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
+
     switch (e->op) {
     case UnaryOp::MINUS:
-        out << "  negq %rax\n";
+        out << "  neg" << suffix << " " << reg << "\n";
         break;
     case UnaryOp::LOG_NOT:
         out << "  cmpq $0, %rax\n";
@@ -329,19 +387,19 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
         out << "  movzbq %al, %rax\n";
         break;
     case UnaryOp::PRE_INC:
-        out << "  incq %rax\n";
+        out << "  inc" << suffix << " " << reg << "\n";
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
             storeVar(id->name);
         break;
     case UnaryOp::PRE_DEC:
-        out << "  decq %rax\n";
+        out << "  dec" << suffix << " " << reg << "\n";
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
             storeVar(id->name);
         break;
     case UnaryOp::POST_INC:
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand)) {
             out << "  pushq %rax\n";
-            out << "  incq %rax\n";
+            out << "  inc" << suffix << " " << reg << "\n";
             storeVar(id->name);
             out << "  popq %rax\n";
         }
@@ -349,7 +407,7 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
     case UnaryOp::POST_DEC:
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand)) {
             out << "  pushq %rax\n";
-            out << "  decq %rax\n";
+            out << "  dec" << suffix << " " << reg << "\n";
             storeVar(id->name);
             out << "  popq %rax\n";
         }
@@ -369,6 +427,15 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
 
     e->value->accept(this); // value in %rax
 
+    // Determinar tamaño del target
+    int size = 8;  // default
+    if (target.kind == LValKind::Id && variableSizes.count(target.name)) {
+        size = variableSizes[target.name];
+    }
+    
+    string suffix = (size == 1) ? "b" : (size == 4) ? "l" : "q";
+    string reg = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
+
     switch (e->op) {
     case AssignOp::ASSIGN:
         break;
@@ -380,17 +447,18 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
         e->target->accept(this); // load current value
         out << "  popq %rcx\n";
         switch (e->op) {
-        case AssignOp::ADD_ASSIGN: out << "  addq %rcx, %rax\n"; break;
-        case AssignOp::SUB_ASSIGN: out << "  subq %rcx, %rax\n"; break;
-        case AssignOp::MUL_ASSIGN: out << "  imulq %rcx, %rax\n"; break;
+        case AssignOp::ADD_ASSIGN: out << "  add" << suffix << " " << reg << ", %rcx\n"; break;
+        case AssignOp::SUB_ASSIGN: out << "  sub" << suffix << " " << reg << ", %rcx\n"; break;
+        case AssignOp::MUL_ASSIGN: out << "  imul" << suffix << " " << reg << ", %rcx\n"; break;
         case AssignOp::DIV_ASSIGN:
-            out << "  pushq %rcx\n";
+            out << "  movq %rcx, %rax\n";
             out << "  cqto\n";
-            out << "  popq %rcx\n";
-            out << "  idivq %rcx\n";
+            out << "  movq %rax, %rcx\n";
+            out << "  idiv" << suffix << " " << reg << "\n";
             break;
         default: break;
         }
+        out << "  movq %rcx, %rax\n";
         break;
     }
 
@@ -562,6 +630,40 @@ void GenCodeVisitor::visit(NamedTypeNode *) {}
 
 void GenCodeVisitor::visit(TemplateTypeNode *) {}
 void GenCodeVisitor::visit(CaptureNode *) {}
+
+// Helper para contar variables en lambdas (no pasan por TypeChecker)
+static int countLambdaVars(Stm* stmt) {
+    if (!stmt) return 0;
+    int count = 0;
+    
+    if (dynamic_cast<VarDecl*>(stmt)) count = 1;
+    
+    if (auto* body = dynamic_cast<Body*>(stmt)) {
+        for (auto s : body->stmts) count += countLambdaVars(s);
+    }
+    if (auto* ifStmt = dynamic_cast<IfStmt*>(stmt)) {
+        count += countLambdaVars(ifStmt->then_branch);
+        if (ifStmt->else_branch) count += countLambdaVars(ifStmt->else_branch);
+    }
+    if (auto* whileStmt = dynamic_cast<WhileStmt*>(stmt)) {
+        count += countLambdaVars(whileStmt->body);
+    }
+    if (auto* forStmt = dynamic_cast<ForStmt*>(stmt)) {
+        if (forStmt->init) count += countLambdaVars(forStmt->init);
+        count += countLambdaVars(forStmt->body);
+    }
+    if (auto* doWhileStmt = dynamic_cast<DoWhileStmt*>(stmt)) {
+        count += countLambdaVars(doWhileStmt->body);
+    }
+    if (auto* switchStmt = dynamic_cast<SwitchStmt*>(stmt)) {
+        for (auto cc : switchStmt->cases) {
+            for (auto s : cc->body) count += countLambdaVars(s);
+        }
+        for (auto s : switchStmt->default_body) count += countLambdaVars(s);
+    }
+    return count;
+}
+
 void GenCodeVisitor::visit(LambdaExprNode *e) {
     int lbl = labelcont++;
     string lambdaName = ".Llambda_" + to_string(lbl);
@@ -573,15 +675,14 @@ void GenCodeVisitor::visit(LambdaExprNode *e) {
 
     inFunction = true;
     memoria.clear();
-    offset = -8;
+    offset = 0;
     funcName = lambdaName;
 
-    for (auto p : e->params) {
-        memoria[p->name] = offset;
-        offset -= 8;
-    }
-
-    int frameSize = (-offset + 15) & ~15;
+    // Calcular frame size para lambda (asume 8 bytes por variable)
+    int localVarCount = countLambdaVars(e->body);
+    int paramCount = (int)e->params.size();
+    int totalVars = paramCount + localVarCount;
+    int frameSize = (totalVars * 8 + 15) & ~15;
 
     out << lambdaName << ":\n";
     out << "  pushq %rbp\n";
@@ -589,6 +690,13 @@ void GenCodeVisitor::visit(LambdaExprNode *e) {
     if (frameSize > 0)
         out << "  subq $" << frameSize << ", %rsp\n";
 
+    // Asignar offsets a parámetros
+    for (auto p : e->params) {
+        offset -= 8;
+        memoria[p->name] = offset;
+    }
+
+    // Generar código
     e->body->accept(this);
 
     out << ".Llambda_end_" << lbl << ":\n";
@@ -760,9 +868,11 @@ void GenCodeVisitor::visit(VarDecl *d) {
         return;
     }
 
-    memoria[d->name] = offset;
-    offset -= 8;
-
+    // Usar offset y tamaño calculados por TypeChecker
+    // El offset ya es negativo (calculado por TypeChecker)
+    memoria[d->name] = d->offset;  // ya es negativo
+    variableSizes[d->name] = d->memSize;
+    
     if (!d->array_sizes.empty()) {
         vector<int> dims;
         for (auto s : d->array_sizes) {
@@ -783,23 +893,11 @@ void GenCodeVisitor::visit(VarDecl *d) {
 void GenCodeVisitor::visit(FunDecl *d) {
     inFunction = true;
     memoria.clear();
-    offset = -8;
+    variableSizes.clear();
     funcName = d->name;
-    int paramCount = (int)d->params.size();
-
-    const vector<string> argRegs = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
-    for (int i = 0; i < paramCount && i < 6; i++) {
-        memoria[d->params[i]->name] = offset;
-        offset -= 8;
-    }
-
-    for (auto st : d->body->stmts) {
-        if (auto* v = dynamic_cast<VarDecl*>(st)) {
-            memoria[v->name] = offset;
-            offset -= 8;
-        }
-    }
-    int frameSize = (-offset + 15) & ~15;
+    
+    // Usar frameSize calculado por TypeChecker
+    int frameSize = d->frameSize;
 
     out << "\n.globl " << d->name << "\n";
     out << d->name << ":\n";
@@ -808,9 +906,20 @@ void GenCodeVisitor::visit(FunDecl *d) {
     if (frameSize > 0)
         out << "  subq $" << frameSize << ", %rsp\n";
 
-    for (int i = 0; i < paramCount && i < 6; i++)
-        out << "  movq " << argRegs[i] << ", " << memoria[d->params[i]->name] << "(%rbp)\n";
+    // Asignar offsets a parámetros y guardar tamaños
+    // Los offsets ya son negativos (calculados por TypeChecker)
+    const vector<string> argRegs = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
+    for (size_t i = 0; i < d->params.size() && i < 6; i++) {
+        memoria[d->params[i]->name] = d->params[i]->offset;  // ya es negativo
+        variableSizes[d->params[i]->name] = d->params[i]->memSize;
+        
+        // Cargar parámetro desde registro a memoria
+        int size = d->params[i]->memSize;
+        string destReg = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
+        out << "  " << storeInstr(size) << " " << destReg << ", " << d->params[i]->offset << "(%rbp)\n";
+    }
 
+    // Generar código del body
     d->body->accept(this);
 
     out << ".end_" << d->name << ":\n";

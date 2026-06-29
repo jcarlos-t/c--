@@ -2,6 +2,7 @@
 #include <iostream>
 #include <sstream>
 #include <functional>
+#include <algorithm>
 
 using namespace std;
 
@@ -68,6 +69,7 @@ TypeChecker::TypeChecker() {
     loopDepth = 0;
     switchDepth = 0;
     hasError = false;
+    currentOffset = 0;
 }
 
 TypeChecker::~TypeChecker() {
@@ -293,13 +295,58 @@ void TypeChecker::visit(Program* p) {
 
 void TypeChecker::visit(FunDecl* f) {
     env.add_level();
+    
+    // Recolectar parámetros
+    vector<VarDecl*> params;
     for (auto p : f->params) {
         Type* t = type_from_ast(p->type);
         if (t->match(voidType))
             error("parámetro no puede ser de tipo void.");
+        p->memSize = t->size();
+        p->resolvedType = t;
+        params.push_back(p);
         env.add_var(p->name, t);
     }
+    
+    // Asignar offsets a parámetros con bin packing
+    assignOffsetsWithBinPacking(params, 0);
+    int paramSize = 0;
+    for (auto p : params) {
+        int end = p->offset + p->memSize;
+        if (end > paramSize) paramSize = end;
+    }
+    
+    // Recolectar todas las variables locales del body
+    vector<VarDecl*> localVars;
+    collectVars(f->body, localVars);
+    
+    // Verificar tipos de variables locales
+    for (auto v : localVars) {
+        v->accept(this);
+    }
+    
+    // Asignar offsets a variables locales con bin packing (después de parámetros)
+    assignOffsetsWithBinPacking(localVars, paramSize);
+    
+    // Calcular tamaño total usado
+    int totalSize = paramSize;
+    for (auto v : localVars) {
+        int end = v->offset + v->memSize;
+        if (end > totalSize) totalSize = end;
+    }
+    
+    // Convertir offsets a negativos (stack frame)
+    // El primer slot va en -8(%rbp), el segundo en -16(%rbp), etc.
+    for (auto p : params) {
+        p->offset = -(p->offset + 8);  // offset 0 -> -8, offset 4 -> -12, etc.
+    }
+    for (auto v : localVars) {
+        v->offset = -(v->offset + 8);
+    }
+    
     retornodefuncion = type_from_ast(f->return_type);
+    
+    // Procesar body
     f->body->accept(this);
 
     if (!retornodefuncion->match(voidType)) {
@@ -313,14 +360,124 @@ void TypeChecker::visit(FunDecl* f) {
                 }
             }
         }
-    if (!endsWithReturn)
-        error("función no-void no garantiza retorno en todos los caminos.", f->loc);
+        if (!endsWithReturn)
+            error("función no-void no garantiza retorno en todos los caminos.", f->loc);
     }
 
+    // Calcular frame size total (alineado a 16 bytes)
+    f->frameSize = (totalSize + 15) & ~15;
+    
     env.remove_level();
 }
 
+// Recolectar todas las variables declaradas en un statement (recursivamente)
+void TypeChecker::collectVars(Stm* stmt, vector<VarDecl*>& vars) {
+    if (!stmt) return;
+    
+    if (auto* v = dynamic_cast<VarDecl*>(stmt)) {
+        vars.push_back(v);
+    }
+    
+    if (auto* body = dynamic_cast<Body*>(stmt)) {
+        for (auto s : body->stmts) {
+            collectVars(s, vars);
+        }
+    }
+    
+    if (auto* ifStmt = dynamic_cast<IfStmt*>(stmt)) {
+        collectVars(ifStmt->then_branch, vars);
+        if (ifStmt->else_branch) collectVars(ifStmt->else_branch, vars);
+    }
+    
+    if (auto* whileStmt = dynamic_cast<WhileStmt*>(stmt)) {
+        collectVars(whileStmt->body, vars);
+    }
+    
+    if (auto* forStmt = dynamic_cast<ForStmt*>(stmt)) {
+        if (forStmt->init) collectVars(forStmt->init, vars);
+        collectVars(forStmt->body, vars);
+    }
+    
+    if (auto* doWhileStmt = dynamic_cast<DoWhileStmt*>(stmt)) {
+        collectVars(doWhileStmt->body, vars);
+    }
+    
+    if (auto* switchStmt = dynamic_cast<SwitchStmt*>(stmt)) {
+        for (auto cc : switchStmt->cases) {
+            for (auto s : cc->body) {
+                collectVars(s, vars);
+            }
+        }
+        for (auto s : switchStmt->default_body) {
+            collectVars(s, vars);
+        }
+    }
+}
+
+// Asignar offsets con bin packing: ordenar por tamaño descendente y agrupar en slots de 8 bytes
+void TypeChecker::assignOffsetsWithBinPacking(vector<VarDecl*>& vars, int startOffset) {
+    if (vars.empty()) return;
+    
+    // Ordenar por tamaño descendente (8, 4, 1)
+    sort(vars.begin(), vars.end(), [](VarDecl* a, VarDecl* b) {
+        return a->memSize > b->memSize;
+    });
+    
+    // Estructura para trackear slots
+    struct Slot {
+        int used = 0;  // bytes usados en este slot
+    };
+    vector<Slot> slots;
+    slots.push_back(Slot());  // primer slot
+    
+    // Asignar cada variable al primer slot donde quepa
+    for (auto v : vars) {
+        int size = v->memSize;
+        bool placed = false;
+        
+        for (size_t i = 0; i < slots.size(); i++) {
+            // Verificar alineación
+            int align = size;
+            if (align > 8) align = 8;
+            
+            // Calcular offset dentro del slot con alineación
+            int offsetInSlot = slots[i].used;
+            if (offsetInSlot % align != 0) {
+                offsetInSlot += align - (offsetInSlot % align);
+            }
+            
+            // Si cabe en este slot
+            if (offsetInSlot + size <= 8) {
+                v->offset = startOffset + i * 8 + offsetInSlot;
+                slots[i].used = offsetInSlot + size;
+                placed = true;
+                break;
+            }
+        }
+        
+        // Si no cabe en ningún slot, crear uno nuevo
+        if (!placed) {
+            Slot newSlot;
+            v->offset = startOffset + slots.size() * 8;
+            newSlot.used = size;
+            slots.push_back(newSlot);
+        }
+    }
+}
+
 void TypeChecker::visit(VarDecl* v) {
+    // Si ya tiene resolvedType, fue procesado por visit(FunDecl*) con bin packing
+    if (v->resolvedType != nullptr) {
+        // Solo verificar inicializador
+        if (v->initializer) {
+            Type* initType = v->initializer->accept(this);
+            if (!check_assign(v->resolvedType, initType)) {
+                error("tipos incompatibles en inicialización de '" + v->name + "'.");
+            }
+        }
+        return;
+    }
+    
     Type* t = type_from_ast(v->type);
 
     if (t->match(voidType)) {
@@ -351,20 +508,18 @@ void TypeChecker::visit(VarDecl* v) {
         error("variable '" + v->name + "' ya declarada en este ámbito.");
         return;
     }
+    
+    // Guardar tipo resuelto y tamaño
+    v->resolvedType = t;
+    v->memSize = t->size();
+    
     env.add_var(v->name, t);
 
-    // Verificar inicializador (si no es auto, porque auto ya lo chequeó)
+    // Verificar inicializador
     if (v->initializer) {
-        // Si es auto, ya se verificó el inicializador arriba
-        bool isAuto = false;
-        if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(v->type)) {
-            isAuto = (pt->prim == PrimitiveTypeNode::AUTO);
-        }
-        if (!isAuto) {
-            Type* initType = v->initializer->accept(this);
-            if (!check_assign(t, initType)) {
-                error("tipos incompatibles en inicialización de '" + v->name + "'.");
-            }
+        Type* initType = v->initializer->accept(this);
+        if (!check_assign(t, initType)) {
+            error("tipos incompatibles en inicialización de '" + v->name + "'.");
         }
     }
 }
@@ -372,10 +527,16 @@ void TypeChecker::visit(VarDecl* v) {
 void TypeChecker::visit(StructDecl* s) {
     // Crear StructType y registrar sus miembros
     StructType* st = new StructType(s->name);
+    int offset = 0;
+    
     for (auto m : s->members) {
         Type* mt = type_from_ast(m->type);
         st->members[m->name] = mt;
+        s->memberOffsets[m->name] = offset;
+        offset += mt->size();
     }
+    
+    s->totalSize = offset;
     struct_types[s->name] = st;
 }
 

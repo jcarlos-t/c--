@@ -48,6 +48,16 @@ int main(int argc, const char* argv[]) {
         TypeChecker tc;
         tc.typecheck(ast);
 
+        /* if (tc.has_error()) {
+            return 1;
+        } */
+
+        cout << "\n=== Generadno código ensamblador ===\n";
+        ofstream outfile("output.s");
+        GenCodeVisitor codegen(outfile);
+        codegen.generate(ast);
+        outfile.close();
+
         cout << "\n=== Iniciando ejecución del programa ===\n";
         EVALVisitor interprete;
         interprete.interprete(ast);

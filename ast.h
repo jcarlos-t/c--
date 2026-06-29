@@ -418,6 +418,11 @@ public:
     string name;
     vector<Exp*> array_sizes; // para tamaños en arreglos [size1][size2]...
     Exp* initializer; // expresion inicial x = init;
+    
+    // Calculados por TypeChecker
+    Type* resolvedType = nullptr;  // tipo semántico resuelto
+    int offset = 0;      // offset desde %rbp
+    int memSize = 0;     // tamaño en bytes
 
     VarDecl(Exp* t, const string& n);
     ~VarDecl();
@@ -435,6 +440,9 @@ public:
     vector<VarDecl*> params;
     Body* body;
     bool is_template;
+    
+    // Calculados por TypeChecker
+    int frameSize = 0;   // tamaño total del frame
 
     FunDecl(Exp* rt, const string& n, Body* b);
     ~FunDecl();
@@ -449,6 +457,10 @@ public:
     Location loc;
     string name;
     vector<VarDecl*> members;
+    
+    // Calculados por TypeChecker
+    unordered_map<string, int> memberOffsets;  // offset de cada miembro
+    int totalSize = 0;                          // tamaño total del struct
 
     StructDecl(const string& n);
     ~StructDecl();

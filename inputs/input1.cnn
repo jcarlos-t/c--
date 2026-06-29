@@ -1,23 +1,21 @@
-int factorial(int n) {
-    int result;
-    result = 1;
-    while (n > 1) {
-        result = result * n;
-        n = n - 1;
-    }
-    return result;
+int triple(int x) {
+    return 3 * x;
+}
+
+int factorial(int x) {
+    if (x == 0) { return 1; }
+    return factorial(x - 1) * x;
+}
+
+int suma(int a, int b) {
+    return a + b;
 }
 
 int main() {
-    int i;
-    int sum;
-    sum = 0;
-    i = 1;
-    while (i <= 10) {
-        sum = sum + i;
-        i = i + 1;
-    }
-    print(sum);
-    print(factorial(5));
+    int a = 2 * 2;
+    printf(a);
+    printf(factorial(a));
+    printf(triple(a));
+    printf(suma(a, a));
     return 0;
 }
