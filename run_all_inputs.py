@@ -5,7 +5,7 @@ import sys
 
 # Archivos c++
 programa = ["main.cpp", "scanner.cpp", "token.cpp", "parser.cpp", "ast.cpp", "visitor.cpp",
-            "TypeChecker.cpp", "Gencode.cpp", "ConstantFolding.cpp"]
+            "TypeChecker.cpp", "Gencode.cpp", "ConstantFolding.cpp", "ast_printer.cpp"]
 
 # Compilar
 compile = ["g++", "-std=c++17"] + programa + ["-o", "c--"]
