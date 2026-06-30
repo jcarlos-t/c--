@@ -174,6 +174,7 @@ public:
 class IdentifierNode : public Exp {
 public:
     string name;
+    VarDecl* binding = nullptr;  // VarDecl resuelto por TypeChecker (scope/shadowing)
     IdentifierNode(const string& n);
     ~IdentifierNode();
     double accept(Visitor* visitor);
@@ -463,6 +464,7 @@ public:
     vector<VarDecl*> globals;
     vector<StructDecl*> structs;
     vector<TemplateDecl*> templates;
+    vector<FunDecl*> instantiated_functions;
 
     Program();
     ~Program();

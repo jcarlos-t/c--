@@ -250,6 +250,7 @@ struct FuncInfo {
 class TypeChecker : public TypeVisitor {
 private:
     Environment<::Type*> env;
+    Environment<VarDecl*> varEnv;
     unordered_map<string, FuncInfo> functions;
     unordered_map<string, StructType*> struct_types;
     unordered_map<string, TemplateDecl*> template_decls;
@@ -265,7 +266,12 @@ private:
     int switchDepth;
     vector<string> errors;
     bool hasError;
-    int currentOffset = 0;  // offset actual para variables locales
+    int currentOffset = 0;
+    Program* program = nullptr;
+    unordered_map<string, FunDecl*> instantiated_function_cache;
+
+    TypeNode* semantic_to_type_node(::Type* t);
+    FunDecl* instantiate_function(TemplateDecl* tdecl, const vector<TypeNode*>& args);
 
     void add_function(FunDecl* fd);
     ::Type* type_from_ast(Exp* t);
@@ -273,6 +279,7 @@ private:
     void error(const string& msg);
     void error(const string& msg, const Location& loc);
     StructType* instantiate_template(const string& name, const vector<TypeNode*>& args);
+    void bind_var_decl(VarDecl* v);
     
     // Bin packing: recolectar variables y calcular offsets optimizados
     void collectVars(Stm* stmt, vector<VarDecl*>& vars);
@@ -393,10 +400,12 @@ public:
     struct LVal {
         LValKind kind = LValKind::Invalid;
         string name;
+        VarDecl* binding = nullptr;
         Exp* index = nullptr;
+        vector<Exp*> indices;
         string member;
-        string structName;  // nombre del tipo de struct
-        bool isArrow = false;  // para diferenciar . y ->
+        string structName;
+        bool isArrow = false;
     };
 
 private:
@@ -404,10 +413,16 @@ private:
     LVal *lvalTarget = nullptr;
     LVal captureLVal(Exp *e);
     void storeTarget(const LVal &lv);
-    string varMem(const string& name);
-    void loadVar(const string& name);
-    void storeVar(const string& name);
-    void leaVar(const string& name);
+    void bind_var_decl(VarDecl* v);
+    VarDecl* resolve_var(const string& name) const;
+    int array_elem_size(VarDecl* vd) const;
+    void loadBinding(VarDecl* vd);
+    void storeBinding(VarDecl* vd);
+    void leaBinding(VarDecl* vd);
+    string bindingMem(VarDecl* vd) const;
+    void emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices);
+    void emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices);
+    void emitIndexedStore(VarDecl* vd, const vector<Exp*>& indices, const string& valueReg);
     
     // Helper para obtener sufijo de instrucción según tamaño
     string instrSuffix(int size);
@@ -431,6 +446,7 @@ private:
     string currentBreakLabel;
     string currentContinueLabel;
     string funcName;
+    string returnLabel;
 
 public:
     explicit GenCodeVisitor(ostream &out) : out(out) {}

@@ -139,6 +139,69 @@ Type* TypeChecker::type_from_ast(Exp* t) {
     return intType; // fallback
 }
 
+void TypeChecker::bind_var_decl(VarDecl* v) {
+    env.add_var(v->name, v->resolvedType);
+    varEnv.add_var(v->name, v);
+}
+
+TypeNode* TypeChecker::semantic_to_type_node(::Type* t) {
+    if (!t) return new PrimitiveTypeNode(PrimitiveTypeNode::INT);
+    switch (t->ttype) {
+        case Type::INT: return new PrimitiveTypeNode(PrimitiveTypeNode::INT);
+        case Type::FLOAT: return new PrimitiveTypeNode(PrimitiveTypeNode::FLOAT);
+        case Type::DOUBLE: return new PrimitiveTypeNode(PrimitiveTypeNode::DOUBLE);
+        case Type::CHAR: return new PrimitiveTypeNode(PrimitiveTypeNode::CHAR);
+        case Type::BOOL: return new PrimitiveTypeNode(PrimitiveTypeNode::BOOL);
+        default: return new PrimitiveTypeNode(PrimitiveTypeNode::INT);
+    }
+}
+
+FunDecl* TypeChecker::instantiate_function(TemplateDecl* tdecl, const vector<TypeNode*>& args) {
+    FunDecl* orig = tdecl->func;
+    string key = orig->name + "<";
+    for (size_t i = 0; i < args.size(); i++) {
+        if (i > 0) key += ",";
+        if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(args[i])) {
+            switch (pt->prim) {
+                case PrimitiveTypeNode::INT: key += "int"; break;
+                case PrimitiveTypeNode::FLOAT: key += "float"; break;
+                case PrimitiveTypeNode::CHAR: key += "char"; break;
+                case PrimitiveTypeNode::DOUBLE: key += "double"; break;
+                case PrimitiveTypeNode::BOOL: key += "bool"; break;
+                default: key += "?"; break;
+            }
+        } else key += "?";
+    }
+    key += ">";
+
+    auto cached = instantiated_function_cache.find(key);
+    if (cached != instantiated_function_cache.end())
+        return cached->second;
+
+    unordered_map<string, Type*> subs;
+    for (size_t i = 0; i < tdecl->params.size() && i < args.size(); i++)
+        subs[tdecl->params[i]] = type_from_ast(args[i]);
+
+    function<Exp*(Exp*)> subst_node = [&](Exp* node) -> Exp* {
+        if (auto* nt = dynamic_cast<NamedTypeNode*>(node)) {
+            auto it = subs.find(nt->name);
+            if (it != subs.end()) return semantic_to_type_node(it->second);
+        }
+        if (auto* pt = dynamic_cast<PointerTypeNode*>(node)) {
+            return new PointerTypeNode(dynamic_cast<TypeNode*>(subst_node(pt->base)));
+        }
+        return node;
+    };
+
+    FunDecl* fd = new FunDecl(subst_node(orig->return_type), orig->name, orig->body);
+    for (auto p : orig->params)
+        fd->params.push_back(new VarDecl(subst_node(p->type), p->name));
+
+    instantiated_function_cache[key] = fd;
+    if (program) program->instantiated_functions.push_back(fd);
+    return fd;
+}
+
 // ============================================================
 // Helper: instanciar template struct
 // ============================================================
@@ -309,18 +372,25 @@ static void register_builtins(unordered_map<string, FuncInfo>& functions) {
 // ============================================================
 
 void TypeChecker::visit(Program* p) {
+    program = p;
     register_builtins(functions);
     for (auto f : p->functions) add_function(f);
     env.add_level();
+    varEnv.add_level();
     for (auto g : p->globals) g->accept(this);
     for (auto s : p->structs) s->accept(this);
     for (auto t : p->templates) t->accept(this);
     for (auto f : p->functions) f->accept(this);
+    for (auto f : p->instantiated_functions) f->accept(this);
+    varEnv.remove_level();
     env.remove_level();
 }
 
 void TypeChecker::visit(FunDecl* f) {
     env.add_level();
+    varEnv.add_level();
+    
+    retornodefuncion = type_from_ast(f->return_type);
     
     // Recolectar parámetros
     vector<VarDecl*> params;
@@ -369,7 +439,9 @@ void TypeChecker::visit(FunDecl* f) {
                         error("variable 'auto' necesita inicializador para inferir tipo.");
                         t = intType;
                     } else {
-                        t = v->initializer->accept(this);
+                        PointerType* placeholder = new PointerType(voidType);
+                        typeCache.push_back(placeholder);
+                        t = placeholder;
                     }
                 }
             }
@@ -399,14 +471,11 @@ void TypeChecker::visit(FunDecl* f) {
         v->offset = v->offset - f->frameSize;
     }
     
-    retornodefuncion = type_from_ast(f->return_type);
-    
     // Agregar parámetros al environment
     for (auto p : params) {
-        env.add_var(p->name, p->resolvedType);
+        bind_var_decl(p);
     }
     
-    // Procesar body (las variables locales se agregarán al environment cuando se visiten)
     f->body->accept(this);
 
     if (!retornodefuncion->match(voidType)) {
@@ -424,6 +493,7 @@ void TypeChecker::visit(FunDecl* f) {
             error("función no-void no garantiza retorno en todos los caminos.", f->loc);
     }
     
+    varEnv.remove_level();
     env.remove_level();
 }
 
@@ -524,20 +594,26 @@ void TypeChecker::assignOffsetsWithBinPacking(vector<VarDecl*>& vars, int startO
 }
 
 void TypeChecker::visit(VarDecl* v) {
-    // Si ya tiene resolvedType, fue procesado por visit(FunDecl*) con bin packing
-    // Verificar duplicados antes de agregar al environment
     if (v->resolvedType != nullptr) {
         if (env.check_current(v->name)) {
             error("variable '" + v->name + "' ya declarada en este ámbito.");
             return;
         }
-        env.add_var(v->name, v->resolvedType);
-        if (v->initializer) {
+        bool reinferred = false;
+        if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(v->type)) {
+            if (pt->prim == PrimitiveTypeNode::AUTO && v->initializer) {
+                v->resolvedType = v->initializer->accept(this);
+                v->memSize = v->resolvedType->size();
+                reinferred = true;
+            }
+        }
+        if (!reinferred && v->initializer) {
             Type* initType = v->initializer->accept(this);
             if (!check_assign(v->resolvedType, initType)) {
                 error("tipos incompatibles en inicialización de '" + v->name + "'.");
             }
         }
+        bind_var_decl(v);
         return;
     }
     
@@ -579,9 +655,8 @@ void TypeChecker::visit(VarDecl* v) {
     v->resolvedType = t;
     v->memSize = t->size();
     
-    env.add_var(v->name, t);
+    bind_var_decl(v);
 
-    // Verificar inicializador
     if (v->initializer) {
         Type* initType = v->initializer->accept(this);
         if (!check_assign(t, initType)) {
@@ -609,7 +684,9 @@ void TypeChecker::visit(StructDecl* s) {
 
 void TypeChecker::visit(Body* b) {
     env.add_level();
+    varEnv.add_level();
     for (auto s : b->stmts) s->accept(this);
+    varEnv.remove_level();
     env.remove_level();
 }
 
@@ -648,6 +725,7 @@ void TypeChecker::visit(DoWhileStmt* s) {
 
 void TypeChecker::visit(ForStmt* s) {
     env.add_level();
+    varEnv.add_level();
     if (s->init) s->init->accept(this);
     if (s->condition) {
         Type* t = s->condition->accept(this);
@@ -659,6 +737,7 @@ void TypeChecker::visit(ForStmt* s) {
     s->body->accept(this);
     loopDepth--;
     if (s->increment) s->increment->accept(this);
+    varEnv.remove_level();
     env.remove_level();
 }
 
@@ -873,6 +952,7 @@ Type* TypeChecker::visit(FcallNode* e) {
                 return intType;
             }
             TemplateDecl* tdecl = tit->second;
+            instantiate_function(tdecl, e->template_args);
             FunDecl* tfunc = tdecl->func;
             unordered_map<string, Type*> subs;
             for (size_t i = 0; i < tdecl->params.size() && i < e->template_args.size(); i++)
@@ -915,6 +995,13 @@ Type* TypeChecker::visit(FcallNode* e) {
                 }
             }
             return info.returnType;
+        }
+
+        // Verificar si es una variable local con tipo puntero (lambda)
+        Type* localType = env.lookup(fname);
+        if (localType) {
+            for (auto* arg : e->args) arg->accept(this);
+            return intType; // fallback
         }
 
         auto it = functions.find(fname);
@@ -1013,13 +1100,15 @@ Type* TypeChecker::visit(ArrowAccessNode* e) {
 }
 
 Type* TypeChecker::visit(IdentifierNode* e) {
-    if (!env.check(e->name)) {
+    VarDecl* vd = nullptr;
+    if (!varEnv.lookup(e->name, vd)) {
         error("variable '" + e->name + "' no declarada.");
-        e->resolvedType = intType; // fallback type
+        e->resolvedType = intType;
         return intType;
     }
-    e->resolvedType = env.lookup(e->name);
-    return e->resolvedType;
+    e->binding = vd;
+    e->resolvedType = vd->resolvedType;
+    return vd->resolvedType;
 }
 
 Type* TypeChecker::visit(IntegerLiteralNode* e) { 
@@ -1056,7 +1145,17 @@ Type* TypeChecker::visit(SizeOfNode* e) {
 
 Type* TypeChecker::visit(LambdaExprNode* e) {
     env.add_level();
+    varEnv.add_level();
     for (auto p : e->params) p->accept(this);
+    for (auto cap : e->captures) {
+        VarDecl* capVd = nullptr;
+        if (!varEnv.lookup(cap->name, capVd)) {
+            error("variable '" + cap->name + "' no declarada.");
+        } else {
+            env.add_var(cap->name, capVd->resolvedType);
+            varEnv.add_var(cap->name, capVd);
+        }
+    }
     Type* savedRet = retornodefuncion;
     if (e->return_type)
         retornodefuncion = type_from_ast(e->return_type);
@@ -1064,8 +1163,12 @@ Type* TypeChecker::visit(LambdaExprNode* e) {
         retornodefuncion = voidType;
     if (e->body) e->body->accept(this);
     retornodefuncion = savedRet;
+    varEnv.remove_level();
     env.remove_level();
-    return retornodefuncion;
+    
+    PointerType* lambdaPtr = new PointerType(voidType);
+    typeCache.push_back(lambdaPtr);
+    return lambdaPtr;
 }
 
 Type* TypeChecker::visit(CaptureNode* e) {

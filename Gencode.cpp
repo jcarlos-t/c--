@@ -34,6 +34,14 @@ void TemplateTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void CaptureNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void LambdaExprNode::accept(CodeGenVisitor* v) { v->visit(this); }
 
+static string baseStructName(const string& structName) {
+    size_t ltPos = structName.find('<');
+    if (ltPos != string::npos) {
+        return structName.substr(0, ltPos);
+    }
+    return structName;
+}
+
 void Body::accept(CodeGenVisitor* v) { v->visit(this); }
 void ExprStmtNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void IfStmt::accept(CodeGenVisitor* v) { v->visit(this); }
@@ -75,6 +83,9 @@ void GenCodeVisitor::generate(Program *p) {
     for (auto s : p->structs)
         s->accept(this);
 
+    for (auto t : p->templates)
+        t->accept(this);
+
     out << ".data\n";
     out << "print_fmt: .string \"%ld\\n\"\n";
     out << "println_fmt: .string \"\\n\"\n";
@@ -92,6 +103,9 @@ void GenCodeVisitor::generate(Program *p) {
     out << ".globl main\n";
 
     for (auto f : p->functions)
+        f->accept(this);
+
+    for (auto f : p->instantiated_functions)
         f->accept(this);
 
     out << "\npotencia:\n";
@@ -163,31 +177,213 @@ string GenCodeVisitor::storeInstr(int size) {
     }
 }
 
-string GenCodeVisitor::varMem(const string& name) {
-    if (memoriaGlobal.count(name))
-        return name + "(%rip)";
-    return to_string(memoria[name]) + "(%rbp)";
+static bool isFloatSemanticType(Type* t) {
+    return t && (t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE);
 }
 
-void GenCodeVisitor::loadVar(const string& name) {
-    int size = 8;  // default
-    if (variableSizes.count(name)) {
-        size = variableSizes[name];
+string GenCodeVisitor::bindingMem(VarDecl* vd) const {
+    if (!vd)
+        throw runtime_error("Variable sin binding en codegen");
+    if (memoriaGlobal.count(vd->name))
+        return vd->name + "(%rip)";
+    if (funcName.rfind(".Llambda_", 0) == 0 && memoria.count(vd->name))
+        return to_string(memoria.at(vd->name)) + "(%rbp)";
+    return to_string(vd->offset) + "(%rbp)";
+}
+
+void GenCodeVisitor::bind_var_decl(VarDecl* vd) {
+    if (!vd) return;
+    memoria[vd->name] = vd->offset;
+    variableSizes[vd->name] = vd->memSize;
+    if (!vd->array_sizes.empty()) {
+        vector<int> dims;
+        for (auto s : vd->array_sizes) {
+            if (auto* il = dynamic_cast<IntegerLiteralNode*>(s))
+                dims.push_back((int)il->value);
+            else
+                dims.push_back(0);
+        }
+        arrayDimensions[vd->name] = dims;
+        arrayElementSizes[vd->name] = array_elem_size(vd);
     }
-    out << "  " << loadInstr(size) << " " << varMem(name) << ", %rax\n";
 }
 
-void GenCodeVisitor::storeVar(const string& name) {
-    int size = 8;  // default
-    if (variableSizes.count(name)) {
-        size = variableSizes[name];
+VarDecl* GenCodeVisitor::resolve_var(const string& name) const {
+    (void)name;
+    return nullptr;
+}
+
+int GenCodeVisitor::array_elem_size(VarDecl* vd) const {
+    if (!vd || !vd->resolvedType) return 8;
+    Type* t = vd->resolvedType;
+    if (t->ttype == Type::ARRAY) {
+        Type* base = t;
+        while (base && base->ttype == Type::ARRAY)
+            base = ((ArrayType*)base)->base;
+        if (base) return base->size();
+    }
+    if (t->ttype == Type::POINTER && ((PointerType*)t)->base)
+        return ((PointerType*)t)->base->size();
+    return 8;
+}
+
+static vector<int> arrayDimsFor(VarDecl* vd,
+                                const unordered_map<string, vector<int>>& dimsMap) {
+    if (!vd) return {};
+    auto it = dimsMap.find(vd->name);
+    return it != dimsMap.end() ? it->second : vector<int>{};
+}
+
+void GenCodeVisitor::loadBinding(VarDecl* vd) {
+    if (!vd) return;
+    int size = vd->memSize > 0 ? vd->memSize : 8;
+    Type* type = vd->resolvedType;
+    if (isFloatSemanticType(type)) {
+        if (type->ttype == Type::DOUBLE) {
+            out << "  movsd " << bindingMem(vd) << ", %xmm7\n";
+            out << "  movq %xmm7, %rax\n";
+        } else {
+            out << "  movss " << bindingMem(vd) << ", %xmm7\n";
+            out << "  movd %xmm7, %eax\n";
+            out << "  movslq %eax, %rax\n";
+        }
+        return;
+    }
+    out << "  " << loadInstr(size) << " " << bindingMem(vd) << ", %rax\n";
+}
+
+void GenCodeVisitor::storeBinding(VarDecl* vd) {
+    if (!vd) return;
+    int size = vd->memSize > 0 ? vd->memSize : 8;
+    Type* type = vd->resolvedType;
+    if (isFloatSemanticType(type)) {
+        if (type->ttype == Type::DOUBLE) {
+            out << "  movq %rax, %xmm7\n";
+            out << "  movsd %xmm7, " << bindingMem(vd) << "\n";
+        } else {
+            out << "  movd %eax, %xmm7\n";
+            out << "  movss %xmm7, " << bindingMem(vd) << "\n";
+        }
+        return;
     }
     string reg = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
-    out << "  " << storeInstr(size) << " " << reg << ", " << varMem(name) << "\n";
+    out << "  " << storeInstr(size) << " " << reg << ", " << bindingMem(vd) << "\n";
 }
 
-void GenCodeVisitor::leaVar(const string& name) {
-    out << "  leaq " << varMem(name) << ", %rax\n";
+void GenCodeVisitor::leaBinding(VarDecl* vd) {
+    if (!vd) return;
+    out << "  leaq " << bindingMem(vd) << ", %rax\n";
+}
+
+void GenCodeVisitor::emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices) {
+    if (!vd || indices.empty()) return;
+    auto dims = arrayDimsFor(vd, arrayDimensions);
+    int elemSize = array_elem_size(vd);
+
+    if (dims.size() > 1 && indices.size() > 1) {
+        leaBinding(vd);
+        out << "  movq %rax, %r8\n";
+        out << "  movq $0, %r10\n";
+        for (size_t d = 0; d < indices.size(); d++) {
+            indices[d]->accept(this);
+            int stride = 1;
+            for (size_t s = d + 1; s < dims.size(); s++)
+                stride *= dims[s];
+            if (stride != 1) {
+                out << "  movq $" << stride << ", %rcx\n";
+                out << "  imulq %rcx, %rax\n";
+            }
+            out << "  addq %rax, %r10\n";
+        }
+        out << "  movq %r8, %rax\n";
+        if (elemSize == 1) out << "  addq %r10, %rax\n";
+        else if (elemSize == 2) out << "  leaq (%rax,%r10,2), %rax\n";
+        else if (elemSize == 4) out << "  leaq (%rax,%r10,4), %rax\n";
+        else out << "  leaq (%rax,%r10,8), %rax\n";
+        return;
+    }
+
+    indices.back()->accept(this);
+    out << "  movq %rax, %rdi\n";
+    if (!dims.empty())
+        leaBinding(vd);
+    else
+        loadBinding(vd);
+
+    string scale;
+    if (elemSize == 1) scale = "";
+    else if (elemSize == 2) scale = ",2";
+    else if (elemSize == 4) scale = ",4";
+    else scale = ",8";
+    out << "  leaq (%rax,%rdi" << scale << "), %rax\n";
+}
+
+void GenCodeVisitor::emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices) {
+    if (!vd || indices.empty()) return;
+    auto dims = arrayDimsFor(vd, arrayDimensions);
+    int elemSize = array_elem_size(vd);
+
+    if (dims.size() > 1 && indices.size() > 1) {
+        emitIndexedAddress(vd, indices);
+        if (elemSize == 1) out << "  movzbq (%rax), %rax\n";
+        else if (elemSize == 4) out << "  movslq (%rax), %rax\n";
+        else out << "  movq (%rax), %rax\n";
+        return;
+    }
+
+    indices.back()->accept(this);
+    out << "  movq %rax, %rdi\n";
+    if (!dims.empty())
+        leaBinding(vd);
+    else
+        loadBinding(vd);
+
+    string scale;
+    if (elemSize == 1) scale = "";
+    else if (elemSize == 2) scale = ",2";
+    else if (elemSize == 4) scale = ",4";
+    else scale = ",8";
+    out << "  " << loadInstr(elemSize) << " (%rax,%rdi" << scale << "), %rax\n";
+}
+
+void GenCodeVisitor::emitIndexedStore(VarDecl* vd, const vector<Exp*>& indices,
+                                      const string& valueReg) {
+    if (!vd || indices.empty()) return;
+    auto dims = arrayDimsFor(vd, arrayDimensions);
+    int elemSize = array_elem_size(vd);
+    string reg = valueReg;
+    if (elemSize == 1 && valueReg == "%rax") reg = "%al";
+    else if (elemSize == 4 && valueReg == "%rax") reg = "%eax";
+
+    if (dims.size() > 1 && indices.size() > 1) {
+        out << "  movq %rax, %r9\n";
+        emitIndexedAddress(vd, indices);
+        out << "  movq %rax, %rbx\n";
+        string valReg = "%r9";
+        if (elemSize == 1) valReg = "%r9b";
+        else if (elemSize == 4) valReg = "%r9d";
+        out << "  " << storeInstr(elemSize) << " " << valReg << ", (%rbx)\n";
+        return;
+    }
+
+    out << "  movq %rax, %rcx\n";
+    indices.back()->accept(this);
+    out << "  movq %rax, %rdi\n";
+    if (!dims.empty())
+        leaBinding(vd);
+    else
+        loadBinding(vd);
+
+    string valReg = "%rcx";
+    if (elemSize == 1) valReg = "%cl";
+    else if (elemSize == 4) valReg = "%ecx";
+
+    string scale;
+    if (elemSize == 1) scale = "";
+    else if (elemSize == 2) scale = ",2";
+    else if (elemSize == 4) scale = ",4";
+    else scale = ",8";
+    out << "  " << storeInstr(elemSize) << " " << valReg << ", (%rax,%rdi" << scale << ")\n";
 }
 
 GenCodeVisitor::LVal GenCodeVisitor::captureLVal(Exp *e) {
@@ -201,53 +397,27 @@ GenCodeVisitor::LVal GenCodeVisitor::captureLVal(Exp *e) {
 void GenCodeVisitor::storeTarget(const LVal &lv) {
     switch (lv.kind) {
     case LValKind::Id:
-        storeVar(lv.name);
+        storeBinding(lv.binding);
         break;
     case LValKind::Index:
     {
-        out << "  pushq %rax\n";
-        lv.index->accept(this);
-        out << "  movq %rax, %rdi\n";
-        out << "  popq %rax\n";
-        out << "  movq %rax, %rcx\n";
-        
-        int elemSize = 8; // default
-        if (arrayElementSizes.count(lv.name)) {
-            elemSize = arrayElementSizes[lv.name];
-        }
-        string reg = (elemSize == 1) ? "%cl" : (elemSize == 4) ? "%ecx" : "%rcx";
-        
-        // Para arr[i]: si es un array normal, usar leaVar. Si es un puntero, usar loadVar
-        if (arrayDimensions.count(lv.name)) {
-            out << "  leaq " << varMem(lv.name) << ", %rax\n";
-        } else {
-            loadVar(lv.name);
-        }
-        
-        // Use scaled index addressing mode!
-        string scale;
-        if (elemSize == 1) scale = "";
-        else if (elemSize == 2) scale = ",2";
-        else if (elemSize == 4) scale = ",4";
-        else scale = ",8";
-        
-        out << "  " << storeInstr(elemSize) << " " << reg << ", (%rax,%rdi" << scale << ")\n";
+        vector<Exp*> indices = lv.indices;
+        if (indices.empty() && lv.index)
+            indices.push_back(lv.index);
+        emitIndexedStore(lv.binding, indices, "%rax");
         break;
     }
     case LValKind::Member:
     {
-        out << "  pushq %rax\n";
-        out << "  popq %rcx\n";
-        int size = structMemberSizes[lv.structName][lv.member];
+        out << "  movq %rax, %rcx\n";
+        int size = structMemberSizes[baseStructName(lv.structName)][lv.member];
         string reg = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
         if (lv.isArrow) {
-            // p->x: cargar el puntero primero
-            loadVar(lv.name);
-            out << "  " << storeInstr(size) << " " << reg << ", " << structFieldOffset[lv.structName][lv.member] << "(%rax)\n";
+            loadBinding(lv.binding);
+            out << "  " << storeInstr(size) << " " << reg << ", " << structFieldOffset[baseStructName(lv.structName)][lv.member] << "(%rax)\n";
         } else {
-            // p.x: usar dirección del struct directamente
-            out << "  leaq " << varMem(lv.name) << ", %rax\n";
-            out << "  " << storeInstr(size) << " " << reg << ", " << structFieldOffset[lv.structName][lv.member] << "(%rax)\n";
+            leaBinding(lv.binding);
+            out << "  " << storeInstr(size) << " " << reg << ", " << structFieldOffset[baseStructName(lv.structName)][lv.member] << "(%rax)\n";
         }
         break;
     }
@@ -269,11 +439,10 @@ void GenCodeVisitor::visit(IntegerLiteralNode *e) {
 }
 
 void GenCodeVisitor::visit(FloatLiteralNode *e) {
-    // Cargar float como valor de punto flotante en xmm0, luego mover a %rax para compatibilidad
-    // Usamos la representación IEEE 754 del valor
-    union { double d; long long i; } converter;
-    converter.d = e->value;
-    out << "  movq $0x" << hex << converter.i << dec << ", %rax\n";
+    union { float f; unsigned int i; } fc;
+    fc.f = (float)e->value;
+    out << "  movl $0x" << hex << fc.i << dec << ", %eax\n";
+    out << "  movslq %eax, %rax\n";
 }
 
 void GenCodeVisitor::visit(BoolLiteralNode *e) {
@@ -303,9 +472,10 @@ void GenCodeVisitor::visit(IdentifierNode *e) {
     if (lvalTarget) {
         lvalTarget->kind = LValKind::Id;
         lvalTarget->name = e->name;
+        lvalTarget->binding = e->binding;
         return;
     }
-    loadVar(e->name);
+    loadBinding(e->binding);
 }
 
 void GenCodeVisitor::visit(BinaryOpNode *e) {
@@ -328,6 +498,117 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
             out << "  imulq %rax, %rax\n";
             return;
         }
+    }
+
+    Type* leftType = e->left->resolvedType;
+    Type* rightType = e->right->resolvedType;
+    bool useFloat = false;
+    bool useDouble = false;
+    switch (e->op) {
+        case BinaryOp::ADD: case BinaryOp::SUB: case BinaryOp::MUL: case BinaryOp::DIV:
+        case BinaryOp::EQ: case BinaryOp::NE: case BinaryOp::LT: case BinaryOp::GT:
+        case BinaryOp::LE: case BinaryOp::GE:
+            if (isFloatSemanticType(leftType) || isFloatSemanticType(rightType)) {
+                useFloat = true;
+                useDouble = (leftType && leftType->ttype == Type::DOUBLE) ||
+                            (rightType && rightType->ttype == Type::DOUBLE) ||
+                            (e->resolvedType && e->resolvedType->ttype == Type::DOUBLE);
+            }
+            break;
+        default:
+            break;
+    }
+
+    if (useFloat) {
+        e->left->accept(this);
+        if (useDouble) {
+            if (!isFloatSemanticType(leftType))
+                out << "  cvtsi2sd %rax, %xmm0\n";
+            else if (leftType->ttype == Type::FLOAT) {
+                out << "  movd %eax, %xmm0\n";
+                out << "  cvtss2sd %xmm0, %xmm0\n";
+            } else
+                out << "  movq %rax, %xmm0\n";
+            e->right->accept(this);
+            if (!isFloatSemanticType(rightType))
+                out << "  cvtsi2sd %rax, %xmm1\n";
+            else if (rightType->ttype == Type::FLOAT) {
+                out << "  movd %eax, %xmm1\n";
+                out << "  cvtss2sd %xmm1, %xmm1\n";
+            } else
+                out << "  movq %rax, %xmm1\n";
+        } else {
+            if (!isFloatSemanticType(leftType))
+                out << "  cvtsi2ss %eax, %xmm0\n";
+            else
+                out << "  movd %eax, %xmm0\n";
+            e->right->accept(this);
+            if (!isFloatSemanticType(rightType))
+                out << "  cvtsi2ss %eax, %xmm1\n";
+            else
+                out << "  movd %eax, %xmm1\n";
+        }
+
+        switch (e->op) {
+        case BinaryOp::ADD:
+            out << (useDouble ? "  addsd %xmm1, %xmm0\n" : "  addss %xmm1, %xmm0\n");
+            break;
+        case BinaryOp::SUB:
+            out << (useDouble ? "  subsd %xmm1, %xmm0\n" : "  subss %xmm1, %xmm0\n");
+            break;
+        case BinaryOp::MUL:
+            out << (useDouble ? "  mulsd %xmm1, %xmm0\n" : "  mulss %xmm1, %xmm0\n");
+            break;
+        case BinaryOp::DIV:
+            out << (useDouble ? "  divsd %xmm1, %xmm0\n" : "  divss %xmm1, %xmm0\n");
+            break;
+        case BinaryOp::EQ:
+            out << (useDouble ? "  ucomisd %xmm1, %xmm0\n" : "  ucomiss %xmm1, %xmm0\n");
+            out << "  movq $0, %rax\n";
+            out << "  sete %al\n";
+            out << "  movzbq %al, %rax\n";
+            return;
+        case BinaryOp::NE:
+            out << (useDouble ? "  ucomisd %xmm1, %xmm0\n" : "  ucomiss %xmm1, %xmm0\n");
+            out << "  movq $0, %rax\n";
+            out << "  setne %al\n";
+            out << "  movzbq %al, %rax\n";
+            return;
+        case BinaryOp::LT:
+            out << (useDouble ? "  ucomisd %xmm1, %xmm0\n" : "  ucomiss %xmm1, %xmm0\n");
+            out << "  movq $0, %rax\n";
+            out << "  setb %al\n";
+            out << "  movzbq %al, %rax\n";
+            return;
+        case BinaryOp::GT:
+            out << (useDouble ? "  ucomisd %xmm1, %xmm0\n" : "  ucomiss %xmm1, %xmm0\n");
+            out << "  movq $0, %rax\n";
+            out << "  seta %al\n";
+            out << "  movzbq %al, %rax\n";
+            return;
+        case BinaryOp::LE:
+            out << (useDouble ? "  ucomisd %xmm1, %xmm0\n" : "  ucomiss %xmm1, %xmm0\n");
+            out << "  movq $0, %rax\n";
+            out << "  setbe %al\n";
+            out << "  movzbq %al, %rax\n";
+            return;
+        case BinaryOp::GE:
+            out << (useDouble ? "  ucomisd %xmm1, %xmm0\n" : "  ucomiss %xmm1, %xmm0\n");
+            out << "  movq $0, %rax\n";
+            out << "  setae %al\n";
+            out << "  movzbq %al, %rax\n";
+            return;
+        default:
+            break;
+        }
+
+        if (useDouble)
+            out << "  movq %xmm0, %rax\n";
+        else {
+            out << "  movd %xmm0, %eax\n";
+            out << "  movslq %eax, %rax\n";
+        }
+        return;
     }
 
     e->left->accept(this);
@@ -410,6 +691,15 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
 }
 
 void GenCodeVisitor::visit(UnaryOpNode *e) {
+    // lvalue mode for deref: *p = value
+    if (lvalTarget && e->op == UnaryOp::DEREF) {
+        lvalTarget->kind = LValKind::Deref;
+        lvalTarget = nullptr;
+        e->operand->accept(this);
+        out << "  pushq %rax\n";
+        return;
+    }
+    
     // Constant folding: si es constante, generar directamente el valor
     if (e->isConstant) {
         out << "  movq $" << (long long)e->constantValue << ", %rax\n";
@@ -444,18 +734,18 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
     case UnaryOp::PRE_INC:
         out << "  inc" << suffix << " " << reg << "\n";
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
-            storeVar(id->name);
+            storeBinding(id->binding);
         break;
     case UnaryOp::PRE_DEC:
         out << "  dec" << suffix << " " << reg << "\n";
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
-            storeVar(id->name);
+            storeBinding(id->binding);
         break;
     case UnaryOp::POST_INC:
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand)) {
             out << "  pushq %rax\n";
             out << "  inc" << suffix << " " << reg << "\n";
-            storeVar(id->name);
+            storeBinding(id->binding);
             out << "  popq %rax\n";
         }
         break;
@@ -463,13 +753,13 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand)) {
             out << "  pushq %rax\n";
             out << "  dec" << suffix << " " << reg << "\n";
-            storeVar(id->name);
+            storeBinding(id->binding);
             out << "  popq %rax\n";
         }
         break;
     case UnaryOp::ADDR:
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
-            leaVar(id->name);
+            leaBinding(id->binding);
         break;
     case UnaryOp::DEREF:
         out << "  movq (%rax), %rax\n";
@@ -482,14 +772,24 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
 
     e->value->accept(this); // value in %rax
 
-    // Determinar tamaño del target
-    int size = 8;  // default
-    if (target.kind == LValKind::Id && variableSizes.count(target.name)) {
-        size = variableSizes[target.name];
+    if (target.kind == LValKind::Id && target.binding) {
+        Type* tgtType = target.binding->resolvedType;
+        Type* valType = e->value->resolvedType;
+        if (tgtType && tgtType->ttype == Type::DOUBLE) {
+            if (!valType || valType->ttype == Type::FLOAT || valType->ttype == Type::INT ||
+                valType->ttype == Type::CHAR) {
+                out << "  movd %eax, %xmm7\n";
+                out << "  cvtss2sd %xmm7, %xmm7\n";
+                out << "  movq %xmm7, %rax\n";
+            }
+        } else if (tgtType && tgtType->ttype == Type::FLOAT) {
+            if (!valType || valType->ttype == Type::INT || valType->ttype == Type::CHAR) {
+                out << "  cvtsi2ss %eax, %xmm7\n";
+                out << "  movd %xmm7, %eax\n";
+                out << "  movslq %eax, %rax\n";
+            }
+        }
     }
-    
-    string suffix = (size == 1) ? "b" : (size == 4) ? "l" : "q";
-    string reg = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
 
     switch (e->op) {
     case AssignOp::ASSIGN:
@@ -596,7 +896,11 @@ void GenCodeVisitor::visit(FcallNode *e) {
         out << "  movq %rax, " << argRegs[i] << "\n";
     }
     
-    out << "  call " << fname << "\n";
+    if (!fname.empty() && memoria.count(fname)) {
+        out << "  call *" << memoria[fname] << "(%rbp)\n";
+    } else {
+        out << "  call " << fname << "\n";
+    }
     
     // Limpiar argumentos extra del stack
     if (nArgs > 6) {
@@ -607,9 +911,20 @@ void GenCodeVisitor::visit(FcallNode *e) {
 void GenCodeVisitor::visit(IndexNode *e) {
     if (lvalTarget) {
         lvalTarget->kind = LValKind::Index;
-        if (auto *id = dynamic_cast<IdentifierNode *>(e->base))
+        vector<Exp*> indices;
+        Exp* b = e;
+        while (auto* inner = dynamic_cast<IndexNode*>(b)) {
+            indices.push_back(inner->index);
+            b = inner->base;
+        }
+        reverse(indices.begin(), indices.end());
+        if (auto *id = dynamic_cast<IdentifierNode *>(b)) {
             lvalTarget->name = id->name;
-        lvalTarget->index = e->index;
+            lvalTarget->binding = id->binding;
+        }
+        lvalTarget->indices = indices;
+        if (!indices.empty())
+            lvalTarget->index = indices.back();
         return;
     }
 
@@ -621,64 +936,11 @@ void GenCodeVisitor::visit(IndexNode *e) {
     }
     reverse(indices.begin(), indices.end());
 
-    string arrName;
+    VarDecl* arrBinding = nullptr;
     if (auto* id = dynamic_cast<IdentifierNode*>(b))
-        arrName = id->name;
+        arrBinding = id->binding;
 
-    auto dimsIt = arrayDimensions.find(arrName);
-    if (!arrName.empty() && dimsIt != arrayDimensions.end() && indices.size() > 1) {
-        // Para arrays multidimensionales
-        if (arrayDimensions.count(arrName)) {
-            leaVar(arrName);
-        } else {
-            loadVar(arrName);
-        }
-        out << "  pushq %rax\n";
-        for (size_t d = 0; d < indices.size(); d++) {
-            indices[d]->accept(this);
-            int stride = 1;
-            for (size_t s = d + 1; s < dimsIt->second.size() && s < indices.size(); s++)
-                stride *= dimsIt->second[s];
-            if (stride > 1) {
-                out << "  movq $" << stride << ", %rcx\n";
-                out << "  imulq %rcx, %rax\n";
-            }
-            if (d > 0) {
-                out << "  addq %rax, %rdi\n";
-            } else {
-                out << "  movq %rax, %rdi\n";
-            }
-        }
-        out << "  popq %rax\n";
-        out << "  movq (%rax, %rdi, 8), %rax\n";
-        return;
-    }
-
-    e->index->accept(this);
-    out << "  movq %rax, %rdi\n";
-
-    if (auto *id = dynamic_cast<IdentifierNode *>(e->base)) {
-        if (arrayDimensions.count(id->name)) {
-            leaVar(id->name);
-        } else {
-            loadVar(id->name);
-        }
-    } else {
-        e->base->accept(this);
-    }
-
-    int elemSize = 8;
-    if (!arrName.empty() && arrayElementSizes.count(arrName)) {
-        elemSize = arrayElementSizes[arrName];
-    }
-
-    string scale;
-    if (elemSize == 1) scale = "";
-    else if (elemSize == 2) scale = ",2";
-    else if (elemSize == 4) scale = ",4";
-    else scale = ",8";
-
-    out << "  " << loadInstr(elemSize) << " (%rax,%rdi" << scale << "), %rax\n";
+    emitIndexedLoad(arrBinding, indices);
 }
 
 void GenCodeVisitor::visit(MemberAccessNode *e) {
@@ -686,31 +948,34 @@ void GenCodeVisitor::visit(MemberAccessNode *e) {
         if (auto *id = dynamic_cast<IdentifierNode *>(e->object)) {
             lvalTarget->kind = LValKind::Member;
             lvalTarget->name = id->name;
+            lvalTarget->binding = id->binding;
             lvalTarget->member = e->member;
             lvalTarget->isArrow = false;
-            // Get the struct type name from resolvedType
-            if (id->resolvedType && id->resolvedType->ttype == Type::STRUCT) {
-                lvalTarget->structName = ((StructType*)id->resolvedType)->name;
+            Type* objType = e->object->resolvedType;
+            if (!objType && id->binding)
+                objType = id->binding->resolvedType;
+            if (objType && objType->ttype == Type::STRUCT) {
+                lvalTarget->structName = ((StructType*)objType)->name;
             } else {
-                // Fallback if type info isn't available
                 lvalTarget->structName = id->name;
             }
         }
         return;
     }
     if (auto *id = dynamic_cast<IdentifierNode *>(e->object)) {
-        // Para p.x: acceder directamente desde la dirección del struct
-        out << "  leaq " << varMem(id->name) << ", %rax\n";
-        // Get the struct type name from resolvedType
+        leaBinding(id->binding);
         string structName;
-        if (id->resolvedType && id->resolvedType->ttype == Type::STRUCT) {
-            structName = ((StructType*)id->resolvedType)->name;
+        Type* objType = id->resolvedType;
+        if (objType && objType->ttype == Type::STRUCT) {
+            structName = ((StructType*)objType)->name;
+        } else if (id->binding && id->binding->resolvedType &&
+                   id->binding->resolvedType->ttype == Type::STRUCT) {
+            structName = ((StructType*)id->binding->resolvedType)->name;
         } else {
-            // Fallback if type info isn't available, use the old approach
             structName = id->name;
         }
-        int size = structMemberSizes[structName][e->member];
-        out << "  " << loadInstr(size) << " " << structFieldOffset[structName][e->member] << "(%rax), %rax\n";
+        int size = structMemberSizes[baseStructName(structName)][e->member];
+        out << "  " << loadInstr(size) << " " << structFieldOffset[baseStructName(structName)][e->member] << "(%rax), %rax\n";
     }
 }
 
@@ -719,6 +984,7 @@ void GenCodeVisitor::visit(ArrowAccessNode *e) {
         lvalTarget->kind = LValKind::Member;
         if (auto *id = dynamic_cast<IdentifierNode *>(e->pointer)) {
             lvalTarget->name = id->name;
+            lvalTarget->binding = id->binding;
             // Get the struct type name from resolvedType (should be pointer to struct)
             if (id->resolvedType && id->resolvedType->ttype == Type::POINTER) {
                 PointerType* pt = (PointerType*)id->resolvedType;
@@ -736,8 +1002,7 @@ void GenCodeVisitor::visit(ArrowAccessNode *e) {
         return;
     }
     if (auto *id = dynamic_cast<IdentifierNode *>(e->pointer)) {
-        // Para p->x: cargar el puntero primero
-        loadVar(id->name);
+        loadBinding(id->binding);
         string structName;
         // Get the struct type name from resolvedType (should be pointer to struct)
         if (id->resolvedType && id->resolvedType->ttype == Type::POINTER) {
@@ -750,8 +1015,8 @@ void GenCodeVisitor::visit(ArrowAccessNode *e) {
         } else {
             structName = id->name;
         }
-        int size = structMemberSizes[structName][e->member];
-        out << "  " << loadInstr(size) << " " << structFieldOffset[structName][e->member] << "(%rax), %rax\n";
+        int size = structMemberSizes[baseStructName(structName)][e->member];
+        out << "  " << loadInstr(size) << " " << structFieldOffset[baseStructName(structName)][e->member] << "(%rax), %rax\n";
     }
 }
 
@@ -851,6 +1116,7 @@ void GenCodeVisitor::visit(LambdaExprNode *e) {
     memoria.clear();
     offset = 0;
     funcName = lambdaName;
+    returnLabel = ".Llambda_end_" + to_string(lbl);
 
     // Calcular frame size para lambda (asume 8 bytes por variable)
     int localVarCount = countLambdaVars(e->body);
@@ -858,62 +1124,53 @@ void GenCodeVisitor::visit(LambdaExprNode *e) {
     int captureCount = (int)e->captures.size();
     int totalVars = paramCount + localVarCount + captureCount;
     int frameSize = (totalVars * 8 + 15) & ~15;
+    string afterLabel = ".Llambda_after_" + to_string(lbl);
 
+    out << "  jmp " << afterLabel << "\n";
     out << lambdaName << ":\n";
     out << "  pushq %rbp\n";
     out << "  movq %rsp, %rbp\n";
     if (frameSize > 0)
         out << "  subq $" << frameSize << ", %rsp\n";
 
-    // Asignar offsets a parámetros (en stack positivo)
-    for (auto p : e->params) {
+    const vector<string> argRegs = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
+    for (size_t i = 0; i < e->params.size(); i++) {
         offset -= 8;
-        memoria[p->name] = offset;
+        e->params[i]->offset = offset;
+        memoria[e->params[i]->name] = offset;
+        if (i < argRegs.size())
+            out << "  movq " << argRegs[i] << ", " << offset << "(%rbp)\n";
     }
 
-    // Asignar offsets a capturas (en stack negativo)
     for (auto cap : e->captures) {
         offset -= 8;
         memoria[cap->name] = offset;
     }
 
-    // Generar código para inicializar capturas
     for (auto cap : e->captures) {
-        if (cap->mode == CaptureNode::BY_VALUE) {
-            // Capturar por valor: copiar el valor actual
-            if (memoriaGlobal.count(cap->name)) {
-                // Variable global
-                out << "  movq " << cap->name << "(%rip), %rax\n";
-            } else if (savedMemoria.count(cap->name)) {
-                // Variable local del scope exterior
-                out << "  movq " << savedMemoria[cap->name] << "(%rbp), %rax\n";
-            }
-            out << "  movq %rax, " << memoria[cap->name] << "(%rbp)\n";
-        } else if (cap->mode == CaptureNode::BY_REF) {
-            // Capturar por referencia: guardar la dirección
-            if (memoriaGlobal.count(cap->name)) {
-                // Variable global
-                out << "  leaq " << cap->name << "(%rip), %rax\n";
-            } else if (savedMemoria.count(cap->name)) {
-                // Variable local del scope exterior
-                out << "  leaq " << savedMemoria[cap->name] << "(%rbp), %rax\n";
-            }
+        if (cap->mode == CaptureNode::BY_VALUE && savedMemoria.count(cap->name)) {
+            out << "  movq 0(%rbp), %rax\n";
+            out << "  movl " << savedMemoria[cap->name] << "(%rax), %eax\n";
+            out << "  movl %eax, " << memoria[cap->name] << "(%rbp)\n";
+        } else if (cap->mode == CaptureNode::BY_REF && savedMemoria.count(cap->name)) {
+            out << "  movq 0(%rbp), %rax\n";
+            out << "  leaq " << savedMemoria[cap->name] << "(%rax), %rax\n";
             out << "  movq %rax, " << memoria[cap->name] << "(%rbp)\n";
         }
     }
 
-    // Generar código del body
     e->body->accept(this);
 
     out << ".Llambda_end_" << lbl << ":\n";
-    out << "  movq $0, %rax\n";
     out << "  leave\n";
     out << "  ret\n";
+    out << afterLabel << ":\n";
 
     inFunction = savedInFunc;
     offset = savedOffset;
     memoria = savedMemoria;
     funcName = savedFunc;
+    returnLabel.clear();
 
     out << "  leaq " << lambdaName << "(%rip), %rax\n";
 }
@@ -1067,7 +1324,8 @@ void GenCodeVisitor::visit(ReturnStmt *s) {
         s->expr->accept(this);
     else
         out << "  movq $0, %rax\n";
-    out << "  jmp .end_" << funcName << "\n";
+    string target = returnLabel.empty() ? ".end_" + funcName : returnLabel;
+    out << "  jmp " << target << "\n";
 }
 
 void GenCodeVisitor::visit(FreeStmt *s) {
@@ -1086,31 +1344,20 @@ void GenCodeVisitor::visit(VarDecl *d) {
         return;
     }
 
-    // Usar offset y tamaño calculados por TypeChecker
-    // El offset ya es negativo (calculado por TypeChecker)
-    memoria[d->name] = d->offset;  // ya es negativo
-    variableSizes[d->name] = d->memSize;
-    
-    if (!d->array_sizes.empty()) {
-        vector<int> dims;
-        for (auto s : d->array_sizes) {
-            if (auto* il = dynamic_cast<IntegerLiteralNode*>(s))
-                dims.push_back((int)il->value);
-            else
-                dims.push_back(0);
-        }
-        arrayDimensions[d->name] = dims;
-        if (d->resolvedType && d->resolvedType->ttype == Type::ARRAY) {
-            ArrayType* at = (ArrayType*)d->resolvedType;
-            arrayElementSizes[d->name] = at->base->size();
-        } else {
-            arrayElementSizes[d->name] = 8; // fallback
-        }
-    }
+    bind_var_decl(d);
 
     if (d->initializer) {
         d->initializer->accept(this);
-        storeVar(d->name);
+        if (d->resolvedType && d->resolvedType->ttype == Type::DOUBLE) {
+            Type* initType = d->initializer->resolvedType;
+            if (!initType || initType->ttype == Type::FLOAT || initType->ttype == Type::INT ||
+                initType->ttype == Type::CHAR) {
+                out << "  movd %eax, %xmm7\n";
+                out << "  cvtss2sd %xmm7, %xmm7\n";
+                out << "  movq %xmm7, %rax\n";
+            }
+        }
+        storeBinding(d);
     }
 }
 
@@ -1118,7 +1365,10 @@ void GenCodeVisitor::visit(FunDecl *d) {
     inFunction = true;
     memoria.clear();
     variableSizes.clear();
+    arrayDimensions.clear();
+    arrayElementSizes.clear();
     funcName = d->name;
+    returnLabel = ".end_" + d->name;
     
     // Usar frameSize calculado por TypeChecker
     int frameSize = d->frameSize;
@@ -1130,17 +1380,18 @@ void GenCodeVisitor::visit(FunDecl *d) {
     if (frameSize > 0)
         out << "  subq $" << frameSize << ", %rsp\n";
 
-    // Asignar offsets a parámetros y guardar tamaños
-    // Los offsets ya son negativos (calculados por TypeChecker)
-    const vector<string> argRegs = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
+    const vector<string> argRegs32 = {"%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d"};
+    const vector<string> argRegs64 = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
     for (size_t i = 0; i < d->params.size() && i < 6; i++) {
-        memoria[d->params[i]->name] = d->params[i]->offset;  // ya es negativo
-        variableSizes[d->params[i]->name] = d->params[i]->memSize;
+        bind_var_decl(d->params[i]);
         
-        // Cargar parámetro desde registro a memoria
         int size = d->params[i]->memSize;
-        string destReg = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
-        out << "  " << storeInstr(size) << " " << destReg << ", " << d->params[i]->offset << "(%rbp)\n";
+        if (size == 4)
+            out << "  movl " << argRegs32[i] << ", " << d->params[i]->offset << "(%rbp)\n";
+        else if (size == 1)
+            out << "  movb " << argRegs32[i] << ", " << d->params[i]->offset << "(%rbp)\n";
+        else
+            out << "  movq " << argRegs64[i] << ", " << d->params[i]->offset << "(%rbp)\n";
     }
 
     // Generar código del body
@@ -1171,16 +1422,12 @@ void GenCodeVisitor::visit(TemplateDecl *d) {
     if (d->struct_decl) {
         int fieldOff = 0;
         for (auto m : d->struct_decl->members) {
+            int msize = 4;
             structFieldOffset[d->struct_decl->name][m->name] = fieldOff;
-            fieldOff += 8;
+            structMemberSizes[d->struct_decl->name][m->name] = msize;
+            fieldOff += msize;
         }
         structFieldCount[d->struct_decl->name] = (int)d->struct_decl->members.size();
-    }
-    if (d->func) {
-        // Para template functions, generar código para cada instanciación encontrada
-        // Las instanciaciones se registran durante el typechecking
-        // Por ahora, generamos el código base del template
-        d->func->accept(this);
     }
 }
 
@@ -1197,29 +1444,49 @@ void GenCodeVisitor::computeAddress(IdentifierNode *e) {
     if (lvalTarget) {
         lvalTarget->kind = LValKind::Id;
         lvalTarget->name = e->name;
+        lvalTarget->binding = e->binding;
         return;
     }
-    leaVar(e->name);
+    leaBinding(e->binding);
 }
 
 void GenCodeVisitor::computeAddress(IndexNode *e) {
-    e->index->accept(this);
-    out << "  movq %rax, %rdi\n";
-    if (auto *id = dynamic_cast<IdentifierNode *>(e->base))
-        loadVar(id->name);
-    out << "  leaq (%rax, %rdi, 8), %rax\n";
+    vector<Exp*> indices;
+    Exp* b = e;
+    while (auto* inner = dynamic_cast<IndexNode*>(b)) {
+        indices.push_back(inner->index);
+        b = inner->base;
+    }
+    reverse(indices.begin(), indices.end());
+
+    VarDecl* arrBinding = nullptr;
+    if (auto *id = dynamic_cast<IdentifierNode *>(b))
+        arrBinding = id->binding;
+
+    emitIndexedAddress(arrBinding, indices);
 }
 
 void GenCodeVisitor::computeAddress(MemberAccessNode *e) {
     if (auto *id = dynamic_cast<IdentifierNode *>(e->object)) {
-        leaVar(id->name);
-        out << "  addq $" << structFieldOffset[id->name][e->member] << ", %rax\n";
+        leaBinding(id->binding);
+        string structName = id->name;
+        if (id->resolvedType && id->resolvedType->ttype == Type::STRUCT) {
+            structName = ((StructType*)id->resolvedType)->name;
+        }
+        out << "  addq $" << structFieldOffset[baseStructName(structName)][e->member] << ", %rax\n";
     }
 }
 
 void GenCodeVisitor::computeAddress(ArrowAccessNode *e) {
     if (auto *id = dynamic_cast<IdentifierNode *>(e->pointer)) {
-        loadVar(id->name);
-        out << "  addq $" << structFieldOffset[id->name][e->member] << ", %rax\n";
+        loadBinding(id->binding);
+        string structName = id->name;
+        if (id->resolvedType && id->resolvedType->ttype == Type::POINTER) {
+            PointerType* pt = (PointerType*)id->resolvedType;
+            if (pt->base && pt->base->ttype == Type::STRUCT) {
+                structName = ((StructType*)pt->base)->name;
+            }
+        }
+        out << "  addq $" << structFieldOffset[baseStructName(structName)][e->member] << ", %rax\n";
     }
 }

@@ -158,6 +158,14 @@ TypeNode* Parser::parse_basic_type() {
     // struct person <- esto es un tipo
     if (match(Token::STRUCT)) {
         Token* name = consume(Token::ID, "Se esperaba nombre de struct");
+        if (match(Token::LT)) {
+            vector<TypeNode*> targs;
+            do {
+                targs.push_back(parse_type());
+            } while (match(Token::COMA));
+            consume(Token::GT, "Se esperaba '>' en instanciación de template");
+            return new TemplateTypeNode(name->text, targs);
+        }
         return new StructTypeNode(name->text);
     }
     // para tipos por template
@@ -428,6 +436,17 @@ Stm* Parser::parse_statement() {
 // parse_local_var_decl: parsea declaración de variable local
 VarDecl* Parser::parse_local_var_decl() {
     TypeNode* type = parse_type();
+    if (auto* st = dynamic_cast<StructTypeNode*>(type)) {
+        if (match(Token::LT)) {
+            vector<TypeNode*> targs;
+            do {
+                targs.push_back(parse_type());
+            } while (match(Token::COMA));
+            consume(Token::GT, "Se esperaba '>' en instanciación de template");
+            type = new TemplateTypeNode(st->name, targs);
+            delete st;
+        }
+    }
     Token* name = consume(Token::ID, "Se esperaba identificador");
     return parse_variable_decl(type, name->text);
 }
@@ -709,6 +728,56 @@ Exp* Parser::parse_postfix() {
             Exp* index = parse_expression();
             consume(Token::RBRACKET, "Se esperaba ']'");
             l = new IndexNode(l, index);
+        } else if (check(Token::LT) && dynamic_cast<IdentifierNode*>(l)) {
+            Scanner::Pos saved = scanner->getPos();
+            Token* lookahead = scanner->nextToken();
+            Token::Type laType = lookahead->type;
+            delete lookahead;
+            scanner->setPos(saved);
+
+            bool isTemplate = is_type_keyword(laType) || laType == Token::STRUCT;
+            if (!isTemplate && laType == Token::ID) {
+                Scanner::Pos inner = scanner->getPos();
+                Token* idTok = scanner->nextToken();
+                Token* after = scanner->nextToken();
+                isTemplate = after && (after->type == Token::GT || after->type == Token::COMA);
+                delete idTok;
+                delete after;
+                scanner->setPos(saved);
+            }
+            if (!isTemplate) {
+                break;
+            }
+
+            advance(); // consume '<'
+            vector<TypeNode*> targs;
+            bool ok = true;
+            try {
+                targs.push_back(parse_type());
+                while (match(Token::COMA)) {
+                    targs.push_back(parse_type());
+                }
+                ok = ok && match(Token::GT);
+                ok = ok && check(Token::LPAREN);
+            } catch (...) {
+                ok = false;
+            }
+            if (ok) {
+                match(Token::LPAREN); // consume '('
+                FcallNode* call = new FcallNode(l);
+                call->template_args = targs;
+                if (!check(Token::RPAREN)) {
+                    call->args.push_back(parse_assignment());
+                    while (match(Token::COMA)) {
+                        call->args.push_back(parse_assignment());
+                    }
+                }
+                consume(Token::RPAREN, "Se esperaba ')' en llamada a función");
+                l = call;
+            } else {
+                rollback(saved);
+                break;
+            }
         } else if (match(Token::LPAREN)) {
             FcallNode* call = new FcallNode(l);
             if (!check(Token::RPAREN)) {
