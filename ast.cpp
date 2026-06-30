@@ -93,7 +93,8 @@ StringLiteralNode::StringLiteralNode(const string& v)
 
 
 // ===================== PrintfNode =====================
-PrintfNode::PrintfNode() : Exp() {}
+PrintfNode::PrintfNode() : Exp(), format("%ld") {}
+PrintfNode::PrintfNode(const string& fmt, const vector<Exp*>& a) : Exp(), format(fmt), args(a) {}
 PrintfNode::~PrintfNode() { for (auto a : args) delete a; }
 
 // ===================== Stm base =====================

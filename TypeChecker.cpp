@@ -6,6 +6,24 @@
 
 using namespace std;
 
+namespace {
+
+bool is_integral_type(Type* t) {
+    return t->ttype == Type::INT || t->ttype == Type::CHAR;
+}
+
+bool is_arithmetic_type(Type* t) {
+    return is_integral_type(t) ||
+           t->ttype == Type::FLOAT ||
+           t->ttype == Type::DOUBLE;
+}
+
+bool is_switch_index_type(Type* t) {
+    return t->ttype == Type::INT || t->ttype == Type::CHAR;
+}
+
+} // namespace
+
 // ============================================================
 // accept() methods for TypeVisitor
 // ============================================================
@@ -63,7 +81,7 @@ TypeChecker::TypeChecker() {
     voidType = new Type(Type::VOID);
     floatType = new Type(Type::FLOAT);
     doubleType = new Type(Type::DOUBLE);
-    charType = new Type(Type::INT); // treat char as int for now
+    charType = new Type(Type::CHAR);
     retornodefuncion = nullptr;
     loopDepth = 0;
     switchDepth = 0;
@@ -204,10 +222,13 @@ StructType* TypeChecker::instantiate_template(const string& name, const vector<T
 
 bool TypeChecker::check_assign(Type* target, Type* value) {
     if (target->match(value)) return true;
-    // Promoción: int → float
-    if (target->ttype == Type::FLOAT && value->ttype == Type::INT) return true;
-    // Promoción: int → double
-    if (target->ttype == Type::DOUBLE && value->ttype == Type::INT) return true;
+    if (target->ttype == Type::POINTER && value->ttype == Type::POINTER) return true;
+    // Truncamiento / promoción entre char e int
+    if (target->ttype == Type::CHAR && value->ttype == Type::INT) return true;
+    if (target->ttype == Type::INT && value->ttype == Type::CHAR) return true;
+    // Promoción: int/char → float o double
+    if (target->ttype == Type::FLOAT && is_integral_type(value)) return true;
+    if (target->ttype == Type::DOUBLE && is_integral_type(value)) return true;
     // Promoción: float → double
     if (target->ttype == Type::DOUBLE && value->ttype == Type::FLOAT) return true;
     return false;
@@ -334,7 +355,10 @@ void TypeChecker::visit(FunDecl* f) {
             }
             // Wrap en ArrayType si tiene dimensiones
             for (auto s : v->array_sizes) {
-                ArrayType* at = new ArrayType(t, -1);
+                int dim = -1;
+                if (auto* il = dynamic_cast<IntegerLiteralNode*>(s))
+                    dim = (int)il->value;
+                ArrayType* at = new ArrayType(t, dim);
                 typeCache.push_back(at);
                 t = at;
             }
@@ -364,12 +388,15 @@ void TypeChecker::visit(FunDecl* f) {
         if (end > totalSize) totalSize = end;
     }
     
+    // Calcular frame size total (alineado a 16 bytes)
+    f->frameSize = (totalSize + 15) & ~15;
+    
     // Convertir offsets a negativos (stack frame)
     for (auto p : params) {
-        p->offset = -(p->offset + 8);
+        p->offset = p->offset - f->frameSize;
     }
     for (auto v : localVars) {
-        v->offset = -(v->offset + 8);
+        v->offset = v->offset - f->frameSize;
     }
     
     retornodefuncion = type_from_ast(f->return_type);
@@ -396,9 +423,6 @@ void TypeChecker::visit(FunDecl* f) {
         if (!endsWithReturn)
             error("función no-void no garantiza retorno en todos los caminos.", f->loc);
     }
-
-    // Calcular frame size total (alineado a 16 bytes)
-    f->frameSize = (totalSize + 15) & ~15;
     
     env.remove_level();
 }
@@ -526,7 +550,10 @@ void TypeChecker::visit(VarDecl* v) {
 
     // Wrap en ArrayType si tiene dimensiones de arreglo
     for (auto s : v->array_sizes) {
-        ArrayType* at = new ArrayType(t, -1);
+        int dim = -1;
+        if (auto* il = dynamic_cast<IntegerLiteralNode*>(s))
+            dim = (int)il->value;
+        ArrayType* at = new ArrayType(t, dim);
         typeCache.push_back(at);
         t = at;
     }
@@ -572,6 +599,7 @@ void TypeChecker::visit(StructDecl* s) {
         Type* mt = type_from_ast(m->type);
         st->members[m->name] = mt;
         s->memberOffsets[m->name] = offset;
+        s->memberSizes[m->name] = mt->size(); // add size!
         offset += mt->size();
     }
     
@@ -636,7 +664,7 @@ void TypeChecker::visit(ForStmt* s) {
 
 void TypeChecker::visit(SwitchStmt* s) {
     Type* t = s->expr->accept(this);
-    if (!t->match(intType) && !t->match(charType)) {
+    if (!is_switch_index_type(t)) {
         error("expresión de switch debe ser int o char.");
     }
     switchDepth++;
@@ -647,7 +675,7 @@ void TypeChecker::visit(SwitchStmt* s) {
 
 void TypeChecker::visit(CaseClause* s) {
     Type* t = s->value->accept(this);
-    if (!t->match(intType) && !t->match(charType)) {
+    if (!is_switch_index_type(t)) {
         error("valor de case debe ser int o char.");
     }
     for (auto st : s->body) st->accept(this);
@@ -709,8 +737,7 @@ Type* TypeChecker::visit(BinaryOpNode* e) {
         case BinaryOp::ADD: case BinaryOp::SUB:
         case BinaryOp::MUL: case BinaryOp::DIV: case BinaryOp::MOD:
         case BinaryOp::POW:
-            if ((left->ttype == Type::INT || left->ttype == Type::FLOAT || left->ttype == Type::DOUBLE) &&
-                (right->ttype == Type::INT || right->ttype == Type::FLOAT || right->ttype == Type::DOUBLE)) {
+            if (is_arithmetic_type(left) && is_arithmetic_type(right)) {
                 // Promoción automática: si alguno es double, resultado double
                 if (left->ttype == Type::DOUBLE || right->ttype == Type::DOUBLE)
                     resultType = doubleType;
@@ -718,22 +745,21 @@ Type* TypeChecker::visit(BinaryOpNode* e) {
                 else if (left->ttype == Type::FLOAT || right->ttype == Type::FLOAT)
                     resultType = floatType;
                 else
-                    resultType = intType;
+                    resultType = intType; // char promueve a int
             } else {
-                error("operación aritmética requiere int, float o double.");
+                error("operación aritmética requiere int, char, float o double.");
                 resultType = intType;
             }
             break;
 
-        // Comparaciones: int, float o double, resultado bool
+        // Comparaciones: int, char, float o double, resultado bool
         case BinaryOp::EQ: case BinaryOp::NE:
         case BinaryOp::LT: case BinaryOp::GT:
         case BinaryOp::LE: case BinaryOp::GE:
-            if ((left->ttype == Type::INT || left->ttype == Type::FLOAT || left->ttype == Type::DOUBLE) &&
-                (right->ttype == Type::INT || right->ttype == Type::FLOAT || right->ttype == Type::DOUBLE))
+            if (is_arithmetic_type(left) && is_arithmetic_type(right))
                 resultType = boolType;
             else {
-                error("comparación requiere int, float o double.");
+                error("comparación requiere int, char, float o double.");
                 resultType = boolType;
             }
             break;
@@ -762,12 +788,20 @@ Type* TypeChecker::visit(UnaryOpNode* e) {
     Type* resultType;
     switch (e->op) {
         case UnaryOp::MINUS:
+            if (is_arithmetic_type(t)) {
+                // char promueve a int en operaciones unarias aritméticas
+                resultType = is_integral_type(t) ? intType : t;
+            } else {
+                error("operación unaria requiere int, char, float o double.");
+                resultType = t;
+            }
+            break;
         case UnaryOp::PRE_INC: case UnaryOp::PRE_DEC:
         case UnaryOp::POST_INC: case UnaryOp::POST_DEC:
-            if (t->ttype == Type::INT || t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE) {
+            if (is_arithmetic_type(t)) {
                 resultType = t;
             } else {
-                error("operación unaria requiere int, float o double.");
+                error("operación unaria requiere int, char, float o double.");
                 resultType = t;
             }
             break;
@@ -818,7 +852,9 @@ Type* TypeChecker::visit(AssignmentNode* e) {
 
 Type* TypeChecker::visit(MallocNode* e) {
     e->size->accept(this);
-    return intType; // returns int* (simplified)
+    PointerType* ptr = new PointerType(voidType);
+    typeCache.push_back(ptr);
+    return ptr;
 }
 
 Type* TypeChecker::visit(PrintfNode* e) {
@@ -911,20 +947,23 @@ Type* TypeChecker::visit(IndexNode* e) {
     Type* base = e->base->accept(this);
     Type* index = e->index->accept(this);
     // El índice debe ser int
-    if (!index->match(intType) && !index->match(charType)) {
+    if (!is_switch_index_type(index)) {
         error("índice de arreglo debe ser int o char.");
     }
     // Acceso a arreglo: devuelve tipo base
     if (base->ttype == Type::ARRAY) {
         ArrayType* at = (ArrayType*)base;
+        e->resolvedType = at->base;
         return at->base;
     }
     // Acceso a puntero: devuelve tipo base (equivalente a *(p + i))
     if (base->ttype == Type::POINTER) {
         PointerType* pt = (PointerType*)base;
+        e->resolvedType = pt->base;
         return pt->base;
     }
     error("acceso por índice requiere arreglo o puntero.");
+    e->resolvedType = intType;
     return intType;
 }
 
@@ -933,6 +972,7 @@ Type* TypeChecker::visit(MemberAccessNode* e) {
     if (objType->ttype != Type::STRUCT) {
         error("acceso a miembro '.' sobre tipo no struct (es " +
               objType->str() + ").");
+        e->resolvedType = intType;
         return intType;
     }
     StructType* st = (StructType*)objType;
@@ -940,8 +980,10 @@ Type* TypeChecker::visit(MemberAccessNode* e) {
     if (it == st->members.end()) {
         error("el struct '" + st->name + "' no tiene miembro '" +
               e->member + "'.");
+        e->resolvedType = intType;
         return intType;
     }
+    e->resolvedType = it->second;
     return it->second;
 }
 
@@ -949,11 +991,13 @@ Type* TypeChecker::visit(ArrowAccessNode* e) {
     Type* ptrType = e->pointer->accept(this);
     if (ptrType->ttype != Type::POINTER) {
         error("acceso '->' requiere puntero (es " + ptrType->str() + ").");
+        e->resolvedType = intType;
         return intType;
     }
     PointerType* pt = (PointerType*)ptrType;
     if (pt->base->ttype != Type::STRUCT) {
         error("acceso '->' requiere puntero a struct.");
+        e->resolvedType = intType;
         return intType;
     }
     StructType* st = (StructType*)pt->base;
@@ -961,24 +1005,43 @@ Type* TypeChecker::visit(ArrowAccessNode* e) {
     if (it == st->members.end()) {
         error("el struct '" + st->name + "' no tiene miembro '" +
               e->member + "'.");
+        e->resolvedType = intType;
         return intType;
     }
+    e->resolvedType = it->second;
     return it->second;
 }
 
 Type* TypeChecker::visit(IdentifierNode* e) {
     if (!env.check(e->name)) {
         error("variable '" + e->name + "' no declarada.");
+        e->resolvedType = intType; // fallback type
         return intType;
     }
-    return env.lookup(e->name);
+    e->resolvedType = env.lookup(e->name);
+    return e->resolvedType;
 }
 
-Type* TypeChecker::visit(IntegerLiteralNode* e) { return intType; }
-Type* TypeChecker::visit(FloatLiteralNode* e) { return floatType; }
-Type* TypeChecker::visit(BoolLiteralNode* e) { return boolType; }
-Type* TypeChecker::visit(CharLiteralNode* e) { return charType; }
-Type* TypeChecker::visit(StringLiteralNode* e) { return intType; }
+Type* TypeChecker::visit(IntegerLiteralNode* e) { 
+    e->resolvedType = intType;
+    return intType; 
+}
+Type* TypeChecker::visit(FloatLiteralNode* e) { 
+    e->resolvedType = floatType;
+    return floatType; 
+}
+Type* TypeChecker::visit(BoolLiteralNode* e) { 
+    e->resolvedType = boolType;
+    return boolType; 
+}
+Type* TypeChecker::visit(CharLiteralNode* e) { 
+    e->resolvedType = charType;
+    return charType; 
+}
+Type* TypeChecker::visit(StringLiteralNode* e) { 
+    e->resolvedType = intType;
+    return intType; 
+}
 Type* TypeChecker::visit(PrimitiveTypeNode* e) { return type_from_ast(e); }
 Type* TypeChecker::visit(PointerTypeNode* e) { return type_from_ast(e); }
 Type* TypeChecker::visit(StructTypeNode* e) { return type_from_ast(e); }

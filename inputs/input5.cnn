@@ -3,10 +3,10 @@ int main() {
     int casted;
 
     ch = 'A';
-    print(ch);
+    printf(ch);
 
     casted = 3;
-    print(casted);
+    printf(casted);
 
     return 0;
 }

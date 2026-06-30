@@ -235,8 +235,10 @@ public:
 // Impresión: printf(args...), es exp porque se puede usar en cualquier lugar, en c es valido x = printf("xd");
 class PrintfNode : public Exp {
 public:
+    string format;  // string de formato (opcional, "%ld" por defecto)
     vector<Exp*> args;
     PrintfNode();
+    PrintfNode(const string& fmt, const vector<Exp*>& a);
     ~PrintfNode();
     double accept(Visitor* visitor);
     Type* accept(TypeVisitor* visitor);
@@ -443,6 +445,7 @@ public:
     
     // Calculados por TypeChecker
     unordered_map<string, int> memberOffsets;  // offset de cada miembro
+    unordered_map<string, int> memberSizes;    // size of each member in bytes
     int totalSize = 0;                          // tamaño total del struct
 
     StructDecl(const string& n);

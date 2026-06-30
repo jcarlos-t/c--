@@ -71,6 +71,10 @@ void GenCodeVisitor::generate(Program *p) {
     for (auto g : p->globals)
         memoriaGlobal[g->name] = true;
 
+    // Visit struct declarations first to initialize structFieldOffset
+    for (auto s : p->structs)
+        s->accept(this);
+
     out << ".data\n";
     out << "print_fmt: .string \"%ld\\n\"\n";
     out << "println_fmt: .string \"\\n\"\n";
@@ -200,20 +204,53 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
         storeVar(lv.name);
         break;
     case LValKind::Index:
+    {
         out << "  pushq %rax\n";
         lv.index->accept(this);
         out << "  movq %rax, %rdi\n";
         out << "  popq %rax\n";
         out << "  movq %rax, %rcx\n";
-        loadVar(lv.name);
-        out << "  movq %rcx, (%rax, %rdi, 8)\n";
+        
+        int elemSize = 8; // default
+        if (arrayElementSizes.count(lv.name)) {
+            elemSize = arrayElementSizes[lv.name];
+        }
+        string reg = (elemSize == 1) ? "%cl" : (elemSize == 4) ? "%ecx" : "%rcx";
+        
+        // Para arr[i]: si es un array normal, usar leaVar. Si es un puntero, usar loadVar
+        if (arrayDimensions.count(lv.name)) {
+            out << "  leaq " << varMem(lv.name) << ", %rax\n";
+        } else {
+            loadVar(lv.name);
+        }
+        
+        // Use scaled index addressing mode!
+        string scale;
+        if (elemSize == 1) scale = "";
+        else if (elemSize == 2) scale = ",2";
+        else if (elemSize == 4) scale = ",4";
+        else scale = ",8";
+        
+        out << "  " << storeInstr(elemSize) << " " << reg << ", (%rax,%rdi" << scale << ")\n";
         break;
+    }
     case LValKind::Member:
+    {
         out << "  pushq %rax\n";
         out << "  popq %rcx\n";
-        loadVar(lv.name);
-        out << "  movq %rcx, " << structFieldOffset[lv.name][lv.member] << "(%rax)\n";
+        int size = structMemberSizes[lv.structName][lv.member];
+        string reg = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
+        if (lv.isArrow) {
+            // p->x: cargar el puntero primero
+            loadVar(lv.name);
+            out << "  " << storeInstr(size) << " " << reg << ", " << structFieldOffset[lv.structName][lv.member] << "(%rax)\n";
+        } else {
+            // p.x: usar dirección del struct directamente
+            out << "  leaq " << varMem(lv.name) << ", %rax\n";
+            out << "  " << storeInstr(size) << " " << reg << ", " << structFieldOffset[lv.structName][lv.member] << "(%rax)\n";
+        }
         break;
+    }
     case LValKind::Deref:
         out << "  popq %rbx\n";
         out << "  movq %rax, (%rbx)\n";
@@ -232,7 +269,11 @@ void GenCodeVisitor::visit(IntegerLiteralNode *e) {
 }
 
 void GenCodeVisitor::visit(FloatLiteralNode *e) {
-    out << "  movq $" << (long long)e->value << ", %rax\n";
+    // Cargar float como valor de punto flotante en xmm0, luego mover a %rax para compatibilidad
+    // Usamos la representación IEEE 754 del valor
+    union { double d; long long i; } converter;
+    converter.d = e->value;
+    out << "  movq $0x" << hex << converter.i << dec << ", %rax\n";
 }
 
 void GenCodeVisitor::visit(BoolLiteralNode *e) {
@@ -459,16 +500,80 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
 }
 
 void GenCodeVisitor::visit(PrintfNode *e) {
+    // Generar label para el formato (respetar el formato del usuario)
+    string fmtLabel = "print_fmt";
+    if (e->format != "%ld") {
+        auto it = stringLabels.find(e->format);
+        int lbl;
+        if (it == stringLabels.end()) {
+            lbl = (int)stringLabels.size();
+            stringLabels[e->format] = lbl;
+            out << ".section .rodata\n";
+            out << ".Lfmt" << lbl << ": .string \"" << e->format << "\"\n";
+            out << ".text\n";
+            fmtLabel = ".Lfmt" + to_string(lbl);
+        } else {
+            fmtLabel = ".Lfmt" + to_string(it->second);
+        }
+    }
+    
+    // Cargar argumentos en registros según convención System V AMD64 ABI
+    // Para printf: formato en %rdi, luego argumentos en orden
+    // Cada posición tiene su registro específico:
+    // Posición 0: rsi (int) o xmm0 (float)
+    // Posición 1: rdx (int) o xmm1 (float)
+    // Posición 2: rcx (int) o xmm2 (float)
+    // Posición 3: r8 (int) o xmm3 (float)
+    // Posición 4: r9 (int) o xmm4 (float)
+    
+    const vector<string> intRegs = {"%rsi", "%rdx", "%rcx", "%r8", "%r9"};
+    const vector<string> xmmRegs = {"%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7"};
+    
     for (size_t i = 0; i < e->args.size(); i++) {
         e->args[i]->accept(this);
-        out << "  movq %rax, %rsi\n";
-        out << "  leaq print_fmt(%rip), %rdi\n";
-        out << "  movq $0, %rax\n";
-        out << "  call printf@PLT\n";
+        
+        // Determinar si es float/double usando TypeChecker
+        bool isFloat = false;
+        if (e->args[i]->resolvedType) {
+            Type* t = e->args[i]->resolvedType;
+            isFloat = (t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE);
+        }
+        
+        if (isFloat && i < xmmRegs.size()) {
+            // Mover float/double a xmm register usando movq
+            out << "  movq %rax, " << xmmRegs[i] << "\n";
+        } else if (i < intRegs.size()) {
+            // Mover entero/puntero a general purpose register
+            out << "  movq %rax, " << intRegs[i] << "\n";
+        } else {
+            // Push al stack si no hay registros disponibles
+            out << "  pushq %rax\n";
+        }
     }
-    out << "  leaq println_fmt(%rip), %rdi\n";
-    out << "  movq $0, %rax\n";
+    
+    // Llamar a printf con el formato en %rdi
+    out << "  leaq " << fmtLabel << "(%rip), %rdi\n";
+    
+    // Configurar al para variadic functions (número de registros xmm usados)
+    int xmmCount = 0;
+    for (size_t i = 0; i < e->args.size() && i < xmmRegs.size(); i++) {
+        if (e->args[i]->resolvedType) {
+            Type* t = e->args[i]->resolvedType;
+            if (t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE) {
+                xmmCount++;
+            }
+        }
+    }
+    out << "  movq $" << xmmCount << ", %rax\n";
+    
     out << "  call printf@PLT\n";
+    
+    // Limpiar argumentos extra del stack
+    int regsUsed = min((int)e->args.size(), (int)max(intRegs.size(), xmmRegs.size()));
+    if ((int)e->args.size() > regsUsed) {
+        out << "  addq $" << ((e->args.size() - regsUsed) * 8) << ", %rsp\n";
+    }
+    
     out << "  movq $0, %rax\n";
 }
 
@@ -522,7 +627,12 @@ void GenCodeVisitor::visit(IndexNode *e) {
 
     auto dimsIt = arrayDimensions.find(arrName);
     if (!arrName.empty() && dimsIt != arrayDimensions.end() && indices.size() > 1) {
-        loadVar(arrName);
+        // Para arrays multidimensionales
+        if (arrayDimensions.count(arrName)) {
+            leaVar(arrName);
+        } else {
+            loadVar(arrName);
+        }
         out << "  pushq %rax\n";
         for (size_t d = 0; d < indices.size(); d++) {
             indices[d]->accept(this);
@@ -546,11 +656,29 @@ void GenCodeVisitor::visit(IndexNode *e) {
 
     e->index->accept(this);
     out << "  movq %rax, %rdi\n";
-    if (auto *id = dynamic_cast<IdentifierNode *>(e->base))
-        loadVar(id->name);
-    else
+
+    if (auto *id = dynamic_cast<IdentifierNode *>(e->base)) {
+        if (arrayDimensions.count(id->name)) {
+            leaVar(id->name);
+        } else {
+            loadVar(id->name);
+        }
+    } else {
         e->base->accept(this);
-    out << "  movq (%rax, %rdi, 8), %rax\n";
+    }
+
+    int elemSize = 8;
+    if (!arrName.empty() && arrayElementSizes.count(arrName)) {
+        elemSize = arrayElementSizes[arrName];
+    }
+
+    string scale;
+    if (elemSize == 1) scale = "";
+    else if (elemSize == 2) scale = ",2";
+    else if (elemSize == 4) scale = ",4";
+    else scale = ",8";
+
+    out << "  " << loadInstr(elemSize) << " (%rax,%rdi" << scale << "), %rax\n";
 }
 
 void GenCodeVisitor::visit(MemberAccessNode *e) {
@@ -559,26 +687,71 @@ void GenCodeVisitor::visit(MemberAccessNode *e) {
             lvalTarget->kind = LValKind::Member;
             lvalTarget->name = id->name;
             lvalTarget->member = e->member;
+            lvalTarget->isArrow = false;
+            // Get the struct type name from resolvedType
+            if (id->resolvedType && id->resolvedType->ttype == Type::STRUCT) {
+                lvalTarget->structName = ((StructType*)id->resolvedType)->name;
+            } else {
+                // Fallback if type info isn't available
+                lvalTarget->structName = id->name;
+            }
         }
         return;
     }
     if (auto *id = dynamic_cast<IdentifierNode *>(e->object)) {
-        loadVar(id->name);
-        out << "  movq " << structFieldOffset[id->name][e->member] << "(%rax), %rax\n";
+        // Para p.x: acceder directamente desde la dirección del struct
+        out << "  leaq " << varMem(id->name) << ", %rax\n";
+        // Get the struct type name from resolvedType
+        string structName;
+        if (id->resolvedType && id->resolvedType->ttype == Type::STRUCT) {
+            structName = ((StructType*)id->resolvedType)->name;
+        } else {
+            // Fallback if type info isn't available, use the old approach
+            structName = id->name;
+        }
+        int size = structMemberSizes[structName][e->member];
+        out << "  " << loadInstr(size) << " " << structFieldOffset[structName][e->member] << "(%rax), %rax\n";
     }
 }
 
 void GenCodeVisitor::visit(ArrowAccessNode *e) {
     if (lvalTarget) {
         lvalTarget->kind = LValKind::Member;
-        if (auto *id = dynamic_cast<IdentifierNode *>(e->pointer))
+        if (auto *id = dynamic_cast<IdentifierNode *>(e->pointer)) {
             lvalTarget->name = id->name;
+            // Get the struct type name from resolvedType (should be pointer to struct)
+            if (id->resolvedType && id->resolvedType->ttype == Type::POINTER) {
+                PointerType* pt = (PointerType*)id->resolvedType;
+                if (pt->base && pt->base->ttype == Type::STRUCT) {
+                    lvalTarget->structName = ((StructType*)pt->base)->name;
+                } else {
+                    lvalTarget->structName = id->name;
+                }
+            } else {
+                lvalTarget->structName = id->name;
+            }
+        }
         lvalTarget->member = e->member;
+        lvalTarget->isArrow = true;
         return;
     }
     if (auto *id = dynamic_cast<IdentifierNode *>(e->pointer)) {
+        // Para p->x: cargar el puntero primero
         loadVar(id->name);
-        out << "  movq " << structFieldOffset[id->name][e->member] << "(%rax), %rax\n";
+        string structName;
+        // Get the struct type name from resolvedType (should be pointer to struct)
+        if (id->resolvedType && id->resolvedType->ttype == Type::POINTER) {
+            PointerType* pt = (PointerType*)id->resolvedType;
+            if (pt->base && pt->base->ttype == Type::STRUCT) {
+                structName = ((StructType*)pt->base)->name;
+            } else {
+                structName = id->name;
+            }
+        } else {
+            structName = id->name;
+        }
+        int size = structMemberSizes[structName][e->member];
+        out << "  " << loadInstr(size) << " " << structFieldOffset[structName][e->member] << "(%rax), %rax\n";
     }
 }
 
@@ -862,7 +1035,6 @@ void GenCodeVisitor::visit(SwitchStmt *s) {
     for (auto cc : s->cases) {
         out << "case_" << lbl << "_" << caseIdx << ":\n";
         for (auto st : cc->body) st->accept(this);
-        out << "  jmp endswitch_" << lbl << "\n";
         caseIdx++;
     }
 
@@ -928,6 +1100,12 @@ void GenCodeVisitor::visit(VarDecl *d) {
                 dims.push_back(0);
         }
         arrayDimensions[d->name] = dims;
+        if (d->resolvedType && d->resolvedType->ttype == Type::ARRAY) {
+            ArrayType* at = (ArrayType*)d->resolvedType;
+            arrayElementSizes[d->name] = at->base->size();
+        } else {
+            arrayElementSizes[d->name] = 8; // fallback
+        }
     }
 
     if (d->initializer) {
@@ -975,10 +1153,12 @@ void GenCodeVisitor::visit(FunDecl *d) {
 }
 
 void GenCodeVisitor::visit(StructDecl *d) {
-    int fieldOff = 0;
-    for (auto m : d->members) {
-        structFieldOffset[d->name][m->name] = fieldOff;
-        fieldOff += 8;
+    // Use the memberOffsets already calculated by TypeChecker!
+    for (auto& pair : d->memberOffsets) {
+        structFieldOffset[d->name][pair.first] = pair.second;
+    }
+    for (auto& pair : d->memberSizes) {
+        structMemberSizes[d->name][pair.first] = pair.second;
     }
     structFieldCount[d->name] = (int)d->members.size();
 }

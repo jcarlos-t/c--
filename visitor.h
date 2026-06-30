@@ -393,8 +393,10 @@ public:
     struct LVal {
         LValKind kind = LValKind::Invalid;
         string name;
-        Exp *index = nullptr;
+        Exp* index = nullptr;
         string member;
+        string structName;  // nombre del tipo de struct
+        bool isArrow = false;  // para diferenciar . y ->
     };
 
 private:
@@ -417,8 +419,10 @@ private:
     unordered_map<string, int> variableSizes;  // tamaño de cada variable
     unordered_map<string, int> arraySizes;
     unordered_map<string, vector<int>> arrayDimensions;
+    unordered_map<string, int> arrayElementSizes;
     unordered_map<string, int> structFieldCount;
     unordered_map<string, unordered_map<string, int>> structFieldOffset;
+    unordered_map<string, unordered_map<string, int>> structMemberSizes;
     unordered_map<string, int> stringLabels;
 
     int offset = -8;

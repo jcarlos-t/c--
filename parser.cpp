@@ -834,9 +834,25 @@ Exp* Parser::parse_primary() {
         consume(Token::LPAREN, "Se esperaba '(' después de print/printf");
         PrintfNode* pn = new PrintfNode();
         if (!check(Token::RPAREN)) {
-            pn->args.push_back(parse_assignment());
-            while (match(Token::COMA))
+            // Verificar si el primer argumento es un string literal (formato)
+            if (check(Token::STRING_LIT)) {
+                StringLiteralNode* fmt = dynamic_cast<StringLiteralNode*>(parse_assignment());
+                if (fmt) {
+                    pn->format = fmt->value;
+                    delete fmt;  // No necesitamos el nodo, solo el string
+                }
+                // Si hay más argumentos después del formato
+                if (match(Token::COMA)) {
+                    pn->args.push_back(parse_assignment());
+                    while (match(Token::COMA))
+                        pn->args.push_back(parse_assignment());
+                }
+            } else {
+                // Sin formato explícito, usar el primer argumento como valor con formato por defecto
                 pn->args.push_back(parse_assignment());
+                while (match(Token::COMA))
+                    pn->args.push_back(parse_assignment());
+            }
         }
         consume(Token::RPAREN, "Se esperaba ')'");
         return pn;

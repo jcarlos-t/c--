@@ -15,7 +15,7 @@ int main() {
         sum = sum + arr[i];
         i = i + 1;
     }
-    print(sum);
+    printf(sum);
 
     return 0;
 }

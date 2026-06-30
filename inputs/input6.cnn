@@ -14,7 +14,7 @@ int main() {
     q.y = 7;
 
     sum = p.x + q.y;
-    print(sum);
+    printf(sum);
 
     return 0;
 }

@@ -52,19 +52,18 @@ int main(int argc, const char* argv[]) {
         // cf.visit(ast);
         cout << "Optimización completada\n";
 
-        // Extraer número del archivo de entrada
+        // Extraer nombre base del archivo de entrada
         string inputFile = argv[1];
         size_t lastSlash = inputFile.find_last_of("/\\");
         string filename = inputFile.substr(lastSlash + 1);
         size_t dotPos = filename.find('.');
         string baseName = filename.substr(0, dotPos);
-        string num = baseName.substr(5); // quitar "input"
 
         // Crear carpeta assembly/ si no existe
         system("mkdir -p assembly");
 
-        // Generar nombre de salida
-        string outputFile = "assembly/output" + num + ".s";
+        // Generar nombre de salida usando el nombre base
+        string outputFile = "assembly/" + baseName + ".s";
 
         cout << "\n=== Generando código ensamblador ===\n";
         ofstream outfile(outputFile);

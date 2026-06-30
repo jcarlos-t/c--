@@ -6,17 +6,17 @@ int main() {
     b = 3;
 
     result = (a + b) * (a - b);
-    print(result);
+    printf(result);
 
     a = a + b;
-    print(a);
+    printf(a);
 
-    print(b);
+    printf(b);
 
     if ((a != b) && (b > 0)) {
-        print(1);
+        printf(1);
     } else {
-        print(0);
+        printf(0);
     }
 
     return 0;

@@ -13,7 +13,7 @@ using namespace std;
 
 class Type {
 public:
-    enum TType { NOTYPE, VOID, INT, BOOL, FLOAT, DOUBLE, POINTER, ARRAY, STRUCT };
+    enum TType { NOTYPE, VOID, INT, CHAR, BOOL, FLOAT, DOUBLE, POINTER, ARRAY, STRUCT };
     TType ttype;
 
     Type(TType tt) : ttype(tt) {}
@@ -28,6 +28,7 @@ public:
         switch (ttype) {
             case VOID:   return "void";
             case INT:    return "int";
+            case CHAR:   return "char";
             case BOOL:   return "bool";
             case FLOAT:  return "float";
             case DOUBLE: return "double";
@@ -39,6 +40,7 @@ public:
         switch (ttype) {
             case VOID:   return 0;
             case INT:    return 4;
+            case CHAR:   return 1;
             case BOOL:   return 1;
             case FLOAT:  return 4;
             case DOUBLE: return 8;
