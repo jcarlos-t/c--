@@ -52,17 +52,22 @@ def print_table(title, data, value_formatter):
     
     # Print header
     headers = list(data[0].keys())
-    print(f"{headers[0]:<20} {headers[1]:<15} {headers[2]:<15} {headers[3]:<15} {headers[4]:<15}")
-    print("-" * 80)
+    # Dynamic width: first column 20, rest evenly split
+    ncols = len(headers)
+    print(f"{headers[0]:<20} ", end="")
+    for i in range(1, ncols):
+        print(f"{headers[i]:<20} ", end="")
+    print()
+    print("-" * (20 + ncols * 21))
     
     # Print rows
     for row in data:
         benchmark = row[headers[0]] if row[headers[0]] else "N/A"
-        values = []
+        print(f"{benchmark:<20} ", end="")
         for h in headers[1:]:
             val = row[h] if row[h] else "N/A"
-            values.append(value_formatter(val))
-        print(f"{benchmark:<20} {values[0]:<15} {values[1]:<15} {values[2]:<15} {values[3]:<15}")
+            print(f"{value_formatter(val):<20} ", end="")
+        print()
 
 def calculate_speedup(data, baseline_col, compare_col):
     """Calculate speedup ratios"""
@@ -109,7 +114,7 @@ def main():
         print("-" * 80)
         speedups = calculate_speedup(execution_data, 'C--_Compiler', 'GCC_O2')
         for bench, speedup in speedups:
-            print(f"{bench:<20} GCC-O2 is {speedup:.2f}x faster")
+            print(f"{bench:<20} GCC -O2 is {speedup:.2f}x faster")
     
     print("\n" + "=" * 80)
     print("KEY OBSERVATIONS")
@@ -117,12 +122,12 @@ def main():
     
     print("""
 1. Compilation Time:
-   - C-- compiler should compile significantly faster than GCC/Clang
+   - C-- compiler compiles significantly faster than GCC
    - Reason: Simple pipeline (scanner + parser + typecheck + codegen)
-   - GCC/Clang have hundreds of optimization passes
+   - GCC has hundreds of optimization passes
 
 2. Execution Time:
-   - GCC -O2 and Clang -O2 should be significantly faster
+   - GCC -O2 should be significantly faster
    - Reasons:
      * Register allocation: GCC keeps variables in registers, C-- spills to stack
      * Loop unrolling: GCC unrolls loops for better performance

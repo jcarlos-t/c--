@@ -144,14 +144,13 @@ public:
     }
 
     // lookup: busca una variable y retorna su valor.
-    // Si no existe, imprime advertencia y retorna T().
+    // Si no existe, retorna T() (valor por defecto).
     //
     //   Ej: int val = env.lookup("x") → valor de x
-    //       Si no existe: imprime advertencia, retorna 0
+    //       Si no existe: retorna 0
     T lookup(const string& x) const {
         int idx = search_rib(x);
         if (idx < 0) {
-            cerr << "[Advertencia] Variable no encontrada: " << x << endl;
             return T(); // valor por defecto
         }
         return ribs[idx].at(x);

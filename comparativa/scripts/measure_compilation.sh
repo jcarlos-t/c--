@@ -22,7 +22,7 @@ fi
 cd "$SCRIPT_DIR"
 
 echo "Compilation Time Measurements" > "$RESULTS_DIR/compilation_times.csv"
-echo "Benchmark,C--_Compiler,GCC_O0,GCC_O2,Clang_O2" >> "$RESULTS_DIR/compilation_times.csv"
+echo "Benchmark,C--_Compiler,GCC_O0,GCC_O2" >> "$RESULTS_DIR/compilation_times.csv"
 
 benchmarks=("bench_fib" "bench_matmul" "bench_float" "bench_struct" "bench_prime" "bench_mixed")
 
@@ -32,7 +32,7 @@ for bench in "${benchmarks[@]}"; do
     # C-- compiler
     cnn_file="$BENCHMARKS_CNN/$bench.cnn"
     if [ -f "$cnn_file" ]; then
-        time_cnn=$( (time "$COMPILER" "$cnn_file" > /dev/null 2>&1) 2>&1 | grep real | awk '{print $2}')
+        time_cnn=$( (time "$COMPILER" "$cnn_file" --no-run > /dev/null 2>&1) 2>&1 | grep real | awk '{print $2}')
         # Convert time to seconds (remove 'm' and 's')
         time_cnn=$(echo "$time_cnn" | awk -F'[ms]' '{print $1*60 + $2}')
     else
@@ -56,15 +56,7 @@ for bench in "${benchmarks[@]}"; do
         time_gcc_o2="N/A"
     fi
     
-    # Clang -O2
-    if [ -f "$c_file" ]; then
-        time_clang_o2=$( (time clang -O2 -S "$c_file" -o /dev/null 2>&1) 2>&1 | grep real | awk '{print $2}')
-        time_clang_o2=$(echo "$time_clang_o2" | awk -F'[ms]' '{print $1*60 + $2}')
-    else
-        time_clang_o2="N/A"
-    fi
-    
-    echo "$bench,$time_cnn,$time_gcc_o0,$time_gcc_o2,$time_clang_o2" >> "$RESULTS_DIR/compilation_times.csv"
+    echo "$bench,$time_cnn,$time_gcc_o0,$time_gcc_o2" >> "$RESULTS_DIR/compilation_times.csv"
 done
 
 echo "Compilation time measurements saved to $RESULTS_DIR/compilation_times.csv"

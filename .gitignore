@@ -8,5 +8,5 @@ assembly
 inputs
 #comparativa
 comparativa/build
-comparativa/scripts/assembly
+omparativa/scripts/assembly
 __pycache__

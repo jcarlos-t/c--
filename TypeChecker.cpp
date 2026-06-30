@@ -739,52 +739,60 @@ void TypeChecker::collectVars(Stm* stmt, vector<VarDecl*>& vars) {
 void TypeChecker::assignOffsetsWithBinPacking(vector<VarDecl*>& vars, int startOffset) {
     if (vars.empty()) return;
 
-    // Ordenar por tamaño descendente (8, 4, 1)
-    // Esto mejora el empaquetamiento (más grandes primero)
-    sort(vars.begin(), vars.end(), [](VarDecl* a, VarDecl* b) {
+    // Separar variables grandes (arrays, structs > 8 bytes) de las pequeñas
+    vector<VarDecl*> large, small;
+    for (auto v : vars) {
+        if (v->memSize > 8)
+            large.push_back(v);
+        else
+            small.push_back(v);
+    }
+
+    // Colocar variables grandes secuencialmente (no se empaquetan)
+    int nextOffset = startOffset;
+    for (auto v : large) {
+        v->offset = nextOffset;
+        nextOffset += v->memSize;
+    }
+
+    // Variables pequeñas (<= 8 bytes): empaquetar con bin packing
+    // Ordenar por tamaño descendente (8, 4, 1) para mejor empaquetamiento
+    sort(small.begin(), small.end(), [](VarDecl* a, VarDecl* b) {
         return a->memSize > b->memSize;
     });
 
-    // Estructura para trackear slots de 8 bytes
+    // Slots de 8 bytes para bin packing
     struct Slot {
         int used = 0;  // bytes usados en este slot
     };
     vector<Slot> slots;
-    slots.push_back(Slot());  // primer slot
+    slots.push_back(Slot());
 
-    // Asignar cada variable al primer slot donde quepa
-    for (auto v : vars) {
+    for (auto v : small) {
         int size = v->memSize;
-        if (size == 0) continue; // Saltar variables con tamaño 0 (void)
+        if (size == 0) continue;
         bool placed = false;
 
         for (size_t i = 0; i < slots.size(); i++) {
-            // Calcular alineación requerida (máximo 8 bytes)
             int align = size;
             if (align > 8) align = 8;
 
-            // Calcular offset dentro del slot con alineación
-            // Ej: size=4, used=1 → offsetInSlot = 4 (alineado a 4)
             int offsetInSlot = slots[i].used;
             if (offsetInSlot % align != 0) {
                 offsetInSlot += align - (offsetInSlot % align);
             }
 
-            // Si cabe en este slot, asignar
             if (offsetInSlot + size <= 8) {
-                v->offset = startOffset + i * 8 + offsetInSlot;
+                v->offset = nextOffset + i * 8 + offsetInSlot;
                 slots[i].used = offsetInSlot + size;
                 placed = true;
                 break;
             }
         }
 
-        // Si no cabe en ningún slot, crear uno nuevo
         if (!placed) {
-            Slot newSlot;
-            v->offset = startOffset + slots.size() * 8;
-            newSlot.used = size;
-            slots.push_back(newSlot);
+            v->offset = nextOffset + slots.size() * 8;
+            slots.push_back(Slot{size});
         }
     }
 }

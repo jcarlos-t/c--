@@ -873,9 +873,16 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
     out << "  movq %rax, %rcx\n";
     out << "  popq %rax\n";
 
-    // Determinar tamaño de operación según resolvedType
-    int size = 8;  // default
-    if (e->resolvedType) {
+    // Usar tamaño de los operandos, no del resultado
+    // (comparaciones retornan bool size=1, pero operandos son int/char/etc.)
+    int size = 8;
+    if (e->left->resolvedType) {
+        size = e->left->resolvedType->size();
+        if (e->right->resolvedType) {
+            int rsize = e->right->resolvedType->size();
+            if (rsize > size) size = rsize;
+        }
+    } else if (e->resolvedType) {
         size = e->resolvedType->size();
     }
 

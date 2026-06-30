@@ -10,12 +10,12 @@ echo ""
 
 echo "1. Measuring compilation times..."
 "$SCRIPT_DIR/measure_compilation.sh"
-echo ""
 
+echo ""
 echo "2. Measuring execution times..."
 "$SCRIPT_DIR/measure_execution.sh"
-echo ""
 
+echo ""
 echo "3. Measuring binary sizes..."
 "$SCRIPT_DIR/measure_size.sh"
 echo ""

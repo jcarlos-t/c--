@@ -1,8 +1,8 @@
 Execution Time Measurements
-Benchmark,C--_Compiler,GCC_O0,GCC_O2,Clang_O2
-bench_fib,ERROR,0.075,0.018,ERROR
-bench_matmul,ERROR,0.001,0.001,ERROR
-bench_float,ERROR,0.001,0.001,ERROR
-bench_struct,ERROR,0.002,0.001,ERROR
-bench_prime,ERROR,0.003,0.001,ERROR
-bench_mixed,ERROR,0.001,0.001,ERROR
+Benchmark,C--_Compiler,GCC_O0,GCC_O2
+bench_fib,0.136,0.121,0.028
+bench_matmul,0.004,0.003,0.003
+bench_float,0.007,0.003,0.003
+bench_struct,0.004,0.004,0.003
+bench_prime,0.004,0.004,0.004
+bench_mixed,0.003,0.004,0.003

@@ -9,9 +9,20 @@
 using namespace std;
 
 int main(int argc, const char* argv[]) {
-    if (argc != 2) {
-        cout << "Uso: " << argv[0] << " <archivo.cnn>" << endl;
+    if (argc < 2) {
+        cout << "Uso: " << argv[0] << " <archivo.cnn> [--no-run] [-o output.s]" << endl;
         return 1;
+    }
+
+    bool runInterpreter = true;
+    string outputFile = "";
+    
+    for (int i = 2; i < argc; i++) {
+        if (string(argv[i]) == "--no-run") {
+            runInterpreter = false;
+        } else if (string(argv[i]) == "-o" && i + 1 < argc) {
+            outputFile = argv[++i];
+        }
     }
 
     ifstream infile(argv[1]);
@@ -46,26 +57,36 @@ int main(int argc, const char* argv[]) {
         // ConstantFolding cf;
         // cf.visit(ast);
 
-        // Extraer nombre base del archivo de entrada
-        string inputFile = argv[1];
-        size_t lastSlash = inputFile.find_last_of("/\\");
-        string filename = inputFile.substr(lastSlash + 1);
-        size_t dotPos = filename.find('.');
-        string baseName = filename.substr(0, dotPos);
+        // Generar nombre de salida
+        if (outputFile.empty()) {
+            string inputFile = argv[1];
+            size_t lastSlash = inputFile.find_last_of("/\\");
+            string filename = inputFile.substr(lastSlash + 1);
+            size_t dotPos = filename.find('.');
+            string baseName = filename.substr(0, dotPos);
 
-        // Crear carpeta assembly/ si no existe
-        system("mkdir -p assembly");
-
-        // Generar nombre de salida usando el nombre base
-        string outputFile = "assembly/" + baseName + ".s";
+            // Crear carpeta assembly/ si no existe
+            system("mkdir -p assembly");
+            outputFile = "assembly/" + baseName + ".s";
+        } else {
+            // Crear directorio del archivo de salida si es necesario
+            size_t lastSlash = outputFile.find_last_of("/\\");
+            if (lastSlash != string::npos) {
+                string dir = outputFile.substr(0, lastSlash);
+                string cmd = "mkdir -p " + dir;
+                system(cmd.c_str());
+            }
+        }
 
         ofstream outfile(outputFile);
         GenCodeVisitor codegen(outfile);
         codegen.generate(ast);
         outfile.close();
 
-        EVALVisitor interprete;
-        interprete.interprete(ast);
+        if (runInterpreter) {
+            EVALVisitor interprete;
+            interprete.interprete(ast);
+        }
     }
 
     return 0;
