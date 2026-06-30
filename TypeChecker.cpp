@@ -156,23 +156,32 @@ TypeNode* TypeChecker::semantic_to_type_node(::Type* t) {
     }
 }
 
-FunDecl* TypeChecker::instantiate_function(TemplateDecl* tdecl, const vector<TypeNode*>& args) {
-    FunDecl* orig = tdecl->func;
-    string key = orig->name + "<";
+static string mangleTemplateName(const string& base, const vector<TypeNode*>& args) {
+    string result = base + "<";
     for (size_t i = 0; i < args.size(); i++) {
-        if (i > 0) key += ",";
+        if (i > 0) result += ",";
         if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(args[i])) {
             switch (pt->prim) {
-                case PrimitiveTypeNode::INT: key += "int"; break;
-                case PrimitiveTypeNode::FLOAT: key += "float"; break;
-                case PrimitiveTypeNode::CHAR: key += "char"; break;
-                case PrimitiveTypeNode::DOUBLE: key += "double"; break;
-                case PrimitiveTypeNode::BOOL: key += "bool"; break;
-                default: key += "?"; break;
+                case PrimitiveTypeNode::INT: result += "int"; break;
+                case PrimitiveTypeNode::FLOAT: result += "float"; break;
+                case PrimitiveTypeNode::CHAR: result += "char"; break;
+                case PrimitiveTypeNode::DOUBLE: result += "double"; break;
+                case PrimitiveTypeNode::BOOL: result += "bool"; break;
+                default: result += "?"; break;
             }
-        } else key += "?";
+        } else if (auto* st = dynamic_cast<StructTypeNode*>(args[i])) {
+            result += st->name;
+        } else {
+            result += "?";
+        }
     }
-    key += ">";
+    result += ">";
+    return result;
+}
+
+FunDecl* TypeChecker::instantiate_function(TemplateDecl* tdecl, const vector<TypeNode*>& args) {
+    FunDecl* orig = tdecl->func;
+    string key = mangleTemplateName(orig->name, args);
 
     auto cached = instantiated_function_cache.find(key);
     if (cached != instantiated_function_cache.end())
@@ -207,25 +216,7 @@ FunDecl* TypeChecker::instantiate_function(TemplateDecl* tdecl, const vector<Typ
 // ============================================================
 
 StructType* TypeChecker::instantiate_template(const string& name, const vector<TypeNode*>& args) {
-    string concrete_name = name + "<";
-    for (size_t i = 0; i < args.size(); i++) {
-        if (i > 0) concrete_name += ",";
-        if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(args[i])) {
-            switch (pt->prim) {
-                case PrimitiveTypeNode::INT: concrete_name += "int"; break;
-                case PrimitiveTypeNode::FLOAT: concrete_name += "float"; break;
-                case PrimitiveTypeNode::CHAR: concrete_name += "char"; break;
-                case PrimitiveTypeNode::DOUBLE: concrete_name += "double"; break;
-                case PrimitiveTypeNode::BOOL: concrete_name += "bool"; break;
-                default: concrete_name += "?"; break;
-            }
-        } else if (auto* st = dynamic_cast<StructTypeNode*>(args[i])) {
-            concrete_name += st->name;
-        } else {
-            concrete_name += "?";
-        }
-    }
-    concrete_name += ">";
+    string concrete_name = mangleTemplateName(name, args);
 
     auto cit = struct_types.find(concrete_name);
     if (cit != struct_types.end()) return cit->second;
@@ -363,17 +354,12 @@ bool TypeChecker::check(Program* program) {
 // Built-in function registration
 // ============================================================
 
-static void register_builtins(unordered_map<string, FuncInfo>& functions) {
-    (void)functions;
-}
-
 // ============================================================
 // Visits: declaraciones y statements
 // ============================================================
 
 void TypeChecker::visit(Program* p) {
     program = p;
-    register_builtins(functions);
     for (auto f : p->functions) add_function(f);
     env.add_level();
     varEnv.add_level();
@@ -941,6 +927,23 @@ Type* TypeChecker::visit(PrintfNode* e) {
     return voidType;
 }
 
+bool TypeChecker::checkFuncCall(const string& fname, FuncInfo& info, FcallNode* e) {
+    if (e->args.size() != info.paramTypes.size()) {
+        error("número de argumentos incorrecto en llamada a '" + fname +
+              "' (esperaba " + to_string(info.paramTypes.size()) +
+              ", recibió " + to_string(e->args.size()) + ").");
+        return false;
+    }
+    for (size_t i = 0; i < e->args.size(); i++) {
+        Type* argType = e->args[i]->accept(this);
+        if (!check_assign(info.paramTypes[i], argType)) {
+            error("tipo de argumento " + to_string(i+1) +
+                  " incorrecto en llamada a '" + fname + "'.");
+        }
+    }
+    return true;
+}
+
 Type* TypeChecker::visit(FcallNode* e) {
     if (auto* id = dynamic_cast<IdentifierNode*>(e->callee)) {
         string fname = id->name;
@@ -981,19 +984,7 @@ Type* TypeChecker::visit(FcallNode* e) {
             info.paramTypes = concrete_params;
             functions[fname] = info;
 
-            if (e->args.size() != info.paramTypes.size()) {
-                error("número de argumentos incorrecto en llamada a '" + fname +
-                      "' (esperaba " + to_string(info.paramTypes.size()) +
-                      ", recibió " + to_string(e->args.size()) + ").");
-                return info.returnType;
-            }
-            for (size_t i = 0; i < e->args.size(); i++) {
-                Type* argType = e->args[i]->accept(this);
-                if (!check_assign(info.paramTypes[i], argType)) {
-                    error("tipo de argumento " + to_string(i+1) +
-                          " incorrecto en llamada a '" + fname + "'.");
-                }
-            }
+            checkFuncCall(fname, info, e);
             return info.returnType;
         }
 
@@ -1010,20 +1001,7 @@ Type* TypeChecker::visit(FcallNode* e) {
             return intType;
         }
         FuncInfo& info = it->second;
-
-        if (e->args.size() != info.paramTypes.size()) {
-            error("número de argumentos incorrecto en llamada a '" + fname +
-                  "' (esperaba " + to_string(info.paramTypes.size()) +
-                  ", recibió " + to_string(e->args.size()) + ").");
-            return info.returnType;
-        }
-        for (size_t i = 0; i < e->args.size(); i++) {
-            Type* argType = e->args[i]->accept(this);
-            if (!check_assign(info.paramTypes[i], argType)) {
-                error("tipo de argumento " + to_string(i+1) +
-                      " incorrecto en llamada a '" + fname + "'.");
-            }
-        }
+        checkFuncCall(fname, info, e);
         return info.returnType;
     }
     error("llamada a función no reconocida.");
@@ -1172,5 +1150,7 @@ Type* TypeChecker::visit(LambdaExprNode* e) {
 }
 
 Type* TypeChecker::visit(CaptureNode* e) {
+    if (e->mode == CaptureNode::BY_REF)
+        error("captura por referencia no soportada, use captura por valor [x].");
     return intType;
 }

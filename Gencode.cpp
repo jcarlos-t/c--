@@ -94,12 +94,6 @@ void GenCodeVisitor::generate(Program *p) {
         out << name << ": .quad 0\n";
 
     out << "\n.text\n";
-    /* out << ".globl _start\n";
-    out << "_start:\n";
-    out << "  call main\n";
-    out << "  movq %rax, %rdi\n";
-    out << "  call exit@PLT\n"; */
-
     out << ".globl main\n";
 
     for (auto f : p->functions)
@@ -194,18 +188,6 @@ string GenCodeVisitor::bindingMem(VarDecl* vd) const {
 void GenCodeVisitor::bind_var_decl(VarDecl* vd) {
     if (!vd) return;
     memoria[vd->name] = vd->offset;
-    variableSizes[vd->name] = vd->memSize;
-    if (!vd->array_sizes.empty()) {
-        vector<int> dims;
-        for (auto s : vd->array_sizes) {
-            if (auto* il = dynamic_cast<IntegerLiteralNode*>(s))
-                dims.push_back((int)il->value);
-            else
-                dims.push_back(0);
-        }
-        arrayDimensions[vd->name] = dims;
-        arrayElementSizes[vd->name] = array_elem_size(vd);
-    }
 }
 
 int GenCodeVisitor::array_elem_size(VarDecl* vd) const {
@@ -222,11 +204,26 @@ int GenCodeVisitor::array_elem_size(VarDecl* vd) const {
     return 8;
 }
 
-static vector<int> arrayDimsFor(VarDecl* vd,
-                                const unordered_map<string, vector<int>>& dimsMap) {
-    if (!vd) return {};
-    auto it = dimsMap.find(vd->name);
-    return it != dimsMap.end() ? it->second : vector<int>{};
+static vector<int> arrayDimsFor(VarDecl* vd) {
+    if (!vd || !vd->resolvedType) return {};
+    vector<int> dims;
+    Type* t = vd->resolvedType;
+    while (t && t->ttype == Type::ARRAY) {
+        ArrayType* at = (ArrayType*)t;
+        if (at->length > 0) dims.push_back(at->length);
+        t = at->base;
+    }
+    return dims;
+}
+
+static void collectIndices(Exp* e, vector<Exp*>& indices, Exp*& base) {
+    Exp* b = e;
+    while (auto* inner = dynamic_cast<IndexNode*>(b)) {
+        indices.push_back(inner->index);
+        b = inner->base;
+    }
+    reverse(indices.begin(), indices.end());
+    base = b;
 }
 
 void GenCodeVisitor::loadBinding(VarDecl* vd) {
@@ -272,7 +269,7 @@ void GenCodeVisitor::leaBinding(VarDecl* vd) {
 
 void GenCodeVisitor::emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices) {
     if (!vd || indices.empty()) return;
-    auto dims = arrayDimsFor(vd, arrayDimensions);
+    auto dims = arrayDimsFor(vd);
     int elemSize = array_elem_size(vd);
 
     if (dims.size() > 1 && indices.size() > 1) {
@@ -315,7 +312,7 @@ void GenCodeVisitor::emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices
 
 void GenCodeVisitor::emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices) {
     if (!vd || indices.empty()) return;
-    auto dims = arrayDimsFor(vd, arrayDimensions);
+    auto dims = arrayDimsFor(vd);
     int elemSize = array_elem_size(vd);
 
     if (dims.size() > 1 && indices.size() > 1) {
@@ -344,7 +341,7 @@ void GenCodeVisitor::emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices) {
 void GenCodeVisitor::emitIndexedStore(VarDecl* vd, const vector<Exp*>& indices,
                                       const string& valueReg) {
     if (!vd || indices.empty()) return;
-    auto dims = arrayDimsFor(vd, arrayDimensions);
+    auto dims = arrayDimsFor(vd);
     int elemSize = array_elem_size(vd);
     string reg = valueReg;
     if (elemSize == 1 && valueReg == "%rax") reg = "%al";
@@ -703,15 +700,7 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
     
     e->operand->accept(this);
 
-    // Determinar tamaño del operando según resolvedType
-    int size = 8;  // default
-    if (e->resolvedType) {
-        size = e->resolvedType->size();
-    } else if (auto* id = dynamic_cast<IdentifierNode*>(e->operand)) {
-        if (variableSizes.count(id->name)) {
-            size = variableSizes[id->name];
-        }
-    }
+    int size = e->resolvedType ? e->resolvedType->size() : 8;
     
     string suffix = (size == 1) ? "b" : (size == 4) ? "l" : "q";
     string reg = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
@@ -917,12 +906,8 @@ void GenCodeVisitor::visit(IndexNode *e) {
     if (lvalTarget) {
         lvalTarget->kind = LValKind::Index;
         vector<Exp*> indices;
-        Exp* b = e;
-        while (auto* inner = dynamic_cast<IndexNode*>(b)) {
-            indices.push_back(inner->index);
-            b = inner->base;
-        }
-        reverse(indices.begin(), indices.end());
+        Exp* b = nullptr;
+        collectIndices(e, indices, b);
         if (auto *id = dynamic_cast<IdentifierNode *>(b)) {
             lvalTarget->name = id->name;
             lvalTarget->binding = id->binding;
@@ -934,12 +919,8 @@ void GenCodeVisitor::visit(IndexNode *e) {
     }
 
     vector<Exp*> indices;
-    Exp* b = e;
-    while (auto* inner = dynamic_cast<IndexNode*>(b)) {
-        indices.push_back(inner->index);
-        b = inner->base;
-    }
-    reverse(indices.begin(), indices.end());
+    Exp* b = nullptr;
+    collectIndices(e, indices, b);
 
     VarDecl* arrBinding = nullptr;
     if (auto* id = dynamic_cast<IdentifierNode*>(b))
@@ -1159,10 +1140,6 @@ void GenCodeVisitor::visit(LambdaExprNode *e) {
             out << "  movq 0(%rbp), %rax\n";
             out << "  movl " << savedMemoria[cap->name] << "(%rax), %eax\n";
             out << "  movl %eax, " << memoria[cap->name] << "(%rbp)\n";
-        } else if (cap->mode == CaptureNode::BY_REF && savedMemoria.count(cap->name)) {
-            out << "  movq 0(%rbp), %rax\n";
-            out << "  leaq " << savedMemoria[cap->name] << "(%rax), %rax\n";
-            out << "  movq %rax, " << memoria[cap->name] << "(%rbp)\n";
         }
     }
 
@@ -1371,9 +1348,6 @@ void GenCodeVisitor::visit(VarDecl *d) {
 void GenCodeVisitor::visit(FunDecl *d) {
     inFunction = true;
     memoria.clear();
-    variableSizes.clear();
-    arrayDimensions.clear();
-    arrayElementSizes.clear();
     funcName = d->name;
     returnLabel = ".end_" + d->name;
     
@@ -1459,12 +1433,8 @@ void GenCodeVisitor::computeAddress(IdentifierNode *e) {
 
 void GenCodeVisitor::computeAddress(IndexNode *e) {
     vector<Exp*> indices;
-    Exp* b = e;
-    while (auto* inner = dynamic_cast<IndexNode*>(b)) {
-        indices.push_back(inner->index);
-        b = inner->base;
-    }
-    reverse(indices.begin(), indices.end());
+    Exp* b = nullptr;
+    collectIndices(e, indices, b);
 
     VarDecl* arrBinding = nullptr;
     if (auto *id = dynamic_cast<IdentifierNode *>(b))

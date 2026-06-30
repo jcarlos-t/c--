@@ -249,9 +249,9 @@ struct FuncInfo {
 // ============================================================
 class TypeChecker : public TypeVisitor {
 private:
-    Environment<::Type*> env;
-    Environment<VarDecl*> varEnv;
-    unordered_map<string, FuncInfo> functions;
+    Environment<::Type*> env; // nombre de variable -> tipo
+    Environment<VarDecl*> varEnv; // nombre -> VarDecl (para binding de identificadores)
+    unordered_map<string, FuncInfo> functions; //nombre -> funcion info
     unordered_map<string, StructType*> struct_types;
     unordered_map<string, TemplateDecl*> template_decls;
     ::Type* retornodefuncion;
@@ -280,6 +280,7 @@ private:
     void error(const string& msg, const Location& loc);
     StructType* instantiate_template(const string& name, const vector<TypeNode*>& args);
     void bind_var_decl(VarDecl* v);
+    bool checkFuncCall(const string& fname, FuncInfo& info, FcallNode* e);
     
     // Bin packing: recolectar variables y calcular offsets optimizados
     void collectVars(Stm* stmt, vector<VarDecl*>& vars);
@@ -430,10 +431,6 @@ private:
 
     unordered_map<string, int> memoria;
     unordered_map<string, bool> memoriaGlobal;
-    unordered_map<string, int> variableSizes;  // tamaño de cada variable
-    unordered_map<string, int> arraySizes;
-    unordered_map<string, vector<int>> arrayDimensions;
-    unordered_map<string, int> arrayElementSizes;
     unordered_map<string, int> structFieldCount;
     unordered_map<string, unordered_map<string, int>> structFieldOffset;
     unordered_map<string, unordered_map<string, int>> structMemberSizes;
