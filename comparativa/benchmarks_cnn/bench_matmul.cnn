@@ -1,0 +1,44 @@
+// Matrix multiplication benchmark - tests multidimensional arrays and nested loops
+int main() {
+    int n;
+    n = 50;
+    
+    int A[50][50];
+    int B[50][50];
+    int C[50][50];
+    
+    int i;
+    int j;
+    int k;
+    
+    // Initialize matrices
+    i = 0;
+    while (i < n) {
+        j = 0;
+        while (j < n) {
+            A[i][j] = i + j;
+            B[i][j] = i - j;
+            C[i][j] = 0;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    
+    // Matrix multiplication
+    i = 0;
+    while (i < n) {
+        j = 0;
+        while (j < n) {
+            k = 0;
+            while (k < n) {
+                C[i][j] = C[i][j] + A[i][k] * B[k][j];
+                k = k + 1;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    
+    printf(C[50][50]);
+    return 0;
+}

@@ -1,0 +1,20 @@
+// Float arithmetic benchmark - tests intensive float/double operations
+int main() {
+    int n;
+    n = 100000;
+    
+    float sum;
+    sum = 0.0;
+    
+    int i;
+    i = 0;
+    while (i < n) {
+        float x;
+        x = i * 0.001;
+        sum = sum + x * x;
+        i = i + 1;
+    }
+    
+    printf(sum);
+    return 0;
+}

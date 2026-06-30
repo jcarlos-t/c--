@@ -17,6 +17,10 @@ using namespace std;
 // ============================================================
 // Control flow exceptions (used by EVALVisitor)
 // ============================================================
+// Excepciones para manejar break, continue y return en el
+// intérprete tree-walking (EVALVisitor). Cuando se encuentra
+// una de estas sentencias, se lanza la excepción correspondiente
+// que es capturada en el nivel adecuado (loop, función, etc.)
 class BreakException : public exception {};
 class ContinueException : public exception {};
 class ReturnException : public exception {
@@ -26,70 +30,92 @@ public:
 };
 
 // ============================================================
-// Abstract Visitor — evaluation (EVALVisitor)
+// Abstract Visitor — Visitor Pattern base para EVALVisitor
 // ============================================================
+// Define la interfaz para recorrer el AST (Abstract Syntax Tree)
+// y evaluar nodos. Cada tipo de nodo tiene un método visit()
+// que retorna double (valor evaluado de la expresión) o int
+// (código de control para statements).
+//
+// El patrón Visitor permite separar el algoritmo (evaluación,
+// typecheck, codegen) de la estructura del AST.
 class Visitor {
 public:
     virtual ~Visitor() = default;
-    virtual double visit(BinaryOpNode* e) = 0;
-    virtual double visit(UnaryOpNode* e) = 0;
-    virtual double visit(AssignmentNode* e) = 0;
-    virtual double visit(FcallNode* e) = 0;
-    virtual double visit(MallocNode* e) = 0;
-    virtual double visit(IndexNode* e) = 0;
-    virtual double visit(MemberAccessNode* e) = 0;
-    virtual double visit(ArrowAccessNode* e) = 0;
-    virtual double visit(SizeOfNode* e) = 0;
-    virtual double visit(LambdaExprNode* e) = 0;
-    virtual double visit(CaptureNode* e) = 0;
-    virtual double visit(IdentifierNode* e) = 0;
-    virtual double visit(IntegerLiteralNode* e) = 0;
-    virtual double visit(FloatLiteralNode* e) = 0;
-    virtual double visit(BoolLiteralNode* e) = 0;
-    virtual double visit(CharLiteralNode* e) = 0;
-    virtual double visit(StringLiteralNode* e) = 0;
-    virtual double visit(PrintfNode* e) = 0;
-    virtual double visit(PrimitiveTypeNode* e) = 0;
-    virtual double visit(PointerTypeNode* e) = 0;
-    virtual double visit(StructTypeNode* e) = 0;
-    virtual double visit(NamedTypeNode* e) = 0;
-    virtual double visit(TemplateTypeNode* e) = 0;
 
-    virtual int visit(Body* s) = 0;
-    virtual int visit(ExprStmtNode* s) = 0;
-    virtual int visit(IfStmt* s) = 0;
-    virtual int visit(WhileStmt* s) = 0;
-    virtual int visit(DoWhileStmt* s) = 0;
-    virtual int visit(ForStmt* s) = 0;
-    virtual int visit(SwitchStmt* s) = 0;
-    virtual int visit(CaseClause* s) = 0;
-    virtual int visit(BreakStmt* s) = 0;
-    virtual int visit(ContinueStmt* s) = 0;
-    virtual int visit(ReturnStmt* s) = 0;
-    virtual int visit(FreeStmt* s) = 0;
+    // --- Expression visitors (retornan double) ---
+    // Cada expresión produce un valor numérico al evaluarse
+    virtual double visit(BinaryOpNode* e) = 0;       // a + b, a * b, a && b, etc.
+    virtual double visit(UnaryOpNode* e) = 0;         // -x, *p, &x, !b, ++x, x--
+    virtual double visit(AssignmentNode* e) = 0;      // x = expr
+    virtual double visit(FcallNode* e) = 0;           // f(args), obj.method(args)
+    virtual double visit(MallocNode* e) = 0;          // malloc(expr)
+    virtual double visit(IndexNode* e) = 0;           // arr[i], ptr[i]
+    virtual double visit(MemberAccessNode* e) = 0;    // obj.member
+    virtual double visit(ArrowAccessNode* e) = 0;     // ptr->member
+    virtual double visit(SizeOfNode* e) = 0;          // sizeof(type)
+    virtual double visit(LambdaExprNode* e) = 0;      // [x](int a) -> int { ... }
+    virtual double visit(CaptureNode* e) = 0;         // variable capturada en lambda
+    virtual double visit(IdentifierNode* e) = 0;      // nombre de variable
+    virtual double visit(IntegerLiteralNode* e) = 0;  // 42, 0, -1
+    virtual double visit(FloatLiteralNode* e) = 0;    // 3.14, 2.0
+    virtual double visit(BoolLiteralNode* e) = 0;     // true, false
+    virtual double visit(CharLiteralNode* e) = 0;     // 'a', '\n'
+    virtual double visit(StringLiteralNode* e) = 0;   // "hola"
+    virtual double visit(PrintfNode* e) = 0;          // printf("fmt", args)
+    virtual double visit(PrimitiveTypeNode* e) = 0;   // int, char, float, etc.
+    virtual double visit(PointerTypeNode* e) = 0;     // int*, char*, etc.
+    virtual double visit(StructTypeNode* e) = 0;      // struct Persona
+    virtual double visit(NamedTypeNode* e) = 0;       // typename T (template)
+    virtual double visit(TemplateTypeNode* e) = 0;    // Vector<int>, Par<float,int>
 
-    virtual int visit(VarDecl* d) = 0;
-    virtual int visit(FunDecl* d) = 0;
-    virtual int visit(StructDecl* d) = 0;
-    virtual int visit(TemplateDecl* d) = 0;
-    virtual int visit(Program* p) = 0;
+    // --- Statement visitors (retornan int, código de control) ---
+    virtual int visit(Body* s) = 0;           // { stmt; stmt; ... }
+    virtual int visit(ExprStmtNode* s) = 0;   // expr;
+    virtual int visit(IfStmt* s) = 0;         // if (cond) then [else]
+    virtual int visit(WhileStmt* s) = 0;      // while (cond) body
+    virtual int visit(DoWhileStmt* s) = 0;    // do body while (cond);
+    virtual int visit(ForStmt* s) = 0;        // for (init; cond; inc) body
+    virtual int visit(SwitchStmt* s) = 0;     // switch (expr) { cases }
+    virtual int visit(CaseClause* s) = 0;     // case val: stmts
+    virtual int visit(BreakStmt* s) = 0;      // break;
+    virtual int visit(ContinueStmt* s) = 0;   // continue;
+    virtual int visit(ReturnStmt* s) = 0;     // return [expr];
+    virtual int visit(FreeStmt* s) = 0;       // free(ptr);
+
+    // --- Declaration visitors (retornan int) ---
+    virtual int visit(VarDecl* d) = 0;        // int x = 5;
+    virtual int visit(FunDecl* d) = 0;        // int main() { ... }
+    virtual int visit(StructDecl* d) = 0;     // struct A { ... };
+    virtual int visit(TemplateDecl* d) = 0;   // template<typename T> ...
+    virtual int visit(Program* p) = 0;        // programa completo
 };
 
 // ============================================================
-// EVALVisitor — tree-walking interpreter
+// EVALVisitor — Tree-walking interpreter
 // ============================================================
+// Recorre el AST y evalúa cada nodo, produciendo resultados
+// numéricos. Usa un environment para mantener el estado de
+// variables, funciones, arreglos, structs y heap. Soporta
+// break/continue/return mediante excepciones.
+//
+// Flujo típico:
+//   1. EVALVisitor::interprete(program) inicia la visita
+//   2. visit(Program) registra funciones y evalúa globales
+//   3. visit(FunDecl) crea scope y evalúa el body
+//   4. Cada expresión produce un double como resultado
 class EVALVisitor : public Visitor {
 public:
-    Environment<double> env;
-    Environment<string> typeEnv;
-    unordered_map<string, FunDecl*> envfun;
-    unordered_map<string, string> funReturnTypes;
-    string last_string;
-    unordered_map<string, vector<double>> array_data;
-    unordered_map<string, unordered_map<string, double>> struct_instances;
-    unordered_map<string, vector<string>> struct_defs;
-    unordered_map<int, vector<double>> heap;
-    int next_addr = 1;
+    Environment<double> env;                     // variables → valores numéricos
+    Environment<string> typeEnv;                 // variables → nombre del tipo
+    unordered_map<string, FunDecl*> envfun;      // nombre de función → declaración
+    unordered_map<string, string> funReturnTypes; // función → tipo de retorno
+    string last_string;                          // último string procesado (print)
+    unordered_map<string, vector<double>> array_data;     // nombre → datos del arreglo
+    unordered_map<string, unordered_map<string, double>> struct_instances; // struct instances
+    unordered_map<string, vector<string>> struct_defs;    // nombre struct → miembros
+    unordered_map<int, vector<double>> heap;     // dirección → datos (malloc)
+    int next_addr = 1;                           // próxima dirección de heap
 
     double visit(BinaryOpNode* e) override;
     double visit(MallocNode* e) override;
@@ -134,10 +160,23 @@ public:
     int visit(TemplateDecl* d) override;
     int visit(Program* p) override;
 
-    void interprete(Program* program);
-    string getType(Exp* e);
+    void interprete(Program* program);   // entry point del intérprete
+    string getType(Exp* e);              // obtiene tipo textual de una expresión
 };
 
+// ============================================================
+// ConstantFolding — Visitor para optimización en tiempo de compilación
+// ============================================================
+// Recorre el AST y evalúa las subexpresiones que son constantes
+// (literales, operaciones aritméticas entre literales, etc.)
+// reemplazándolas por su resultado numérico. Esto permite
+// optimizar antes de la generación de código.
+//
+// Ejemplo:
+//   int x = 2 + 3 * 4;  →  int x = 14;
+//
+// Implementa la misma interfaz Visitor pero retorna double (valor
+// de la expresión) o int (control de statement).
 class ConstantFolding : public Visitor {
 public:
     // Expresiones
@@ -164,7 +203,7 @@ public:
     double visit(StructTypeNode* e) override;
     double visit(NamedTypeNode* e) override;
     double visit(TemplateTypeNode* e) override;
-    
+
     // Statements
     int visit(Body* s) override;
     int visit(ExprStmtNode* s) override;
@@ -178,7 +217,7 @@ public:
     int visit(ContinueStmt* s) override;
     int visit(ReturnStmt* s) override;
     int visit(FreeStmt* s) override;
-    
+
     // Declarations
     int visit(VarDecl* d) override;
     int visit(FunDecl* d) override;
@@ -188,11 +227,21 @@ public:
 };
 
 // ============================================================
-// Abstract TypeVisitor — semantic type checking
+// Abstract TypeVisitor — Semantic Type Checking
 // ============================================================
+// Define la interfaz para el análisis semántico de tipos.
+// A diferencia de Visitor (que retorna double/int), aquí:
+//   - Statements: retornan void (solo verifican, no evalúan)
+//   - Expressions: retornan Type* (el tipo semántico resultante)
+//
+// Este visitor recorre el AST y construye el tipo de cada
+// expresión, verificando que las operaciones sean válidas
+// (suma solo entre aritméticos, asignaciones compatibles, etc.)
 class TypeVisitor {
 public:
     virtual ~TypeVisitor() = default;
+
+    // --- Declaration and statement visitors (retornan void) ---
     virtual void visit(Program* p) = 0;
     virtual void visit(FunDecl* f) = 0;
     virtual void visit(VarDecl* v) = 0;
@@ -211,87 +260,117 @@ public:
     virtual void visit(ReturnStmt* s) = 0;
     virtual void visit(FreeStmt* s) = 0;
 
-    virtual ::Type* visit(BinaryOpNode* e) = 0;
-    virtual ::Type* visit(UnaryOpNode* e) = 0;
-    virtual ::Type* visit(AssignmentNode* e) = 0;
-    virtual ::Type* visit(FcallNode* e) = 0;
-    virtual ::Type* visit(MallocNode* e) = 0;
-    virtual ::Type* visit(IndexNode* e) = 0;
-    virtual ::Type* visit(MemberAccessNode* e) = 0;
-    virtual ::Type* visit(ArrowAccessNode* e) = 0;
-    virtual ::Type* visit(SizeOfNode* e) = 0;
-    virtual ::Type* visit(LambdaExprNode* e) = 0;
-    virtual ::Type* visit(CaptureNode* e) = 0;
-    virtual ::Type* visit(IdentifierNode* e) = 0;
-    virtual ::Type* visit(IntegerLiteralNode* e) = 0;
-    virtual ::Type* visit(FloatLiteralNode* e) = 0;
-    virtual ::Type* visit(BoolLiteralNode* e) = 0;
-    virtual ::Type* visit(CharLiteralNode* e) = 0;
-    virtual ::Type* visit(StringLiteralNode* e) = 0;
-    virtual ::Type* visit(PrintfNode* e) = 0;
-    virtual ::Type* visit(PrimitiveTypeNode* e) = 0;
-    virtual ::Type* visit(PointerTypeNode* e) = 0;
-    virtual ::Type* visit(StructTypeNode* e) = 0;
-    virtual ::Type* visit(NamedTypeNode* e) = 0;
-    virtual ::Type* visit(TemplateTypeNode* e) = 0;
+    // --- Expression visitors (retornan Type*) ---
+    // Cada expresión devuelve su tipo semántico resuelto
+    virtual ::Type* visit(BinaryOpNode* e) = 0;       // tipo del resultado aritmético/lógico
+    virtual ::Type* visit(UnaryOpNode* e) = 0;         // -x (int), *p (base), &x (pointer)
+    virtual ::Type* visit(AssignmentNode* e) = 0;      // tipo del target (lado izquierdo)
+    virtual ::Type* visit(FcallNode* e) = 0;           // tipo de retorno de la función
+    virtual ::Type* visit(MallocNode* e) = 0;          // void*
+    virtual ::Type* visit(IndexNode* e) = 0;           // tipo base del arreglo
+    virtual ::Type* visit(MemberAccessNode* e) = 0;    // tipo del miembro
+    virtual ::Type* visit(ArrowAccessNode* e) = 0;     // tipo del miembro (vía puntero)
+    virtual ::Type* visit(SizeOfNode* e) = 0;          // int
+    virtual ::Type* visit(LambdaExprNode* e) = 0;      // void* (opaco)
+    virtual ::Type* visit(CaptureNode* e) = 0;         // int (marcador)
+    virtual ::Type* visit(IdentifierNode* e) = 0;      // tipo de la variable
+    virtual ::Type* visit(IntegerLiteralNode* e) = 0;  // int
+    virtual ::Type* visit(FloatLiteralNode* e) = 0;    // float
+    virtual ::Type* visit(BoolLiteralNode* e) = 0;     // bool
+    virtual ::Type* visit(CharLiteralNode* e) = 0;     // char
+    virtual ::Type* visit(StringLiteralNode* e) = 0;   // int (dirección)
+    virtual ::Type* visit(PrintfNode* e) = 0;          // void
+    virtual ::Type* visit(PrimitiveTypeNode* e) = 0;   // el tipo primitivo mismo
+    virtual ::Type* visit(PointerTypeNode* e) = 0;     // PointerType resultante
+    virtual ::Type* visit(StructTypeNode* e) = 0;      // StructType correspondiente
+    virtual ::Type* visit(NamedTypeNode* e) = 0;       // typename T (template)
+    virtual ::Type* visit(TemplateTypeNode* e) = 0;    // tipo template instanciado
 };
 
 // ============================================================
-// FuncInfo — function signature for type checking
+// FuncInfo — Firma de función para type checking
 // ============================================================
+// Guarda el tipo de retorno y los tipos de cada parámetro
+// de una función. Se usa en TypeChecker para verificar
+// llamadas a función.
 struct FuncInfo {
-    ::Type* returnType;
-    vector<::Type*> paramTypes;
+    ::Type* returnType;            // tipo de retorno
+    vector<::Type*> paramTypes;    // tipos de cada parámetro
 };
 
 // ============================================================
-// TypeChecker — semantic analysis concrete visitor
+// TypeChecker — Semantic Analysis Concrete Visitor
 // ============================================================
+// Recorre el AST y realiza verificación de tipos:
+//   - Resuelve tipos de declaraciones (variables, funciones, structs)
+//   - Infiere tipos con `auto`
+//   - Verifica compatibilidad en asignaciones y operaciones
+//   - Promueve tipos automáticamente (int→float→double)
+//   - Instancia templates (funciones y structs)
+//   - Asigna offsets con bin packing para el layout del stack frame
+//
+// Flujo:
+//   1. typecheck(program) → visit(Program)
+//   2. Registra todas las funciones → add_function()
+//   3. Procesa globales, structs, templates, funciones
+//   4. En visit(FunDecl): resuelve tipos de params, calcula offsets
+//      con bin packing, asigna frame size, typecheckea el body
+//   5. En visit(BinaryOpNode/UnaryOpNode/etc.): verifica operandos,
+//      aplica promociones, retorna el tipo resultado
 class TypeChecker : public TypeVisitor {
 private:
-    Environment<::Type*> env; // nombre de variable -> tipo
-    Environment<VarDecl*> varEnv; // nombre -> VarDecl (para binding de identificadores)
-    unordered_map<string, FuncInfo> functions; //nombre -> funcion info
-    unordered_map<string, StructType*> struct_types;
-    unordered_map<string, TemplateDecl*> template_decls;
-    ::Type* retornodefuncion;
-    ::Type* intType;
-    ::Type* boolType;
-    ::Type* voidType;
-    ::Type* floatType;
-    ::Type* doubleType;
-    ::Type* charType;
-    vector<::Type*> typeCache;
-    int loopDepth;
-    int switchDepth;
-    vector<string> errors;
-    bool hasError;
-    int currentOffset = 0;
-    Program* program = nullptr;
-    unordered_map<string, FunDecl*> instantiated_function_cache;
+    // --- Entornos de variables ---
+    Environment<::Type*> env;            // nombre de variable → tipo semántico
+    Environment<VarDecl*> varEnv;        // nombre de variable → nodo VarDecl (para binding)
 
-    TypeNode* semantic_to_type_node(::Type* t);
+    // --- Funciones declaradas ---
+    unordered_map<string, FuncInfo> functions;           // nombre → firma
+    unordered_map<string, StructType*> struct_types;     // nombre → StructType
+    unordered_map<string, TemplateDecl*> template_decls; // nombre → declaración template
+    unordered_map<string, FunDecl*> instantiated_function_cache; // key mangled → FunDecl instanciado
+
+    // --- Tipos singleton (reutilizados, no creados en typeCache) ---
+    ::Type* retornodefuncion;   // tipo de retorno de la función actual
+    ::Type* intType;            // Type(INT)
+    ::Type* boolType;           // Type(BOOL)
+    ::Type* voidType;           // Type(VOID)
+    ::Type* floatType;          // Type(FLOAT)
+    ::Type* doubleType;         // Type(DOUBLE)
+    ::Type* charType;           // Type(CHAR)
+
+    // --- Cache y estado ---
+    vector<::Type*> typeCache;  // tipos dinámicos creados (PointerType, ArrayType) para cleanup
+    int loopDepth;              // profundidad de anidamiento de loops (para break/continue)
+    int switchDepth;            // profundidad de switch (para break)
+    vector<string> errors;      // errores semánticos acumulados
+    bool hasError;              // flag de error
+    int currentOffset = 0;      // offset actual (reservado, no usado actualmente)
+    Program* program = nullptr; // programa actual (para registrar funciones instanciadas)
+
+    // --- Funciones auxiliares ---
+    TypeNode* semantic_to_type_node(::Type* t);    // Type* → TypeNode (para sustitución en templates)
     FunDecl* instantiate_function(TemplateDecl* tdecl, const vector<TypeNode*>& args);
 
-    void add_function(FunDecl* fd);
-    ::Type* type_from_ast(Exp* t);
-    bool check_assign(::Type* target, ::Type* value);
-    void error(const string& msg);
-    void error(const string& msg, const Location& loc);
-    StructType* instantiate_template(const string& name, const vector<TypeNode*>& args);
-    void bind_var_decl(VarDecl* v);
-    bool checkFuncCall(const string& fname, FuncInfo& info, FcallNode* e);
-    
-    // Bin packing: recolectar variables y calcular offsets optimizados
-    void collectVars(Stm* stmt, vector<VarDecl*>& vars);
-    void assignOffsetsWithBinPacking(vector<VarDecl*>& vars, int startOffset);
+    void add_function(FunDecl* fd);           // registra función en el mapa functions
+    ::Type* type_from_ast(Exp* t);           // convierte TypeNode del AST → Type* semántico
+    bool check_assign(::Type* target, ::Type* value);  // verifica compatibilidad de asignación
+    void error(const string& msg);           // registra error semántico
+    void error(const string& msg, const Location& loc);  // registra error con ubicación
+    StructType* instantiate_template(const string& name, const vector<TypeNode*>& args);  // instancia struct template
+    void bind_var_decl(VarDecl* v);           // asocia variable en environments
+    bool checkFuncCall(const string& fname, FuncInfo& info, FcallNode* e);  // verifica argumentos de llamada
+
+    // --- Bin packing: recolectar variables y calcular offsets optimizados ---
+    void collectVars(Stm* stmt, vector<VarDecl*>& vars);           // recolecta recursivamente vars
+    void assignOffsetsWithBinPacking(vector<VarDecl*>& vars, int startOffset);  // asigna offsets compactos
 
 public:
     TypeChecker();
     ~TypeChecker();
-    void typecheck(Program* program);
-    bool check(Program* program);
+    void typecheck(Program* program);  // entry point principal (imprime error y sale)
+    bool check(Program* program);      // entry point alternativo (retorna bool)
 
+    // --- Declaraciones y statements (retornan void) ---
     void visit(Program* p) override;
     void visit(FunDecl* f) override;
     void visit(VarDecl* v) override;
@@ -310,6 +389,7 @@ public:
     void visit(ReturnStmt* s) override;
     void visit(FreeStmt* s) override;
 
+    // --- Expresiones (retornan Type*) ---
     ::Type* visit(BinaryOpNode* e) override;
     ::Type* visit(UnaryOpNode* e) override;
     ::Type* visit(AssignmentNode* e) override;
@@ -336,12 +416,19 @@ public:
 };
 
 // ============================================================
-// Abstract CodeGenVisitor — code generation
+// Abstract CodeGenVisitor — Code Generation
 // ============================================================
+// Define la interfaz para generar código de máquina a partir
+// del AST. Cada método visit() genera las instrucciones en
+// ensamblador correspondientes al nodo.
+//
+// Incluye métodos adicionales computeAddress() para obtener
+// la dirección efectiva de un l-value (útil para &, arrays, etc.)
 class CodeGenVisitor {
 public:
     virtual ~CodeGenVisitor() = default;
 
+    // --- Expression visitors (generan código que deja resultado en %rax) ---
     virtual void visit(BinaryOpNode* e) = 0;
     virtual void visit(UnaryOpNode* e) = 0;
     virtual void visit(AssignmentNode* e) = 0;
@@ -366,6 +453,7 @@ public:
     virtual void visit(CaptureNode* e) = 0;
     virtual void visit(LambdaExprNode* e) = 0;
 
+    // --- Statement visitors ---
     virtual void visit(Body* s) = 0;
     virtual void visit(ExprStmtNode* s) = 0;
     virtual void visit(IfStmt* s) = 0;
@@ -379,76 +467,119 @@ public:
     virtual void visit(ReturnStmt* s) = 0;
     virtual void visit(FreeStmt* s) = 0;
 
+    // --- Declaration visitors ---
     virtual void visit(VarDecl* d) = 0;
     virtual void visit(FunDecl* d) = 0;
     virtual void visit(StructDecl* d) = 0;
     virtual void visit(Program* p) = 0;
     virtual void visit(TemplateDecl* d) = 0;
 
-    virtual void computeAddress(UnaryOpNode* e) = 0;
-    virtual void computeAddress(IdentifierNode* e) = 0;
-    virtual void computeAddress(IndexNode* e) = 0;
-    virtual void computeAddress(MemberAccessNode* e) = 0;
-    virtual void computeAddress(ArrowAccessNode* e) = 0;
+    // --- L-value address computation ---
+    // computeAddress genera código para calcular la dirección
+    // efectiva de un l-value y la deja en %rax.
+    // Se usa para &x, arrays multidimensionales, structs, etc.
+    virtual void computeAddress(UnaryOpNode* e) = 0;       // *p → dirección de p
+    virtual void computeAddress(IdentifierNode* e) = 0;    // x → dirección de x
+    virtual void computeAddress(IndexNode* e) = 0;          // a[i] → &a[i]
+    virtual void computeAddress(MemberAccessNode* e) = 0;   // s.m → &s.m
+    virtual void computeAddress(ArrowAccessNode* e) = 0;    // p->m → &(p->m)
 };
 
 // ============================================================
-// GenCodeVisitor — x86-64 AT&T code generator
+// GenCodeVisitor — x86-64 AT&T Code Generator
 // ============================================================
+// Genera código ensamblador AT&T para x86-64 a partir del AST.
+// Recorre el árbol y escribe instrucciones al stream de salida.
+//
+// Características:
+//   - Llamadas a función con convención System V AMD64
+//   - Stack frame con %rbp, espacio para locales
+//   - Bin packing para variables locales (ahorra memoria en stack)
+//   - Manejo de arreglos multidimensionales con cálculo de índices
+//   - Captura por valor en lambdas
+//   - Strings como datos en .data
+//   - Structs con offsets calculados
+//
+// Flujo:
+//   1. generate(program) → asm header + visit(Program)
+//   2. visit(Program) genera .data, procesa decls globales
+//   3. visit(FunDecl): prólogo, asigna memoria local, procesa body, epílogo
+//   4. Cada expresión genera instrucciones, dejando resultado en %rax
+//   5. L-values se manejan con LVal (para asignaciones, ++, etc.)
 class GenCodeVisitor : public CodeGenVisitor {
 public:
+    // -----------------------------------------------------------
+    // LVal — Representa un l-value (destino de asignación)
+    // -----------------------------------------------------------
+    // Durante la generación de código, una expresión puede ser
+    // un l-value (identificador, acceso por índice, acceso a
+    // miembro, dereferencia). Guardamos la información necesaria
+    // para leer o escribir en esa ubicación de memoria.
+    //
+    // Ejemplos:
+    //   x       → LVal{Id, binding=&x}
+    //   a[i]    → LVal{Index, binding=&a, indices=[i]}
+    //   s.m     → LVal{Member, binding=&s, member="m"}
+    //   *p      → LVal{Deref, ...}
     enum class LValKind { Invalid, Id, Index, Member, Deref };
     struct LVal {
-        LValKind kind = LValKind::Invalid;
-        string name;
-        VarDecl* binding = nullptr;
-        Exp* index = nullptr;
-        vector<Exp*> indices;
-        string member;
-        string structName;
-        bool isArrow = false;
+        LValKind kind = LValKind::Invalid;  // tipo de l-value
+        string name;                        // nombre de variable (para Id)
+        VarDecl* binding = nullptr;         // VarDecl vinculado
+        Exp* index = nullptr;               // índice simple
+        vector<Exp*> indices;               // múltiples índices (multidim arrays)
+        string member;                      // nombre de miembro (para Member/Deref)
+        string structName;                  // nombre del struct contenedor
+        bool isArrow = false;               // true si es p->m
     };
 
 private:
-    ostream &out;
-    LVal *lvalTarget = nullptr;
-    LVal captureLVal(Exp *e);
-    void storeTarget(const LVal &lv);
-    void bind_var_decl(VarDecl* v);
-    int array_elem_size(VarDecl* vd) const;
-    void loadBinding(VarDecl* vd);
-    void storeBinding(VarDecl* vd);
-    void leaBinding(VarDecl* vd);
-    string bindingMem(VarDecl* vd) const;
-    void emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices);
-    void emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices);
-    void emitIndexedStore(VarDecl* vd, const vector<Exp*>& indices, const string& valueReg);
-    
-    // Helper para obtener sufijo de instrucción según tamaño
-    string instrSuffix(int size);
-    string loadInstr(int size);  // movzbq, movslq, movq
-    string storeInstr(int size); // movb, movl, movq
+    ostream &out;                           // stream de salida (ensamblador)
+    LVal *lvalTarget = nullptr;             // l-value actual (para asignación)
+    LVal captureLVal(Exp *e);               // analiza expresión como l-value
+    void storeTarget(const LVal &lv);       // escribe %eax/%rax en la dirección del l-value
 
-    unordered_map<string, int> memoria;
-    unordered_map<string, bool> memoriaGlobal;
-    unordered_map<string, int> structFieldCount;
-    unordered_map<string, unordered_map<string, int>> structFieldOffset;
-    unordered_map<string, unordered_map<string, int>> structMemberSizes;
-    unordered_map<string, int> stringLabels;
+    // --- Gestión de variables y memoria ---
+    void bind_var_decl(VarDecl* v);         // registra variable con su offset
+    int array_elem_size(VarDecl* vd) const; // tamaño del elemento base del arreglo
+    void loadBinding(VarDecl* vd);          // carga valor de variable en %rax
+    void storeBinding(VarDecl* vd);         // guarda %eax en variable
+    void leaBinding(VarDecl* vd);           // carga dirección de variable en %rax
+    string bindingMem(VarDecl* vd) const;   // obtiene string "offset(%rbp)" para la variable
 
-    int offset = -8;
-    int labelcont = 0;
-    bool inFunction = false;
-    string currentBreakLabel;
-    string currentContinueLabel;
-    string funcName;
-    string returnLabel;
+    // --- Acceso a arreglos multidimensionales ---
+    void emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices);  // calcula &a[i][j] en %rax
+    void emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices);     // carga a[i][j] en %rax
+    void emitIndexedStore(VarDecl* vd, const vector<Exp*>& indices, const string& valueReg);  // guarda en a[i][j]
+
+    // --- Helpers de instrucciones según tamaño ---
+    string instrSuffix(int size);    // "", "b", "w", "l", "q" según size
+    string loadInstr(int size);      // "movzbq" (1), "movslq" (4), "movq" (8)
+    string storeInstr(int size);     // "movb" (1), "movl" (4), "movq" (8)
+
+    // --- Mapas de estado ---
+    unordered_map<string, int> memoria;                      // nombre de variable → offset en stack
+    unordered_map<string, bool> memoriaGlobal;               // nombre → true si es global
+    unordered_map<string, int> structFieldCount;              // nombre struct → número de campos
+    unordered_map<string, unordered_map<string, int>> structFieldOffset;     // struct → miembro → offset
+    unordered_map<string, unordered_map<string, int>> structMemberSizes;     // struct → miembro → tamaño
+    unordered_map<string, int> stringLabels;                  // string literal → número de label
+
+    // --- Estado de generación ---
+    int offset = -8;                         // desplazamiento actual en stack frame
+    int labelcont = 0;                       // contador de labels (para saltos)
+    bool inFunction = false;                 // true si estamos dentro de una función
+    string currentBreakLabel;                // label de salto para break
+    string currentContinueLabel;             // label de salto para continue
+    string funcName;                         // nombre de la función actual
+    string returnLabel;                      // label de retorno
 
 public:
     explicit GenCodeVisitor(ostream &out) : out(out) {}
 
-    void generate(Program *p);
+    void generate(Program *p);     // entry point: genera código completo
 
+    // --- Expressions ---
     void visit(BinaryOpNode *e) override;
     void visit(UnaryOpNode *e) override;
     void visit(AssignmentNode *e) override;
@@ -473,6 +604,7 @@ public:
     void visit(CaptureNode *e) override;
     void visit(LambdaExprNode *e) override;
 
+    // --- Statements ---
     void visit(Body *s) override;
     void visit(ExprStmtNode *s) override;
     void visit(IfStmt *s) override;
@@ -486,12 +618,14 @@ public:
     void visit(ReturnStmt *s) override;
     void visit(FreeStmt *s) override;
 
+    // --- Declarations ---
     void visit(VarDecl *d) override;
     void visit(FunDecl *d) override;
     void visit(StructDecl *d) override;
     void visit(Program *p) override;
     void visit(TemplateDecl *d) override;
 
+    // --- L-value address computation ---
     void computeAddress(UnaryOpNode *e) override;
     void computeAddress(IdentifierNode *e) override;
     void computeAddress(IndexNode *e) override;

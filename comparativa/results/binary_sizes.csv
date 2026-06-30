@@ -1,0 +1,8 @@
+Binary Size Measurements (bytes)
+Benchmark,C--_Compiler,GCC_O0,GCC_O2,Clang_O2
+bench_fib,ERROR,16000,16000,ERROR
+bench_matmul,ERROR,16032,16032,ERROR
+bench_float,ERROR,15976,15976,ERROR
+bench_struct,ERROR,16032,15976,ERROR
+bench_prime,ERROR,15976,15976,ERROR
+bench_mixed,ERROR,15976,15976,ERROR

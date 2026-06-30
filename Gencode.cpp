@@ -7,8 +7,33 @@
 using namespace std;
 
 // ============================================================
+// GenCodeVisitor — Generación de código x86-64 (AT&T syntax)
+// ============================================================
+// Este archivo implementa la generación de código ensamblador
+// para el compilador C--. El visitor recorre el AST y escribe
+// instrucciones x86-64 en sintaxis AT&T al stream de salida.
+//
+// Convenciones:
+//   - System V AMD64 ABI (Linux)
+//   - Argumentos enteros: %rdi, %rsi, %rdx, %rcx, %r8, %r9
+//   - Argumentos float:   %xmm0–%xmm7
+//   - Valor de retorno:   %rax (entero/pointer) o %xmm0 (float/double)
+//   - Stack frame:        %rbp base pointer, %rsp stack pointer
+//   - Las expresiones dejan su resultado en %rax
+//   - Los l-values se manejan con el struct LVal
+//
+// Flujo principal:
+//   1. generate(program) → headers, datos globales, procesa funciones
+//   2. visit(FunDecl) → prólogo, parámetros, body, epílogo
+//   3. Cada expresión genera instrucciones que dejan valor en %rax
+//   4. Statements generan código con labels para saltos
+
+// ============================================================
 // accept(CodeGenVisitor*) — double dispatch stubs
 // ============================================================
+// Cada nodo del AST llama al visit() correspondiente del
+// CodeGenVisitor. Estos stubs son análogos a los de TypeChecker
+// pero para generación de código.
 
 void BinaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void UnaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
@@ -34,6 +59,18 @@ void TemplateTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void CaptureNode::accept(CodeGenVisitor* v) { v->visit(this); }
 void LambdaExprNode::accept(CodeGenVisitor* v) { v->visit(this); }
 
+// ============================================================
+// baseStructName — extraer nombre base de struct template
+// ============================================================
+// Para structs instanciados de templates (ej: "Par<int>"),
+// extrae solo el nombre base "Par". Los structs sin template
+// se devuelven tal cual.
+//
+//   Ej: baseStructName("Par<int>") → "Par"
+//       baseStructName("Persona") → "Persona"
+//
+// Se usa para acceder a structFieldOffset y otros mapas
+// que están indexados por nombre base del struct.
 static string baseStructName(const string& structName) {
     size_t ltPos = structName.find('<');
     if (ltPos != string::npos) {
@@ -64,7 +101,9 @@ void TemplateDecl::accept(CodeGenVisitor* v) { v->visit(this); }
 // ============================================================
 // computeAddress(CodeGenVisitor*) — lvalue nodes only
 // ============================================================
-
+// Estos stubs permiten calcular la dirección efectiva de un
+// l-value (variable, arr[i], s.m, p->m, *p). Son llamados por
+// ComputeAddressNode en lugar del visit normal.
 void UnaryOpNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
 void IdentifierNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
 void IndexNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
@@ -72,62 +111,84 @@ void MemberAccessNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(thi
 void ArrowAccessNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
 
 // ============================================================
-// Entry point
+// generate — entry point de generación de código
 // ============================================================
+// Genera el archivo ensamblador completo:
+//   1. Inicializa estructuras de datos (stringLabels, memoriaGlobal)
+//   2. Procesa declaraciones de struct y template
+//   3. Escribe sección .data con formatos de printf y variables globales
+//   4. Escribe sección .text con funciones
+//   5. Incluye función auxiliar `potencia` (para operador ^)
+//   6. Nota GNU-stack (no ejecutable)
+//
+//   Ej: GenCodeVisitor gen(out); gen.generate(program);
+//       → produce código ASM en el ostream `out`
 void GenCodeVisitor::generate(Program *p) {
     stringLabels.clear();
     for (auto g : p->globals)
         memoriaGlobal[g->name] = true;
 
-    // Visit struct declarations first to initialize structFieldOffset
+    // Procesar structs primero para inicializar los mapas de offsets
     for (auto s : p->structs)
         s->accept(this);
 
     for (auto t : p->templates)
         t->accept(this);
 
+    // --- Sección .data ---
     out << ".data\n";
-    out << "print_fmt: .string \"%ld\\n\"\n";
-    out << "println_fmt: .string \"\\n\"\n";
+    out << "print_fmt: .string \"%ld\\n\"\n";    // formato por defecto para printf
+    out << "println_fmt: .string \"\\n\"\n";     // salto de línea
 
+    // Variables globales (inicializadas a 0)
+    //   Ej: int x; → x: .quad 0
     for (auto &[name, _] : memoriaGlobal)
         out << name << ": .quad 0\n";
 
+    // --- Sección .text ---
     out << "\n.text\n";
-    out << ".globl main\n";
+    out << ".globl main\n";  // main visible al linker
 
+    // Generar código para cada función declarada
     for (auto f : p->functions)
         f->accept(this);
 
+    // Generar código para funciones instanciadas de templates
     for (auto f : p->instantiated_functions)
         f->accept(this);
 
+    // --- Función auxiliar: potencia(base^exp) ---
+    // Implementación recursiva con exponenciación binaria O(log n)
+    // Argumentos: %rdi = base, %rsi = exponente
+    // Retorno: %rax
     out << "\npotencia:\n";
     out << "  pushq %rbp\n";
     out << "  movq %rsp, %rbp\n";
     out << "  cmpq $0, %rsi\n";
     out << "  jne .pot_nz\n";
-    out << "  movq $1, %rax\n";
+    out << "  movq $1, %rax\n";       // x^0 = 1
     out << "  jmp .pot_end\n";
     out << ".pot_nz:\n";
     out << "  cmpq $1, %rsi\n";
     out << "  jne .pot_rec\n";
-    out << "  movq %rdi, %rax\n";
+    out << "  movq %rdi, %rax\n";     // x^1 = x
     out << "  jmp .pot_end\n";
     out << ".pot_rec:\n";
     out << "  pushq %rbx\n";
-    out << "  movq %rdi, %rbx\n";
+    out << "  movq %rdi, %rbx\n";     // guardar base original
     out << "  testq $1, %rsi\n";
-    out << "  jz .pot_even\n";
-    out << "  imulq %rdi, %rdi\n";
-    out << "  sarq $1, %rsi\n";
+    out << "  jz .pot_even\n";        // exponente par?
+    // Exponencial impar: result = base * (base^2)^(exp/2)
+    out << "  imulq %rdi, %rdi\n";    // base^2
+    out << "  sarq $1, %rsi\n";       // exp / 2
     out << "  call potencia\n";
-    out << "  imulq %rbx, %rax\n";
+    out << "  imulq %rbx, %rax\n";    // multiplicar por base original
     out << "  popq %rbx\n";
     out << "  jmp .pot_end\n";
+    // Exponencial par: result = (base^2)^(exp/2)
     out << ".pot_even:\n";
-    out << "  imulq %rdi, %rdi\n";
-    out << "  sarq $1, %rsi\n";
+    out << "  imulq %rdi, %rdi\n";    // base^2
+    out << "  sarq $1, %rsi\n";       // exp / 2
     out << "  call potencia\n";
     out << "  popq %rbx\n";
     out << ".pot_end:\n";
@@ -138,10 +199,12 @@ void GenCodeVisitor::generate(Program *p) {
 }
 
 // ============================================================
-// Lvalue capture & store
+//  Helpers: sufijos e instrucciones según tamaño
 // ============================================================
 
-// Helper: sufijo de instrucción según tamaño
+// instrSuffix: retorna el sufijo de instrucción AT&T según tamaño
+//   1 → "b" (byte),   4 → "l" (long/word de 32 bits)
+//   8 → "q" (quad/64 bits)
 string GenCodeVisitor::instrSuffix(int size) {
     switch (size) {
         case 1: return "b";
@@ -151,7 +214,13 @@ string GenCodeVisitor::instrSuffix(int size) {
     }
 }
 
-// Helper: instrucción de carga según tamaño
+// loadInstr: instrucción de carga con extensión según tamaño
+//   1 → "movzbq" (zero-extend byte a quad)
+//   4 → "movslq" (sign-extend long a quad)
+//   8 → "movq"   (carga directa de quad)
+//
+//   Ej: loadInstr(1) → movzbq (%rax), %rax  (carga byte sin signo)
+//       loadInstr(4) → movslq (%rax), %rax  (carga int con signo)
 string GenCodeVisitor::loadInstr(int size) {
     switch (size) {
         case 1: return "movzbq";  // zero-extend 1 byte -> 8 bytes
@@ -161,7 +230,12 @@ string GenCodeVisitor::loadInstr(int size) {
     }
 }
 
-// Helper: instrucción de almacenamiento según tamaño
+// storeInstr: instrucción de almacenamiento según tamaño
+//   1 → "movb" (almacena byte), 4 → "movl" (almacena 32 bits)
+//   8 → "movq" (almacena 64 bits)
+//
+//   Ej: storeInstr(1) → movb %al, (%rax)
+//       storeInstr(4) → movl %eax, (%rax)
 string GenCodeVisitor::storeInstr(int size) {
     switch (size) {
         case 1: return "movb";
@@ -171,10 +245,34 @@ string GenCodeVisitor::storeInstr(int size) {
     }
 }
 
+// ============================================================
+// Helpers: detección de tipos float/double
+// ============================================================
+
+// isFloatSemanticType: true si el tipo es float o double
+//   Se usa en operaciones aritméticas para decidir si usar
+//   instrucciones de punto flotante (addss/mulsd/etc.) o enteras.
+//
+//   Ej: isFloatSemanticType(IntType) → false
+//       isFloatSemanticType(FloatType) → true
+//       isFloatSemanticType(DoubleType) → true
 static bool isFloatSemanticType(Type* t) {
     return t && (t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE);
 }
 
+// ============================================================
+// bindingMem — obtener representación de memoria de una variable
+// ============================================================
+// Retorna el string que representa la dirección de una variable
+// en ensamblador, en formato AT&T.
+//
+// Casos:
+//   Variable global:  "nombre(%rip)"  (RIP-relative)
+//   Variable lambda:  "offset(%rbp)"  (desde mapa memoria local)
+//   Variable normal:  "offset(%rbp)"  (offset calculado por TypeChecker)
+//
+//   Ej: int x global → "x(%rip)"
+//       int x local (offset=-8) → "-8(%rbp)"
 string GenCodeVisitor::bindingMem(VarDecl* vd) const {
     if (!vd)
         throw runtime_error("Variable sin binding en codegen");
@@ -185,25 +283,61 @@ string GenCodeVisitor::bindingMem(VarDecl* vd) const {
     return to_string(vd->offset) + "(%rbp)";
 }
 
+// ============================================================
+// bind_var_decl — registrar variable local en el mapa memoria
+// ============================================================
+// Guarda el offset de una variable local en el mapa `memoria`.
+// Esto permite acceder a variables de lambda que pueden no
+// tener el offset en vd (porque se asignan manualmente).
+//
+//   Ej: bind_var_decl(vd) → memoria["x"] = vd->offset
 void GenCodeVisitor::bind_var_decl(VarDecl* vd) {
     if (!vd) return;
     memoria[vd->name] = vd->offset;
 }
 
+// ============================================================
+// array_elem_size — obtener tamaño del elemento base de un arreglo
+// ============================================================
+// Para un arreglo multidimensional, extrae el tamaño del tipo
+// base (el elemento más interno). Ejemplos:
+//
+//   int a[5]       → elem_size = 4 (int)
+//   int m[3][4]    → elem_size = 4 (int)
+//   char s[10]     → elem_size = 1 (char)
+//   double v[5]    → elem_size = 8 (double)
+//   int* p         → elem_size = 4 (int, vía puntero)
+//
+// Se usa para calcular el stride y la instrucción de carga/almacenamiento.
 int GenCodeVisitor::array_elem_size(VarDecl* vd) const {
     if (!vd || !vd->resolvedType) return 8;
     Type* t = vd->resolvedType;
+    // Recorre ArrayTypes anidados hasta el tipo base
     if (t->ttype == Type::ARRAY) {
         Type* base = t;
         while (base && base->ttype == Type::ARRAY)
             base = ((ArrayType*)base)->base;
         if (base) return base->size();
     }
+    // Si es puntero, el elemento es el tipo apuntado
     if (t->ttype == Type::POINTER && ((PointerType*)t)->base)
         return ((PointerType*)t)->base->size();
     return 8;
 }
 
+// ============================================================
+// arrayDimsFor — obtener dimensiones de un arreglo
+// ============================================================
+// Extrae las dimensiones de un ArrayType anidado.
+// Retorna vector con los tamaños de cada dimensión.
+//
+//   Ej: int m[2][3] → ArrayType(ArrayType(IntType, 3), 2)
+//       arrayDimsFor(m) → [2, 3]
+//
+//       int a[5] → ArrayType(IntType, 5)
+//       arrayDimsFor(a) → [5]
+//
+//       int* p → [] (no es arreglo)
 static vector<int> arrayDimsFor(VarDecl* vd) {
     if (!vd || !vd->resolvedType) return {};
     vector<int> dims;
@@ -216,6 +350,15 @@ static vector<int> arrayDimsFor(VarDecl* vd) {
     return dims;
 }
 
+// ============================================================
+// collectIndices — recolectar índices anidados de arr[i][j][k]
+// ============================================================
+// Dada una cadena de IndexNodes (a[i][j][k]), extrae todos
+// los índices y la expresión base. Útil para arreglos
+// multidimensionales.
+//
+//   Ej: a[i][j] → indices = [i, j], base = a
+//       b[x]    → indices = [x],    base = b
 static void collectIndices(Exp* e, vector<Exp*>& indices, Exp*& base) {
     Exp* b = e;
     while (auto* inner = dynamic_cast<IndexNode*>(b)) {
@@ -226,6 +369,15 @@ static void collectIndices(Exp* e, vector<Exp*>& indices, Exp*& base) {
     base = b;
 }
 
+// ============================================================
+// loadBinding — cargar valor de variable en %rax
+// ============================================================
+// Genera código para cargar el valor de una variable en %rax.
+// Maneja: enteros (movzbq/movslq/movq), floats (movss/movsd).
+//
+//   Ej: int x → movslq x(%rip), %rax
+//       float f → movss f(%rip), %xmm7; movd %xmm7, %eax
+//       double d → movsd d(%rip), %xmm7; movq %xmm7, %rax
 void GenCodeVisitor::loadBinding(VarDecl* vd) {
     if (!vd) return;
     int size = vd->memSize > 0 ? vd->memSize : 8;
@@ -244,6 +396,14 @@ void GenCodeVisitor::loadBinding(VarDecl* vd) {
     out << "  " << loadInstr(size) << " " << bindingMem(vd) << ", %rax\n";
 }
 
+// ============================================================
+// storeBinding — guardar %eax/%rax en variable
+// ============================================================
+// Genera código para almacenar el valor en %rax en la variable.
+// Maneja: enteros (movb/movl/movq), floats (movss/movsd).
+//
+//   Ej: int x → movl %eax, x(%rip)
+//       float f → movd %eax, %xmm7; movss %xmm7, f(%rip)
 void GenCodeVisitor::storeBinding(VarDecl* vd) {
     if (!vd) return;
     int size = vd->memSize > 0 ? vd->memSize : 8;
@@ -262,17 +422,39 @@ void GenCodeVisitor::storeBinding(VarDecl* vd) {
     out << "  " << storeInstr(size) << " " << reg << ", " << bindingMem(vd) << "\n";
 }
 
+// ============================================================
+// leaBinding — cargar dirección de variable en %rax
+// ============================================================
+// Genera leaq para obtener la dirección efectiva de la variable.
+// Útil para &x y para pasar direcciones.
+//
+//   Ej: int x → leaq -8(%rbp), %rax
 void GenCodeVisitor::leaBinding(VarDecl* vd) {
     if (!vd) return;
     out << "  leaq " << bindingMem(vd) << ", %rax\n";
 }
 
+// ============================================================
+// emitIndexedAddress — calcular dirección de a[i][j] en %rax
+// ============================================================
+// Genera código para calcular la dirección efectiva de un
+// elemento en un arreglo multidimensional.
+//
+// Fórmula: &a + (i * dims[1] + j) * elemSize
+//
+// Para 1D: usa scaled index (lea (%rax,%rdi,4))
+// Para ND: suma manual con strides
+//
+//   Ej: int m[2][3]; m[1][2]
+//       → stride = 3, índice lineal = 1*3 + 2 = 5
+//       → leaq (%rax,%r10,4), %rax  (donde r10=5)
 void GenCodeVisitor::emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices) {
     if (!vd || indices.empty()) return;
     auto dims = arrayDimsFor(vd);
     int elemSize = array_elem_size(vd);
 
     if (dims.size() > 1 && indices.size() > 1) {
+        // Caso multidimensional: calcular índice lineal manualmente
         leaBinding(vd);
         out << "  movq %rax, %r8\n";
         out << "  movq $0, %r10\n";
@@ -295,6 +477,7 @@ void GenCodeVisitor::emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices
         return;
     }
 
+    // Caso 1D: usar direccionamiento indexado (%base, %indice, escala)
     indices.back()->accept(this);
     out << "  movq %rax, %rdi\n";
     if (!dims.empty())
@@ -310,6 +493,14 @@ void GenCodeVisitor::emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices
     out << "  leaq (%rax,%rdi" << scale << "), %rax\n";
 }
 
+// ============================================================
+// emitIndexedLoad — cargar a[i][j] en %rax
+// ============================================================
+// Similar a emitIndexedAddress pero carga el valor en lugar
+// de calcular la dirección.
+//
+//   Ej: int a[5]; a[3] → movslq (%rax,%rdi,4), %rax
+//       int m[2][3]; m[1][2] → calcula dirección, luego movslq (%rax), %rax
 void GenCodeVisitor::emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices) {
     if (!vd || indices.empty()) return;
     auto dims = arrayDimsFor(vd);
@@ -338,6 +529,13 @@ void GenCodeVisitor::emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices) {
     out << "  " << loadInstr(elemSize) << " (%rax,%rdi" << scale << "), %rax\n";
 }
 
+// ============================================================
+// emitIndexedStore — guardar en a[i][j]
+// ============================================================
+// Similar a emitIndexedLoad pero almacena el valor de valueReg
+// en la posición calculada.
+//
+//   Ej: a[3] = val → movl %ecx, (%rax,%rdi,4)
 void GenCodeVisitor::emitIndexedStore(VarDecl* vd, const vector<Exp*>& indices,
                                       const string& valueReg) {
     if (!vd || indices.empty()) return;
@@ -378,6 +576,15 @@ void GenCodeVisitor::emitIndexedStore(VarDecl* vd, const vector<Exp*>& indices,
     out << "  " << storeInstr(elemSize) << " " << valReg << ", (%rax,%rdi" << scale << ")\n";
 }
 
+// ============================================================
+// captureLVal — capturar l-value de una expresión
+// ============================================================
+// Evalúa una expresión como l-value, llenando la estructura
+// LVal con la información necesaria para leer o escribir.
+// Se usa en asignaciones (x = expr) y operadores ++/--.
+//
+//   Ej: captureLVal(x) → LVal{Id, name="x", binding=&x}
+//       captureLVal(a[i]) → LVal{Index, binding=&a, indices=[i]}
 GenCodeVisitor::LVal GenCodeVisitor::captureLVal(Exp *e) {
     LVal lv;
     lvalTarget = &lv;
@@ -386,6 +593,20 @@ GenCodeVisitor::LVal GenCodeVisitor::captureLVal(Exp *e) {
     return lv;
 }
 
+// ============================================================
+// storeTarget — escribir %rax/%eax en la dirección del l-value
+// ============================================================
+// Según el tipo de l-value, genera el código apropiado para
+// almacenar el valor actual en %rax:
+//
+//   Id:     storeBinding (carga offset desde VarDecl)
+//   Index:  emitIndexedStore (cálculo de índice + store)
+//   Member: store en offset del struct (vía lea o load)
+//   Deref:  pop dirección, guardar (%rbx) = %rax
+//
+//   Ej: x = 5 → storeBinding(x)
+//       a[3] = 5 → emitIndexedStore(a, [3], "%rax")
+//       s.x = 5 → movl %ecx, 0(%rax) (después de lea)
 void GenCodeVisitor::storeTarget(const LVal &lv) {
     switch (lv.kind) {
     case LValKind::Id:
@@ -405,15 +626,18 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
         int size = structMemberSizes[baseStructName(lv.structName)][lv.member];
         string reg = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
         if (lv.isArrow) {
+            // p->m: cargar puntero, luego store en offset
             loadBinding(lv.binding);
             out << "  " << storeInstr(size) << " " << reg << ", " << structFieldOffset[baseStructName(lv.structName)][lv.member] << "(%rax)\n";
         } else {
+            // s.m: cargar dirección de s, luego store en offset
             leaBinding(lv.binding);
             out << "  " << storeInstr(size) << " " << reg << ", " << structFieldOffset[baseStructName(lv.structName)][lv.member] << "(%rax)\n";
         }
         break;
     }
     case LValKind::Deref:
+        // *p = val: pop dirección previamente pusheada en visit(UnaryOp)
         out << "  popq %rbx\n";
         out << "  movq %rax, (%rbx)\n";
         break;
@@ -423,14 +647,19 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
 }
 
 // ============================================================
-// Expressions
+//  Expressions
 // ============================================================
+
+// -----------------------------------------------------------
+// Literales: generan instrucciones movq con el valor inmediato
+// -----------------------------------------------------------
 
 void GenCodeVisitor::visit(IntegerLiteralNode *e) {
     out << "  movq $" << e->value << ", %rax\n";
 }
 
 void GenCodeVisitor::visit(FloatLiteralNode *e) {
+    // Empaqueta float como entero de 32 bits y lo carga
     union { float f; unsigned int i; } fc;
     fc.f = (float)e->value;
     out << "  movl $0x" << hex << fc.i << dec << ", %eax\n";
@@ -446,6 +675,11 @@ void GenCodeVisitor::visit(CharLiteralNode *e) {
 }
 
 void GenCodeVisitor::visit(StringLiteralNode *e) {
+    // Los strings se almacenan en .rodata (read-only data).
+    // Cada string único tiene un label .LstrN.
+    // Se carga la dirección con leaq.
+    //
+    //   Ej: printf("hola") → leaq .Lstr0(%rip), %rax
     auto it = stringLabels.find(e->value);
     int lbl;
     if (it == stringLabels.end()) {
@@ -460,6 +694,11 @@ void GenCodeVisitor::visit(StringLiteralNode *e) {
     out << "  leaq .Lstr" << lbl << "(%rip), %rax\n";
 }
 
+// -----------------------------------------------------------
+// visit(IdentifierNode) — carga de variable o captura l-value
+// -----------------------------------------------------------
+// Si estamos en modo l-value (lvalTarget != null), guarda el
+// binding y retorna. Si no, carga el valor de la variable en %rax.
 void GenCodeVisitor::visit(IdentifierNode *e) {
     if (lvalTarget) {
         lvalTarget->kind = LValKind::Id;
@@ -470,24 +709,40 @@ void GenCodeVisitor::visit(IdentifierNode *e) {
     loadBinding(e->binding);
 }
 
+// -----------------------------------------------------------
+// visit(BinaryOpNode) — operaciones binarias
+// -----------------------------------------------------------
+// Genera código para operaciones binarias:
+//   - Constantes: si isConstant, genera directamente el valor
+//   - Potencia: optimización para x^2 y x^4 (imulq), else call potencia()
+//   - Punto flotante: usa SSE (addss, addsd, etc.) con promoción
+//   - Enteras: operaciones normales con extensión de signo cuando corresponda
+//
+// Flujo para enteros:
+//   left → push %rax; right → %rcx; pop → %rax; op %rcx, %rax
+//   Ej: a + b → push %rax; b → %rcx; pop %rax; addl %ecx, %eax
+//
+// Flujo para float/double:
+//   left → %xmm0; right → %xmm1; op %xmm1, %xmm0; → %rax
 void GenCodeVisitor::visit(BinaryOpNode *e) {
-    // Constant folding: si es constante, generar directamente el valor
+    // Si constante (después de constant folding), emitir directamente
     if (e->isConstant) {
         out << "  movq $" << (long long)e->constantValue << ", %rax\n";
         return;
     }
-    
+
+    // Optimización para potencias: x^2, x^4
     if (e->op == BinaryOp::POW) {
         auto *rightNum = dynamic_cast<IntegerLiteralNode *>(e->right);
         if (rightNum && rightNum->value == 2) {
             e->left->accept(this);
-            out << "  imulq %rax, %rax\n";
+            out << "  imulq %rax, %rax\n";  // x^2 = x * x
             return;
         }
         if (rightNum && rightNum->value == 4) {
             e->left->accept(this);
             out << "  imulq %rax, %rax\n";
-            out << "  imulq %rax, %rax\n";
+            out << "  imulq %rax, %rax\n";  // x^4 = (x^2)^2
             return;
         }
     }
@@ -496,6 +751,7 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
     Type* rightType = e->right->resolvedType;
     bool useFloat = false;
     bool useDouble = false;
+    // Detectar si la operación involucra floats o doubles
     switch (e->op) {
         case BinaryOp::ADD: case BinaryOp::SUB: case BinaryOp::MUL: case BinaryOp::DIV:
         case BinaryOp::EQ: case BinaryOp::NE: case BinaryOp::LT: case BinaryOp::GT:
@@ -511,16 +767,19 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
             break;
     }
 
+    // --- Rama de punto flotante (SSE) ---
     if (useFloat) {
+        // Cargar operando izquierdo en %xmm0 (con promoción si es entero)
         e->left->accept(this);
         if (useDouble) {
             if (!isFloatSemanticType(leftType))
-                out << "  cvtsi2sd %rax, %xmm0\n";
+                out << "  cvtsi2sd %rax, %xmm0\n";      // int → double
             else if (leftType->ttype == Type::FLOAT) {
                 out << "  movd %eax, %xmm0\n";
-                out << "  cvtss2sd %xmm0, %xmm0\n";
+                out << "  cvtss2sd %xmm0, %xmm0\n";      // float → double
             } else
-                out << "  movq %rax, %xmm0\n";
+                out << "  movq %rax, %xmm0\n";           // double ya
+            // Cargar operando derecho en %xmm1
             e->right->accept(this);
             if (!isFloatSemanticType(rightType))
                 out << "  cvtsi2sd %rax, %xmm1\n";
@@ -530,10 +789,11 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
             } else
                 out << "  movq %rax, %xmm1\n";
         } else {
+            // float (single precision)
             if (!isFloatSemanticType(leftType))
-                out << "  cvtsi2ss %eax, %xmm0\n";
+                out << "  cvtsi2ss %eax, %xmm0\n";      // int → float
             else
-                out << "  movd %eax, %xmm0\n";
+                out << "  movd %eax, %xmm0\n";           // float ya
             e->right->accept(this);
             if (!isFloatSemanticType(rightType))
                 out << "  cvtsi2ss %eax, %xmm1\n";
@@ -541,6 +801,7 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
                 out << "  movd %eax, %xmm1\n";
         }
 
+        // Generar la operación SSE correspondiente
         switch (e->op) {
         case BinaryOp::ADD:
             out << (useDouble ? "  addsd %xmm1, %xmm0\n" : "  addss %xmm1, %xmm0\n");
@@ -554,6 +815,7 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
         case BinaryOp::DIV:
             out << (useDouble ? "  divsd %xmm1, %xmm0\n" : "  divss %xmm1, %xmm0\n");
             break;
+        // Comparaciones de punto flotante con ucomiss/ucomisd
         case BinaryOp::EQ:
             out << (useDouble ? "  ucomisd %xmm1, %xmm0\n" : "  ucomiss %xmm1, %xmm0\n");
             out << "  movq $0, %rax\n";
@@ -569,13 +831,13 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
         case BinaryOp::LT:
             out << (useDouble ? "  ucomisd %xmm1, %xmm0\n" : "  ucomiss %xmm1, %xmm0\n");
             out << "  movq $0, %rax\n";
-            out << "  setb %al\n";
+            out << "  setb %al\n";     // below (unsigned <)
             out << "  movzbq %al, %rax\n";
             return;
         case BinaryOp::GT:
             out << (useDouble ? "  ucomisd %xmm1, %xmm0\n" : "  ucomiss %xmm1, %xmm0\n");
             out << "  movq $0, %rax\n";
-            out << "  seta %al\n";
+            out << "  seta %al\n";     // above (unsigned >)
             out << "  movzbq %al, %rax\n";
             return;
         case BinaryOp::LE:
@@ -594,6 +856,7 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
             break;
         }
 
+        // Mover resultado SSE a %rax
         if (useDouble)
             out << "  movq %xmm0, %rax\n";
         else {
@@ -603,6 +866,7 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
         return;
     }
 
+    // --- Rama entera ---
     e->left->accept(this);
     out << "  pushq %rax\n";
     e->right->accept(this);
@@ -614,7 +878,7 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
     if (e->resolvedType) {
         size = e->resolvedType->size();
     }
-    
+
     string suffix = (size == 1) ? "b" : (size == 4) ? "l" : "q";
     string reg1 = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
     string reg2 = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
@@ -624,15 +888,16 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
     case BinaryOp::SUB: out << "  sub" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
     case BinaryOp::MUL: out << "  imul" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
     case BinaryOp::DIV:
-        out << "  cqto\n";
+        out << "  cqto\n";          // sign-extend %rax → %rdx:%rax
         out << "  idiv" << suffix << " " << reg2 << "\n";
         break;
     case BinaryOp::MOD:
         out << "  cqto\n";
         out << "  idiv" << suffix << " " << reg2 << "\n";
-        out << "  movq %rdx, %rax\n";
+        out << "  movq %rdx, %rax\n";  // módulo queda en %rdx
         break;
     case BinaryOp::POW:
+        // Llamar a la función potencia(base=%rax, exp=%rcx)
         out << "  movq %rax, %rdi\n";
         out << "  movq %rcx, %rsi\n";
         out << "  call potencia\n";
@@ -682,26 +947,36 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
     }
 }
 
+// -----------------------------------------------------------
+// visit(UnaryOpNode) — operaciones unarias
+// -----------------------------------------------------------
+// - MINUS: neg (negación aritmética)
+// - LOG_NOT: cmp $0, %rax; sete (negación lógica)
+// - PRE_INC/PRE_DEC: inc/dec y store
+// - POST_INC/POST_DEC: push valor original, inc/dec, store, pop
+// - ADDR (&): leaBinding (dirección de variable)
+// - DEREF (*): movq (%rax), %rax (carga desde puntero)
+//   En modo l-value: push dirección para storeTarget
 void GenCodeVisitor::visit(UnaryOpNode *e) {
-    // lvalue mode for deref: *p = value
+    // Modo l-value para *p (asignación a través de puntero)
     if (lvalTarget && e->op == UnaryOp::DEREF) {
         lvalTarget->kind = LValKind::Deref;
         lvalTarget = nullptr;
         e->operand->accept(this);
-        out << "  pushq %rax\n";
+        out << "  pushq %rax\n";  // dirección será popeada por storeTarget
         return;
     }
-    
-    // Constant folding: si es constante, generar directamente el valor
+
+    // Constante (después de constant folding)
     if (e->isConstant) {
         out << "  movq $" << (long long)e->constantValue << ", %rax\n";
         return;
     }
-    
+
     e->operand->accept(this);
 
     int size = e->resolvedType ? e->resolvedType->size() : 8;
-    
+
     string suffix = (size == 1) ? "b" : (size == 4) ? "l" : "q";
     string reg = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
 
@@ -716,16 +991,19 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
         out << "  movzbq %al, %rax\n";
         break;
     case UnaryOp::PRE_INC:
+        // ++x: incrementa y guarda el nuevo valor
         out << "  inc" << suffix << " " << reg << "\n";
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
             storeBinding(id->binding);
         break;
     case UnaryOp::PRE_DEC:
+        // --x: decrementa y guarda
         out << "  dec" << suffix << " " << reg << "\n";
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
             storeBinding(id->binding);
         break;
     case UnaryOp::POST_INC:
+        // x++: guarda valor original (push), incrementa, store, restaura (pop)
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand)) {
             out << "  pushq %rax\n";
             out << "  inc" << suffix << " " << reg << "\n";
@@ -742,20 +1020,34 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
         }
         break;
     case UnaryOp::ADDR:
+        // &x: dirección de variable
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
             leaBinding(id->binding);
         break;
     case UnaryOp::DEREF:
+        // *p: cargar valor apuntado
         out << "  movq (%rax), %rax\n";
         break;
     }
 }
 
+// -----------------------------------------------------------
+// visit(AssignmentNode) — asignación
+// -----------------------------------------------------------
+// Flujo:
+//   1. Capturar target como l-value (LVal)
+//   2. Evaluar value → %rax
+//   3. Promocionar float/double si es necesario
+//   4. storeTarget escribe %rax en la dirección del l-value
+//
+//   Ej: x = 5 → captureLVal(x); eval(5); storeBinding(x)
+//       a[i] = 3 → captureLVal(a[i]); eval(3); emitIndexedStore
 void GenCodeVisitor::visit(AssignmentNode *e) {
     LVal target = captureLVal(e->target);
 
     e->value->accept(this); // value in %rax
 
+    // Promociones automáticas según el tipo del destino
     if (target.kind == LValKind::Id && target.binding) {
         Type* tgtType = target.binding->resolvedType;
         Type* valType = e->value->resolvedType;
@@ -763,12 +1055,12 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
             if (!valType || valType->ttype == Type::FLOAT || valType->ttype == Type::INT ||
                 valType->ttype == Type::CHAR) {
                 out << "  movd %eax, %xmm7\n";
-                out << "  cvtss2sd %xmm7, %xmm7\n";
+                out << "  cvtss2sd %xmm7, %xmm7\n";  // float → double
                 out << "  movq %xmm7, %rax\n";
             }
         } else if (tgtType && tgtType->ttype == Type::FLOAT) {
             if (!valType || valType->ttype == Type::INT || valType->ttype == Type::CHAR) {
-                out << "  cvtsi2ss %eax, %xmm7\n";
+                out << "  cvtsi2ss %eax, %xmm7\n";   // int → float
                 out << "  movd %xmm7, %eax\n";
                 out << "  movslq %eax, %rax\n";
             }
@@ -783,8 +1075,20 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
     storeTarget(target);
 }
 
+// -----------------------------------------------------------
+// visit(PrintfNode) — llamada a printf
+// -----------------------------------------------------------
+// Genera código para printf con formato y argumentos variables.
+// Sigue la convención System V AMD64 para funciones variádicas:
+//   - %rdi = formato (string)
+//   - %rsi, %rdx, %rcx, %r8, %r9 = argumentos enteros
+//   - %xmm0–%xmm7 = argumentos float/double
+//   - %rax = número de registros xmm usados
+//
+//   Ej: printf("%d %f", x, y)
+//       → formato en %rdi, x en %rsi, y en %xmm0, %rax = 1
 void GenCodeVisitor::visit(PrintfNode *e) {
-    // Generar label para el formato (respetar el formato del usuario)
+    // Generar label para el formato
     string fmtLabel = "print_fmt";
     if (e->format != "%ld") {
         auto it = stringLabels.find(e->format);
@@ -800,45 +1104,34 @@ void GenCodeVisitor::visit(PrintfNode *e) {
             fmtLabel = ".Lfmt" + to_string(it->second);
         }
     }
-    
+
     // Cargar argumentos en registros según convención System V AMD64 ABI
-    // Para printf: formato en %rdi, luego argumentos en orden
-    // Cada posición tiene su registro específico:
-    // Posición 0: rsi (int) o xmm0 (float)
-    // Posición 1: rdx (int) o xmm1 (float)
-    // Posición 2: rcx (int) o xmm2 (float)
-    // Posición 3: r8 (int) o xmm3 (float)
-    // Posición 4: r9 (int) o xmm4 (float)
-    
     const vector<string> intRegs = {"%rsi", "%rdx", "%rcx", "%r8", "%r9"};
     const vector<string> xmmRegs = {"%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7"};
-    
+
     for (size_t i = 0; i < e->args.size(); i++) {
         e->args[i]->accept(this);
-        
-        // Determinar si es float/double usando TypeChecker
+
+        // Detectar si el argumento es float/double
         bool isFloat = false;
         if (e->args[i]->resolvedType) {
             Type* t = e->args[i]->resolvedType;
             isFloat = (t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE);
         }
-        
+
         if (isFloat && i < xmmRegs.size()) {
-            // Mover float/double a xmm register usando movq
             out << "  movq %rax, " << xmmRegs[i] << "\n";
         } else if (i < intRegs.size()) {
-            // Mover entero/puntero a general purpose register
             out << "  movq %rax, " << intRegs[i] << "\n";
         } else {
-            // Push al stack si no hay registros disponibles
-            out << "  pushq %rax\n";
+            out << "  pushq %rax\n";  // argumentos extra van al stack
         }
     }
-    
-    // Llamar a printf con el formato en %rdi
+
+    // Formato en %rdi
     out << "  leaq " << fmtLabel << "(%rip), %rdi\n";
-    
-    // Configurar al para variadic functions (número de registros xmm usados)
+
+    // %rax = número de registros xmm usados (para ABI variádica)
     int xmmCount = 0;
     for (size_t i = 0; i < e->args.size() && i < xmmRegs.size(); i++) {
         if (e->args[i]->resolvedType) {
@@ -849,59 +1142,79 @@ void GenCodeVisitor::visit(PrintfNode *e) {
         }
     }
     out << "  movq $" << xmmCount << ", %rax\n";
-    
+
     out << "  call printf@PLT\n";
-    
+
     // Limpiar argumentos extra del stack
     int regsUsed = min((int)e->args.size(), (int)max(intRegs.size(), xmmRegs.size()));
     if ((int)e->args.size() > regsUsed) {
         out << "  addq $" << ((e->args.size() - regsUsed) * 8) << ", %rsp\n";
     }
-    
+
     out << "  movq $0, %rax\n";
 }
 
+// -----------------------------------------------------------
+// visit(FcallNode) — llamada a función
+// -----------------------------------------------------------
+// Genera código para llamar a funciones:
+//   1. Para lambdas: pasa %rbp como argumento oculto en %rdi
+//   2. Push argumentos extra (>6) en orden inverso
+//   3. Cargar primeros 6 argumentos en registros
+//   4. call a función (directo o vía puntero para lambdas)
+//   5. Limpiar stack si hay argumentos extra
+//
+//   Ej: f(1, 2, 3) → movq $1, %rdi; movq $2, %rsi; movq $3, %rdx; call f
+//       lambda(5)  → movq %rbp, %rdi; movq $5, %rsi; call *offset(%rbp)
 void GenCodeVisitor::visit(FcallNode *e) {
     const vector<string> argRegs = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
     auto *id = dynamic_cast<IdentifierNode *>(e->callee);
     string fname = id ? id->name : "";
 
     int nArgs = (int)e->args.size();
-    
-    // Check if calling a lambda (stored in memoria)
+
+    // Si es lambda, pasar %rbp como primer argumento oculto (capturas)
     bool isLambdaCall = !fname.empty() && memoria.count(fname);
-    
-    // For lambdas, pass current frame pointer in %rdi as first hidden argument
+
     if (isLambdaCall) {
-        out << "  movq %rbp, %rdi\n";
+        out << "  movq %rbp, %rdi\n";  // frame pointer actual en %rdi
     }
-    
-    // Primero, push argumentos extra (>6) en orden inverso
+
+    // Push argumentos extra (>6) en orden inverso
     for (int i = nArgs - 1; i >= 6; i--) {
         e->args[i]->accept(this);
         out << "  pushq %rax\n";
     }
-    
-    // Luego, cargar los primeros 6 argumentos en registros
-    // For lambdas, start from %rsi since %rdi is used for frame pointer
+
+    // Cargar primeros 6 argumentos en registros
+    // Para lambdas, empezar desde %rsi porque %rdi es el frame pointer
     int argRegOffset = isLambdaCall ? 1 : 0;
     for (int i = 0; i < nArgs && i < 6; i++) {
         e->args[i]->accept(this);
         out << "  movq %rax, " << argRegs[i + argRegOffset] << "\n";
     }
-    
+
     if (!fname.empty() && memoria.count(fname)) {
+        // Lambda: call indirecto a través del offset guardado
         out << "  call *" << memoria[fname] << "(%rbp)\n";
     } else {
         out << "  call " << fname << "\n";
     }
-    
+
     // Limpiar argumentos extra del stack
     if (nArgs > 6) {
         out << "  addq $" << ((nArgs - 6) * 8) << ", %rsp\n";
     }
 }
 
+// -----------------------------------------------------------
+// visit(IndexNode) — acceso a arreglo por índice
+// -----------------------------------------------------------
+// En modo l-value: guarda índices y binding en LVal.
+// En modo valor: emite emitIndexedLoad.
+//
+//   Ej: a[i] (l-value) → LVal{Index, binding=&a, indices=[i]}
+//       a[i] (valor)   → emitIndexedLoad(a, [i]) → carga en %rax
 void GenCodeVisitor::visit(IndexNode *e) {
     if (lvalTarget) {
         lvalTarget->kind = LValKind::Index;
@@ -929,6 +1242,13 @@ void GenCodeVisitor::visit(IndexNode *e) {
     emitIndexedLoad(arrBinding, indices);
 }
 
+// -----------------------------------------------------------
+// visit(MemberAccessNode) — acceso a miembro de struct (.)
+// -----------------------------------------------------------
+// En modo l-value: guarda info en LVal para storeTarget.
+// En modo valor: leaBinding + load desde offset del miembro.
+//
+//   Ej: p.x → lea p; movslq offset_x(%rax), %rax
 void GenCodeVisitor::visit(MemberAccessNode *e) {
     if (lvalTarget) {
         if (auto *id = dynamic_cast<IdentifierNode *>(e->object)) {
@@ -965,13 +1285,18 @@ void GenCodeVisitor::visit(MemberAccessNode *e) {
     }
 }
 
+// -----------------------------------------------------------
+// visit(ArrowAccessNode) — acceso a miembro vía puntero (->)
+// -----------------------------------------------------------
+// Similar a MemberAccessNode pero carga primero el puntero.
+//
+//   Ej: p->x → loadBinding(p); movslq offset_x(%rax), %rax
 void GenCodeVisitor::visit(ArrowAccessNode *e) {
     if (lvalTarget) {
         lvalTarget->kind = LValKind::Member;
         if (auto *id = dynamic_cast<IdentifierNode *>(e->pointer)) {
             lvalTarget->name = id->name;
             lvalTarget->binding = id->binding;
-            // Get the struct type name from resolvedType (should be pointer to struct)
             if (id->resolvedType && id->resolvedType->ttype == Type::POINTER) {
                 PointerType* pt = (PointerType*)id->resolvedType;
                 if (pt->base && pt->base->ttype == Type::STRUCT) {
@@ -990,7 +1315,6 @@ void GenCodeVisitor::visit(ArrowAccessNode *e) {
     if (auto *id = dynamic_cast<IdentifierNode *>(e->pointer)) {
         loadBinding(id->binding);
         string structName;
-        // Get the struct type name from resolvedType (should be pointer to struct)
         if (id->resolvedType && id->resolvedType->ttype == Type::POINTER) {
             PointerType* pt = (PointerType*)id->resolvedType;
             if (pt->base && pt->base->ttype == Type::STRUCT) {
@@ -1006,12 +1330,28 @@ void GenCodeVisitor::visit(ArrowAccessNode *e) {
     }
 }
 
+// -----------------------------------------------------------
+// visit(MallocNode) — llamada a malloc
+// -----------------------------------------------------------
+// Evalúa el tamaño, lo pasa en %rdi, llama a malloc.
+// El puntero devuelto queda en %rax.
+//
+//   Ej: malloc(8) → movq $8, %rdi; call malloc@PLT
 void GenCodeVisitor::visit(MallocNode *e) {
     e->size->accept(this);
     out << "  movq %rax, %rdi\n";
     out << "  call malloc@PLT\n";
 }
 
+// -----------------------------------------------------------
+// visit(SizeOfNode) — sizeof
+// -----------------------------------------------------------
+// Genera el tamaño en bytes de un tipo como constante en %rax.
+//   void/char/bool → 1
+//   int/float      → 4
+//   double         → 8
+//   puntero        → 8
+//   struct         → n (calculado como campos * 8)
 void GenCodeVisitor::visit(SizeOfNode *e) {
     if (auto *pt = dynamic_cast<PrimitiveTypeNode *>(e->target_type)) {
         switch (pt->prim) {
@@ -1027,7 +1367,6 @@ void GenCodeVisitor::visit(SizeOfNode *e) {
     if (dynamic_cast<PointerTypeNode *>(e->target_type))
         out << "  movq $8, %rax\n";
     else if (auto *st = dynamic_cast<StructTypeNode *>(e->target_type)) {
-        // Calcular tamaño del struct sumando tamaños de miembros
         auto it = structFieldCount.find(st->name);
         if (it != structFieldCount.end()) {
             out << "  movq $" << (it->second * 8) << ", %rax\n";
@@ -1036,7 +1375,6 @@ void GenCodeVisitor::visit(SizeOfNode *e) {
         }
     }
     else if (auto *nt = dynamic_cast<NamedTypeNode *>(e->target_type)) {
-        // Podría ser un struct instanciado
         auto it = structFieldCount.find(nt->name);
         if (it != structFieldCount.end()) {
             out << "  movq $" << (it->second * 8) << ", %rax\n";
@@ -1048,6 +1386,9 @@ void GenCodeVisitor::visit(SizeOfNode *e) {
         out << "  movq $0, %rax\n";
 }
 
+// -----------------------------------------------------------
+// Type node visits — no generan código (son solo de tipo)
+// -----------------------------------------------------------
 void GenCodeVisitor::visit(PrimitiveTypeNode *) {}
 void GenCodeVisitor::visit(PointerTypeNode *) {}
 void GenCodeVisitor::visit(StructTypeNode *) {}
@@ -1056,13 +1397,20 @@ void GenCodeVisitor::visit(NamedTypeNode *) {}
 void GenCodeVisitor::visit(TemplateTypeNode *) {}
 void GenCodeVisitor::visit(CaptureNode *) {}
 
-// Helper para contar variables en lambdas (no pasan por TypeChecker)
+// ============================================================
+// countLambdaVars — contar variables locales en lambda
+// ============================================================
+// Para lambdas que no pasan por TypeChecker, necesitamos
+// calcular manualmente el número de variables locales para
+// dimensionar el stack frame. Recorre el AST recursivamente.
+//
+//   Ej: { int a; if (c) { int b; } int c; } → 3
 static int countLambdaVars(Stm* stmt) {
     if (!stmt) return 0;
     int count = 0;
-    
+
     if (dynamic_cast<VarDecl*>(stmt)) count = 1;
-    
+
     if (auto* body = dynamic_cast<Body*>(stmt)) {
         for (auto s : body->stmts) count += countLambdaVars(s);
     }
@@ -1089,6 +1437,26 @@ static int countLambdaVars(Stm* stmt) {
     return count;
 }
 
+// -----------------------------------------------------------
+// visit(LambdaExprNode) — generación de código para lambda
+// -----------------------------------------------------------
+// Una lambda se compila como una función separada con nombre
+// .Llambda_N. El stack frame guarda el frame pointer del
+// llamador en 0(%rbp) para acceder a las capturas.
+//
+// Flujo:
+//   1. Saltar sobre el código de la lambda (jmp)
+//   2. Prólogo: push %rbp, mov %rsp, %rbp; guardar %rdi en 0(%rbp)
+//      (%rdi = frame pointer del llamador, pasado como arg oculto)
+//   3. Asignar offsets a parámetros y capturas
+//   4. Copiar capturas por valor desde el frame del llamador
+//   5. Generar cuerpo
+//   6. Epílogo
+//   7. Después del salto: cargar dirección de la lambda en %rax
+//
+//   Ej: [x](int a) -> int { return a + x; }
+//       → función .Llambda_0 que recibe %rdi = frame pointer,
+//         copia x desde el frame padre, suma con a, retorna
 void GenCodeVisitor::visit(LambdaExprNode *e) {
     int lbl = labelcont++;
     string lambdaName = ".Llambda_" + to_string(lbl);
@@ -1104,7 +1472,7 @@ void GenCodeVisitor::visit(LambdaExprNode *e) {
     funcName = lambdaName;
     returnLabel = ".Llambda_end_" + to_string(lbl);
 
-    // Calcular frame size para lambda (asume 8 bytes por variable)
+    // Calcular frame size: 8 bytes por variable
     int localVarCount = countLambdaVars(e->body);
     int paramCount = (int)e->params.size();
     int captureCount = (int)e->captures.size();
@@ -1112,15 +1480,17 @@ void GenCodeVisitor::visit(LambdaExprNode *e) {
     int frameSize = (totalVars * 8 + 15) & ~15;
     string afterLabel = ".Llambda_after_" + to_string(lbl);
 
+    // Saltar sobre el código de la lambda (se ejecuta cuando se llama)
     out << "  jmp " << afterLabel << "\n";
     out << lambdaName << ":\n";
     out << "  pushq %rbp\n";
     out << "  movq %rsp, %rbp\n";
-    // Store parent frame pointer (passed in %rdi) at 0(%rbp) for captures
+    // Guardar frame pointer del llamador en 0(%rbp) para capturas
     out << "  movq %rdi, 0(%rbp)\n";
     if (frameSize > 0)
         out << "  subq $" << frameSize << ", %rsp\n";
 
+    // Cargar parámetros de registros al stack
     const vector<string> argRegs = {"%rsi", "%rdx", "%rcx", "%r8", "%r9", "%r10"};
     for (size_t i = 0; i < e->params.size(); i++) {
         offset -= 8;
@@ -1130,39 +1500,49 @@ void GenCodeVisitor::visit(LambdaExprNode *e) {
             out << "  movq " << argRegs[i] << ", " << offset << "(%rbp)\n";
     }
 
+    // Reservar espacio para capturas (por valor)
     for (auto cap : e->captures) {
         offset -= 8;
         memoria[cap->name] = offset;
     }
 
+    // Copiar valores capturados desde el frame del llamador
+    // Usa 0(%rbp) que contiene el frame pointer padre
     for (auto cap : e->captures) {
         if (cap->mode == CaptureNode::BY_VALUE && savedMemoria.count(cap->name)) {
-            out << "  movq 0(%rbp), %rax\n";
-            out << "  movl " << savedMemoria[cap->name] << "(%rax), %eax\n";
-            out << "  movl %eax, " << memoria[cap->name] << "(%rbp)\n";
+            out << "  movq 0(%rbp), %rax\n";                       // %rax = frame pointer padre
+            out << "  movl " << savedMemoria[cap->name] << "(%rax), %eax\n";  // cargar valor
+            out << "  movl %eax, " << memoria[cap->name] << "(%rbp)\n";      // guardar en lambda
         }
     }
 
+    // Generar cuerpo
     e->body->accept(this);
 
+    // Epílogo
     out << ".Llambda_end_" << lbl << ":\n";
     out << "  leave\n";
     out << "  ret\n";
     out << afterLabel << ":\n";
 
+    // Restaurar estado anterior
     inFunction = savedInFunc;
     offset = savedOffset;
     memoria = savedMemoria;
     funcName = savedFunc;
     returnLabel.clear();
 
+    // Cargar dirección de la lambda en %rax (para asignar a variable)
     out << "  leaq " << lambdaName << "(%rip), %rax\n";
 }
 
 // ============================================================
-// Statements
+//  Statements
 // ============================================================
 
+// -----------------------------------------------------------
+// visit(Body) — bloque de código { ... }
+// -----------------------------------------------------------
 void GenCodeVisitor::visit(Body *s) {
     for (auto st : s->stmts)
         st->accept(this);
@@ -1173,6 +1553,13 @@ void GenCodeVisitor::visit(ExprStmtNode *s) {
         s->expr->accept(this);
 }
 
+// -----------------------------------------------------------
+// visit(IfStmt) — if/else
+// -----------------------------------------------------------
+// Genera: condition → cmp $0; je else_N; then; jmp endif_N; else_N: else; endif_N:
+//
+//   Ej: if (x > 0) { a = 1; } else { a = 2; }
+//       → ...cmp $0, %rax; je else_0; ... jmp endif_0; else_0: ... endif_0:
 void GenCodeVisitor::visit(IfStmt *s) {
     int lbl = labelcont++;
     s->condition->accept(this);
@@ -1186,6 +1573,13 @@ void GenCodeVisitor::visit(IfStmt *s) {
     out << "endif_" << lbl << ":\n";
 }
 
+// -----------------------------------------------------------
+// visit(WhileStmt) — while loop
+// -----------------------------------------------------------
+// Genera: while_N: condition → cmp $0; je endwhile_N; body; jmp while_N; endwhile_N:
+// Guarda currentBreakLabel y currentContinueLabel para break/continue.
+//
+//   Ej: while (i < 10) { i++; }
 void GenCodeVisitor::visit(WhileStmt *s) {
     int lbl = labelcont++;
     string oldBreak = currentBreakLabel;
@@ -1205,6 +1599,10 @@ void GenCodeVisitor::visit(WhileStmt *s) {
     currentContinueLabel = oldContinue;
 }
 
+// -----------------------------------------------------------
+// visit(DoWhileStmt) — do-while loop
+// -----------------------------------------------------------
+// Genera: dowhile_N: body; docond_N: condition → cmp; jne dowhile_N; endwhile_N:
 void GenCodeVisitor::visit(DoWhileStmt *s) {
     int lbl = labelcont++;
     string oldBreak = currentBreakLabel;
@@ -1224,6 +1622,10 @@ void GenCodeVisitor::visit(DoWhileStmt *s) {
     currentContinueLabel = oldContinue;
 }
 
+// -----------------------------------------------------------
+// visit(ForStmt) — for loop
+// -----------------------------------------------------------
+// Genera: init; for_N: condition → cmp; je endfor_N; body; forinc_N: increment; jmp for_N; endfor_N:
 void GenCodeVisitor::visit(ForStmt *s) {
     int lbl = labelcont++;
     string oldBreak = currentBreakLabel;
@@ -1251,11 +1653,19 @@ void GenCodeVisitor::visit(ForStmt *s) {
     currentContinueLabel = oldContinue;
 }
 
+// -----------------------------------------------------------
+// visit(SwitchStmt) — switch
+// -----------------------------------------------------------
+// Genera: eval expr → %r10; cmp con cada case; je case_N; jmp default_N;
+//         case_0: ... case_1: ... default: ... endswitch_N:
+//
+// No tiene fall-through (cada case es independiente).
 void GenCodeVisitor::visit(SwitchStmt *s) {
     int lbl = labelcont++;
     s->expr->accept(this);
     out << "  movq %rax, %r10\n";
 
+    // Generar comparaciones para cada case
     int caseIdx = 0;
     for (auto cc : s->cases) {
         if (auto *lit = dynamic_cast<IntegerLiteralNode *>(cc->value))
@@ -1272,6 +1682,7 @@ void GenCodeVisitor::visit(SwitchStmt *s) {
     string oldBreak = currentBreakLabel;
     currentBreakLabel = "endswitch_" + to_string(lbl);
 
+    // Generar código para cada case
     caseIdx = 0;
     for (auto cc : s->cases) {
         out << "case_" << lbl << "_" << caseIdx << ":\n";
@@ -1279,6 +1690,7 @@ void GenCodeVisitor::visit(SwitchStmt *s) {
         caseIdx++;
     }
 
+    // Código para default
     out << "default_" << lbl << ":\n";
     for (auto st : s->default_body) st->accept(this);
 
@@ -1287,6 +1699,11 @@ void GenCodeVisitor::visit(SwitchStmt *s) {
 }
 
 void GenCodeVisitor::visit(CaseClause *) {}
+
+// -----------------------------------------------------------
+// visit(BreakStmt) — break
+// -----------------------------------------------------------
+// Salta al label de final del loop/switch actual.
 void GenCodeVisitor::visit(BreakStmt *) {
     if (currentBreakLabel.empty()) {
         cerr << "Error: break fuera de ciclo o switch\n";
@@ -1295,6 +1712,10 @@ void GenCodeVisitor::visit(BreakStmt *) {
     out << "  jmp " << currentBreakLabel << "\n";
 }
 
+// -----------------------------------------------------------
+// visit(ContinueStmt) — continue
+// -----------------------------------------------------------
+// Salta al label de continuación del loop actual.
 void GenCodeVisitor::visit(ContinueStmt *) {
     if (currentContinueLabel.empty()) {
         cerr << "Error: continue fuera de ciclo\n";
@@ -1303,6 +1724,10 @@ void GenCodeVisitor::visit(ContinueStmt *) {
     out << "  jmp " << currentContinueLabel << "\n";
 }
 
+// -----------------------------------------------------------
+// visit(ReturnStmt) — return
+// -----------------------------------------------------------
+// Evalúa la expresión (si existe) y salta al epílogo de la función.
 void GenCodeVisitor::visit(ReturnStmt *s) {
     if (s->expr)
         s->expr->accept(this);
@@ -1312,6 +1737,12 @@ void GenCodeVisitor::visit(ReturnStmt *s) {
     out << "  jmp " << target << "\n";
 }
 
+// -----------------------------------------------------------
+// visit(FreeStmt) — free
+// -----------------------------------------------------------
+// Evalúa el puntero y llama a free.
+//
+//   Ej: free(ptr) → movq ptr(%rip), %rdi; call free@PLT
 void GenCodeVisitor::visit(FreeStmt *s) {
     s->expr->accept(this);
     out << "  movq %rax, %rdi\n";
@@ -1319,9 +1750,16 @@ void GenCodeVisitor::visit(FreeStmt *s) {
 }
 
 // ============================================================
-// Declarations
+//  Declarations
 // ============================================================
 
+// -----------------------------------------------------------
+// visit(VarDecl) — declaración de variable
+// -----------------------------------------------------------
+// Variables globales: se marcan en memoriaGlobal (ya están en .data).
+// Variables locales: se registran en memoria, se evalúa inicializador.
+//
+//   Ej: int x = 5; → bind_var_decl(x); eval(5); storeBinding(x)
 void GenCodeVisitor::visit(VarDecl *d) {
     if (!inFunction) {
         memoriaGlobal[d->name] = true;
@@ -1332,6 +1770,7 @@ void GenCodeVisitor::visit(VarDecl *d) {
 
     if (d->initializer) {
         d->initializer->accept(this);
+        // Promover a double si es necesario
         if (d->resolvedType && d->resolvedType->ttype == Type::DOUBLE) {
             Type* initType = d->initializer->resolvedType;
             if (!initType || initType->ttype == Type::FLOAT || initType->ttype == Type::INT ||
@@ -1345,13 +1784,28 @@ void GenCodeVisitor::visit(VarDecl *d) {
     }
 }
 
+// -----------------------------------------------------------
+// visit(FunDecl) — declaración de función
+// -----------------------------------------------------------
+// Genera el código completo de una función:
+//   1. .globl nombre (para enlace externo)
+//   2. Prólogo: push %rbp, mov %rsp %rbp, sub frameSize %rsp
+//   3. Copiar parámetros de registros al stack
+//   4. Generar body
+//   5. Epílogo: leave, ret
+//
+//   Ej: int suma(int a, int b) { return a + b; }
+//       → pushq %rbp; movq %rsp, %rbp; subq $16, %rsp
+//         movl %edi, -8(%rbp); movl %esi, -12(%rbp)
+//         ... cuerpo ...
+//         .end_suma: leave; ret
 void GenCodeVisitor::visit(FunDecl *d) {
     inFunction = true;
     memoria.clear();
     funcName = d->name;
     returnLabel = ".end_" + d->name;
-    
-    // Usar frameSize calculado por TypeChecker
+
+    // Usar frameSize calculado por TypeChecker (con bin packing)
     int frameSize = d->frameSize;
 
     out << "\n.globl " << d->name << "\n";
@@ -1361,11 +1815,12 @@ void GenCodeVisitor::visit(FunDecl *d) {
     if (frameSize > 0)
         out << "  subq $" << frameSize << ", %rsp\n";
 
+    // Copiar parámetros de registros al stack
     const vector<string> argRegs32 = {"%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d"};
     const vector<string> argRegs64 = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
     for (size_t i = 0; i < d->params.size() && i < 6; i++) {
         bind_var_decl(d->params[i]);
-        
+
         int size = d->params[i]->memSize;
         if (size == 4)
             out << "  movl " << argRegs32[i] << ", " << d->params[i]->offset << "(%rbp)\n";
@@ -1378,14 +1833,26 @@ void GenCodeVisitor::visit(FunDecl *d) {
     // Generar código del body
     d->body->accept(this);
 
+    // Epílogo
     out << ".end_" << d->name << ":\n";
     out << "  leave\n";
     out << "  ret\n";
     inFunction = false;
 }
 
+// -----------------------------------------------------------
+// visit(StructDecl) — declaración de struct
+// -----------------------------------------------------------
+// Copia los offsets y tamaños de miembros calculados por
+// TypeChecker a los mapas de GenCodeVisitor.
+//
+//   Ej: struct Punto { int x; float y; };
+//       → structFieldOffset["Punto"]["x"] = 0
+//         structFieldOffset["Punto"]["y"] = 4
+//         structMemberSizes["Punto"]["x"] = 4
+//         structMemberSizes["Punto"]["y"] = 4
+//         structFieldCount["Punto"] = 2
 void GenCodeVisitor::visit(StructDecl *d) {
-    // Use the memberOffsets already calculated by TypeChecker!
     for (auto& pair : d->memberOffsets) {
         structFieldOffset[d->name][pair.first] = pair.second;
     }
@@ -1395,10 +1862,16 @@ void GenCodeVisitor::visit(StructDecl *d) {
     structFieldCount[d->name] = (int)d->members.size();
 }
 
+// forward a generate()
 void GenCodeVisitor::visit(Program *p) {
-    generate(p); // forward to entry point
+    generate(p);
 }
 
+// -----------------------------------------------------------
+// visit(TemplateDecl) — declaración de template
+// -----------------------------------------------------------
+// Para templates de struct, calcula offsets y tamaños de
+// miembros (no pasan por TypeChecker para layouts).
 void GenCodeVisitor::visit(TemplateDecl *d) {
     if (d->struct_decl) {
         int fieldOff = 0;
@@ -1413,11 +1886,14 @@ void GenCodeVisitor::visit(TemplateDecl *d) {
 }
 
 // ============================================================
-// computeAddress — lvalue support for assignment
+// computeAddress — lvalue address computation
 // ============================================================
+// Estos métodos se usan para calcular la dirección efectiva
+// de un l-value y dejarla en %rax. Se diferencian de los visit
+// normales en que no cargan el valor, solo la dirección.
 
 void GenCodeVisitor::computeAddress(UnaryOpNode *e) {
-    // DEREF: address is the value of the pointer expression
+    // *p: la dirección es el valor del puntero mismo
     e->operand->accept(this);
 }
 

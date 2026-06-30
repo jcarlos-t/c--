@@ -26,12 +26,9 @@ int main(int argc, const char* argv[]) {
     }
     infile.close();
 
-    Scanner scanner1(input.c_str());
-    Scanner scanner2(input.c_str());
+    Scanner scanner(input.c_str());
 
-    ejecutar_scanner(&scanner1, argv[1]);
-
-    Parser parser(&scanner2);
+    Parser parser(&scanner);
     Program* ast = nullptr;
 
     try {

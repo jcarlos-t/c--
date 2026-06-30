@@ -1,0 +1,8 @@
+Compilation Time Measurements
+Benchmark,C--_Compiler,GCC_O0,GCC_O2,Clang_O2
+bench_fib,189.38,0.016,0.049,0
+bench_matmul,0.213,0.017,0.016,0
+bench_float,0.309,0.016,0.018,0
+bench_struct,0.368,0.027,0.026,0.001
+bench_prime,0.29,0.015,0.02,0
+bench_mixed,0.043,0.016,0.019,0.001
