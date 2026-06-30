@@ -208,11 +208,6 @@ void GenCodeVisitor::bind_var_decl(VarDecl* vd) {
     }
 }
 
-VarDecl* GenCodeVisitor::resolve_var(const string& name) const {
-    (void)name;
-    return nullptr;
-}
-
 int GenCodeVisitor::array_elem_size(VarDecl* vd) const {
     if (!vd || !vd->resolvedType) return 8;
     Type* t = vd->resolvedType;
@@ -884,6 +879,14 @@ void GenCodeVisitor::visit(FcallNode *e) {
 
     int nArgs = (int)e->args.size();
     
+    // Check if calling a lambda (stored in memoria)
+    bool isLambdaCall = !fname.empty() && memoria.count(fname);
+    
+    // For lambdas, pass current frame pointer in %rdi as first hidden argument
+    if (isLambdaCall) {
+        out << "  movq %rbp, %rdi\n";
+    }
+    
     // Primero, push argumentos extra (>6) en orden inverso
     for (int i = nArgs - 1; i >= 6; i--) {
         e->args[i]->accept(this);
@@ -891,9 +894,11 @@ void GenCodeVisitor::visit(FcallNode *e) {
     }
     
     // Luego, cargar los primeros 6 argumentos en registros
+    // For lambdas, start from %rsi since %rdi is used for frame pointer
+    int argRegOffset = isLambdaCall ? 1 : 0;
     for (int i = 0; i < nArgs && i < 6; i++) {
         e->args[i]->accept(this);
-        out << "  movq %rax, " << argRegs[i] << "\n";
+        out << "  movq %rax, " << argRegs[i + argRegOffset] << "\n";
     }
     
     if (!fname.empty() && memoria.count(fname)) {
@@ -1130,10 +1135,12 @@ void GenCodeVisitor::visit(LambdaExprNode *e) {
     out << lambdaName << ":\n";
     out << "  pushq %rbp\n";
     out << "  movq %rsp, %rbp\n";
+    // Store parent frame pointer (passed in %rdi) at 0(%rbp) for captures
+    out << "  movq %rdi, 0(%rbp)\n";
     if (frameSize > 0)
         out << "  subq $" << frameSize << ", %rsp\n";
 
-    const vector<string> argRegs = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
+    const vector<string> argRegs = {"%rsi", "%rdx", "%rcx", "%r8", "%r9", "%r10"};
     for (size_t i = 0; i < e->params.size(); i++) {
         offset -= 8;
         e->params[i]->offset = offset;
@@ -1422,7 +1429,7 @@ void GenCodeVisitor::visit(TemplateDecl *d) {
     if (d->struct_decl) {
         int fieldOff = 0;
         for (auto m : d->struct_decl->members) {
-            int msize = 4;
+            int msize = m->memSize > 0 ? m->memSize : 4;
             structFieldOffset[d->struct_decl->name][m->name] = fieldOff;
             structMemberSizes[d->struct_decl->name][m->name] = msize;
             fieldOff += msize;

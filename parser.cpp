@@ -761,6 +761,8 @@ Exp* Parser::parse_postfix() {
                 ok = ok && check(Token::LPAREN);
             } catch (...) {
                 ok = false;
+                for (auto t : targs) delete t;
+                targs.clear();
             }
             if (ok) {
                 match(Token::LPAREN); // consume '('

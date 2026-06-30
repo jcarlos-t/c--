@@ -414,7 +414,6 @@ private:
     LVal captureLVal(Exp *e);
     void storeTarget(const LVal &lv);
     void bind_var_decl(VarDecl* v);
-    VarDecl* resolve_var(const string& name) const;
     int array_elem_size(VarDecl* vd) const;
     void loadBinding(VarDecl* vd);
     void storeBinding(VarDecl* vd);
