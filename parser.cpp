@@ -208,7 +208,6 @@ Program* Parser::parse_program() {
 
 Program* Parser::parseProgram() {
     Program* p = parse_program();
-    cout << "Parseo exitoso" << endl;
     return p;
 }
 

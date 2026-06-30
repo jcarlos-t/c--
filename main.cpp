@@ -40,14 +40,11 @@ int main(int argc, const char* argv[]) {
     }
 
     if (ast) {
-        cout << "\n=== Iniciando verificación de tipos ===\n";
         TypeChecker tc;
         tc.typecheck(ast);
 
-        cout << "\n=== Aplicando constant folding ===\n";
         // ConstantFolding cf;
         // cf.visit(ast);
-        cout << "Optimización completada\n";
 
         // Extraer nombre base del archivo de entrada
         string inputFile = argv[1];
@@ -62,13 +59,11 @@ int main(int argc, const char* argv[]) {
         // Generar nombre de salida usando el nombre base
         string outputFile = "assembly/" + baseName + ".s";
 
-        cout << "\n=== Generando código ensamblador ===\n";
         ofstream outfile(outputFile);
         GenCodeVisitor codegen(outfile);
         codegen.generate(ast);
         outfile.close();
 
-        cout << "\n=== Iniciando ejecución del programa ===\n";
         EVALVisitor interprete;
         interprete.interprete(ast);
     }

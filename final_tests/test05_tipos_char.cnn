@@ -1,0 +1,12 @@
+// Test 05: char type
+int main() {
+    char ch;
+    int casted;
+
+    ch = 'A';
+    printf(ch); // esperado:65
+    casted = 3;
+    printf(casted); // esperado:3
+
+    return 0;
+}

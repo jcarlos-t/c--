@@ -1,0 +1,17 @@
+// Test 19: Cadenas de caracteres (literales y chars)
+int main() {
+    char c;
+    char d;
+
+    c = 'H';
+    printf(c); // esperado: 72
+
+    d = 'i';
+    printf(d); // esperado: 105
+
+    int sum;
+    sum = c + d;
+    printf(sum); // esperado: 177
+
+    return 0;
+}

@@ -1,0 +1,25 @@
+// Test04: Unary ops
+int main() {
+    int a;
+    int b;
+    int c;
+    a = 0;
+    b = 5;
+    c = 0;
+
+    a = ++b;
+    printf(a); // esperado:6
+    printf(b); // esperado:6
+
+    c = b--;
+    printf(c); // esperado:6
+    printf(b); // esperado:5
+
+    if(!(a==0) && (b < 10 || c>0 )){
+        printf(1); // esperado:1
+    } else {
+        printf(0);
+    }
+
+    return 0;
+}

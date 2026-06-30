@@ -1,0 +1,20 @@
+struct Point {
+    int x;
+    int y;
+};
+
+int main() {
+    struct Point p;
+    struct Point q;
+    int sum;
+
+    p.x = 10;
+    p.y = 20;
+    q.x = 3;
+    q.y = 7;
+
+    sum = p.x + q.y;
+    printf(sum); // esperado: 17
+
+    return 0;
+}

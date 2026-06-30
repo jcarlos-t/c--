@@ -1,0 +1,39 @@
+struct Point {
+    int x;
+    int y;
+};
+
+int main() {
+    int x;
+    int* p;
+    x = 100;
+    p = &x;
+    
+    // Test direccionamiento y desreferenciación
+    *p = 200;
+    printf(x);  // esperado: 200
+    
+    // Test malloc y free
+    int* arr;
+    arr = malloc(12); // 3 * 4
+    arr[0] = 1;
+    arr[1] = 2;
+    arr[2] = 3;
+    int sum;
+    sum = arr[0] + arr[1] + arr[2];
+    free(arr);
+    
+    printf(sum);  // esperado: 6
+    
+    // Test puntero a struct
+    struct Point pt;
+    struct Point* ptPtr;
+    ptPtr = &pt;
+    ptPtr->x = 10;
+    ptPtr->y = 20;
+    
+    printf(pt.x);  // esperado: 10
+    printf(pt.y);  // esperado: 20
+    
+    return 0;
+}

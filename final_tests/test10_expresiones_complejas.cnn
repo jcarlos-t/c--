@@ -1,0 +1,19 @@
+// Test10 Complex Expressions
+int main() {
+    int result;
+    int a;
+    int b;
+    a=7;
+    b=3;
+    result = (a + b) * (a - b);
+    printf(result); // esperado:40
+    a = a + b;
+    printf(a); // esperado:10
+    printf(b); // esperado:3
+    if((a != b) && (b>0)) {
+        printf(1); // esperado:1
+    } else {
+        printf(0);
+    }
+    return 0;
+}

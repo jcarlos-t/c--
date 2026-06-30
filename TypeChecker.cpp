@@ -479,7 +479,6 @@ void TypeChecker::typecheck(Program* program) {
         for (auto& e : errors) cerr << "Error semántico: " << e << endl;
         exit(1);
     }
-    cout << "Revisión exitosa" << endl;
 }
 
 // ============================================================

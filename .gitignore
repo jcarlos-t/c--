@@ -3,9 +3,10 @@ c--
 semantic_types.h.gch
 base_lab/
 inputs/*_tokens.txt
-final_tests
+final_tests/build
 assembly
 inputs
 #comparativa
 comparativa/build
 comparativa/scripts/assembly
+__pycache__

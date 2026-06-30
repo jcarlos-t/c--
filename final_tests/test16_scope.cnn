@@ -1,0 +1,12 @@
+// Test 16: Alcance (scope) y shadowing
+int main() {
+    int x;
+    x = 1;
+    {
+        int x;
+        x = 10;
+        printf(x); // esperado: 10
+    }
+    printf(x); // esperado: 1
+    return 0;
+}

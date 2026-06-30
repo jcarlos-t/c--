@@ -1,0 +1,22 @@
+// Test 18: Conversión y promoción automática de tipos
+int main() {
+    bool ok;
+    ok = (2 + 1.0) == 3.0;
+    printf(ok); // esperado: 1
+
+    float y;
+    int x;
+    x = 5;
+    y = x + 0.5;
+    ok = y > 5.0;
+    printf(ok); // esperado: 1
+
+    int a;
+    float b;
+    a = 10;
+    b = a;
+    ok = (b + 2.9) > 12.0;
+    printf(ok); // esperado: 1
+
+    return 0;
+}

@@ -1,0 +1,9 @@
+int main() {
+    auto a = 42;        // int
+    auto c = true;      // bool
+    
+    printf(a);  // esperado: 42
+    printf(c);  // esperado: 1
+    
+    return 0;
+}

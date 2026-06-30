@@ -1,0 +1,22 @@
+// Test 01: Funciones y recursividad
+int triple(int x) {
+    return 3 * x;
+}
+
+int factorial(int x) {
+    if (x == 0) { return 1; }
+    return factorial(x - 1) * x;
+}
+
+int suma(int a, int b) {
+    return a + b;
+}
+
+int main() {
+    int a = 2 * 2;
+    printf(a); // esperado:4
+    printf(factorial(a)); // esperado:24
+    printf(triple(a)); // esperado:12
+    printf(suma(a,a)); // esperado:8
+    return 0;
+}

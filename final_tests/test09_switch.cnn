@@ -1,0 +1,19 @@
+int main() {
+    int x;
+    x = 2;
+    switch (x) {
+        case 1: {
+            printf(10);
+        }
+        case 2: {
+            printf(20); // esperado: 20
+        }
+        case 3: {
+            printf(30); // esperado: 30
+        }
+        default: {
+            printf(99); // esperado: 99
+        }
+    }
+    return 0;
+}
