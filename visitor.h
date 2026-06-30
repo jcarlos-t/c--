@@ -360,9 +360,9 @@ private:
     void bind_var_decl(VarDecl* v);           // asocia variable en environments
     bool checkFuncCall(const string& fname, FuncInfo& info, FcallNode* e);  // verifica argumentos de llamada
 
-    // --- Bin packing: recolectar variables y calcular offsets optimizados ---
+    // --- Recolectar variables y asignar offsets ---
     void collectVars(Stm* stmt, vector<VarDecl*>& vars);           // recolecta recursivamente vars
-    void assignOffsetsWithBinPacking(vector<VarDecl*>& vars, int startOffset);  // asigna offsets compactos
+    int assignOffsets(vector<VarDecl*>& vars, int startOffset);    // asigna offsets (retorna offset final)
 
 public:
     TypeChecker();

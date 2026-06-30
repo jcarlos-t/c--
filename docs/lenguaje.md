@@ -279,20 +279,23 @@ Parser (recursive descent) ──► AST (Program*)
 
 1. **Scanner**: análisis léxico → tokens
 2. **Parser**: análisis sintáctico → AST
-3. **TypeChecker**: análisis semántico + resolución de tipos + asignación de offsets con **bin packing**
+3. **TypeChecker**: análisis semántico + resolución de tipos + asignación de offsets en stack frame
 4. **ConstantFolding**: evaluación de expresiones constantes (implementado, deshabilitado por defecto en main.cpp)
 5. **GenCodeVisitor**: generación de código x86-64
 
-### 3.2 Bin packing para stack frame
+### 3.2 Asignación de offsets en stack frame
 
-El TypeChecker asigna offsets de variables locales y parámetros usando **First-Fit Decreasing bin packing**:
+El TypeChecker asigna un slot de 8 bytes a cada variable <= 8 bytes
+(char, int, float, double, puntero), y el tamaño real a las grandes
+(arrays, structs > 8 bytes). Esto evita la complejidad del bin packing
+sin penalización práctica en x86-64, donde el slot natural de pila es
+de 8 bytes y las instrucciones pueden operar con tamaños parciales
+(movb, movl, movq) sobre el mismo slot.
 
-1. Ordenar variables por tamaño descendente (8, 4, 1 byte)
-2. Empaquetar en slots de 8 bytes, respetando alineación (int necesita offset múltiplo de 4)
-3. Asignar offset = `startOffset + slotIndex * 8 + offsetInSlot`
-4. Frame size total = `(maxOffset + 15) & ~15` (alineado a 16 bytes)
-
-Esto minimiza el espacio usado en el stack frame vs. asignación secuencial.
+1. Cada variable recibe un slot de 8 bytes (o su tamaño real si > 8)
+2. Los offsets se asignan secuencialmente desde 0
+3. Frame size total = `(maxOffset + 15) & ~15` (alineado a 16 bytes)
+4. Los offsets se convierten a negativos (relativos a %rbp)
 
 ---
 

@@ -261,31 +261,24 @@ Usar `Exp::resolved_type` (campo opcional Type* que el TypeChecker llena al visi
 
 ## 6. Frame Size Computation (TypeChecker)
 
-El TypeChecker actual debe extenderse para llevar la cuenta de cuántos slots (variables locales + parámetros) necesita cada función. Esto se logra con:
+El TypeChecker asigna un slot de 8 bytes a cada variable del stack
+frame (parámetros y locales), y el tamaño real a las grandes (arrays,
+structs > 8 bytes). El frame total se alinea a 16 bytes (System V).
 
 ```cpp
-// En TypeChecker (o un visitor separado):
-unordered_map<string, int> funFrameSize;
-
-// En visit(FunDecl*):
-//  - Registrar nombre de función
-//  - Contar parámetros: slots = params.size()
-//  - Abrir scope, visitar body, cerrar scope
-//  - funFrameSize[name] = slots + locales
-
-// En visit(VarDecl*):
-//  - Por cada variable declarada: slots++
-
-// En visit(Body*):
-//  - Abrir scope, visitar, cerrar scope (no incrementa slots porque
-//    VarDecl ya los cuenta; pero los scopes anidados necesitan reset
-//    de contador local si se quiere optimizar como en base_lab)
+// assignOffsets asigna offsets secuenciales:
+//   char, int, float, double, punteros → 8 bytes c/u
+//   arrays, structs > 8 bytes          → tamaño real
+int paramSize = assignOffsets(params, 0);
+// ...
+int totalSize = assignOffsets(localVars, paramSize);
+f->frameSize = (totalSize + 15) & ~15;  // alinear a 16
 ```
 
-El `CodeGenVisitor` usa `funFrameSize[nombre]` para la instrucción:
+El `CodeGenVisitor` usa `d->frameSize` para la instrucción:
 
 ```asm
-subq $funFrameSize[nombre] * 8, %rsp
+subq $frameSize, %rsp
 ```
 
 ## 7. Variables globales

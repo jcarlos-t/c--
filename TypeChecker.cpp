@@ -2,7 +2,6 @@
 #include <iostream>
 #include <sstream>
 #include <functional>
-#include <algorithm>
 
 using namespace std;
 
@@ -532,10 +531,10 @@ void TypeChecker::visit(Program* p) {
 // Flujo completo:
 //   1. Abrir scope para parámetros y variables locales
 //   2. Guardar tipo de retorno
-//   3. Resolver tipos de parámetros, asignar offsets con bin packing
+//   3. Resolver tipos de parámetros, asignar offsets (8 bytes por variable)
 //   4. Recolectar variables locales recursivamente (collectVars)
 //   5. Resolver tipos de locales, inferir auto si es necesario
-//   6. Asignar offsets con bin packing (después de parámetros)
+//   6. Asignar offsets a locales (después de parámetros)
 //   7. Calcular frameSize (alineado a 16 bytes)
 //   8. Convertir offsets a negativos (relativos a %rbp)
 //   9. Vincular parámetros en environment
@@ -564,14 +563,9 @@ void TypeChecker::visit(FunDecl* f) {
         params.push_back(p);
     }
 
-    // Asignar offsets a parámetros con bin packing
+    // Asignar offsets a parámetros (8 bytes por variable)
     // Los parámetros van al inicio del stack frame
-    assignOffsetsWithBinPacking(params, 0);
-    int paramSize = 0;
-    for (auto p : params) {
-        int end = p->offset + p->memSize;
-        if (end > paramSize) paramSize = end;
-    }
+    int paramSize = assignOffsets(params, 0);
 
     // ---- Recolectar todas las variables locales del body ----
     vector<VarDecl*> localVars;
@@ -615,14 +609,7 @@ void TypeChecker::visit(FunDecl* f) {
     }
 
     // Asignar offsets a variables locales (después de parámetros)
-    assignOffsetsWithBinPacking(localVars, paramSize);
-
-    // Calcular tamaño total del stack frame
-    int totalSize = paramSize;
-    for (auto v : localVars) {
-        int end = v->offset + v->memSize;
-        if (end > totalSize) totalSize = end;
-    }
+    int totalSize = assignOffsets(localVars, paramSize);
 
     // Alinear a 16 bytes (convención System V)
     f->frameSize = (totalSize + 15) & ~15;
@@ -718,83 +705,22 @@ void TypeChecker::collectVars(Stm* stmt, vector<VarDecl*>& vars) {
 }
 
 // -----------------------------------------------------------
-// assignOffsetsWithBinPacking — asignar offsets compactos
+// assignOffsets — asignar offsets en el stack frame
 // -----------------------------------------------------------
-// Implementa bin packing para minimizar el espacio usado en
-// el stack frame. Las variables se ordenan por tamaño descendente
-// y se empaquetan en "slots" de 8 bytes, respetando alineación.
+// Asigna un slot de 8 bytes a cada variable <= 8 bytes, y el
+// tamaño real a variables grandes (arrays, structs > 8 bytes).
+// Esto evita la complejidad del bin packing sin penalización
+// práctica en x86-64.
 //
-// Algoritmo:
-//   1. Ordenar variables por tamaño descendente (8, 4, 1)
-//   2. Para cada variable, buscar el primer slot donde quepa
-//      (considerando alineación: int necesita offset múltiplo de 4)
-//   3. Si no cabe en ningún slot, crear uno nuevo
-//
-//   Ej: variables: int a (4), char c (1), int b (4), char d (1)
-//       Slot 0: [a(0-3), c(4)]     → offset a=0, c=4
-//       Slot 1: [b(0-3), d(4)]     → offset b=8, d=12
-//       (startOffset=0)
-//
-// Esto ahorra espacio vs. asignación secuencial ingenua.
-void TypeChecker::assignOffsetsWithBinPacking(vector<VarDecl*>& vars, int startOffset) {
-    if (vars.empty()) return;
-
-    // Separar variables grandes (arrays, structs > 8 bytes) de las pequeñas
-    vector<VarDecl*> large, small;
-    for (auto v : vars) {
-        if (v->memSize > 8)
-            large.push_back(v);
-        else
-            small.push_back(v);
-    }
-
-    // Colocar variables grandes secuencialmente (no se empaquetan)
+// Retorna el offset final (startOffset + bytes ocupados).
+int TypeChecker::assignOffsets(vector<VarDecl*>& vars, int startOffset) {
     int nextOffset = startOffset;
-    for (auto v : large) {
+    for (auto v : vars) {
+        int slotSize = v->memSize > 8 ? v->memSize : 8;
         v->offset = nextOffset;
-        nextOffset += v->memSize;
+        nextOffset += slotSize;
     }
-
-    // Variables pequeñas (<= 8 bytes): empaquetar con bin packing
-    // Ordenar por tamaño descendente (8, 4, 1) para mejor empaquetamiento
-    sort(small.begin(), small.end(), [](VarDecl* a, VarDecl* b) {
-        return a->memSize > b->memSize;
-    });
-
-    // Slots de 8 bytes para bin packing
-    struct Slot {
-        int used = 0;  // bytes usados en este slot
-    };
-    vector<Slot> slots;
-    slots.push_back(Slot());
-
-    for (auto v : small) {
-        int size = v->memSize;
-        if (size == 0) continue;
-        bool placed = false;
-
-        for (size_t i = 0; i < slots.size(); i++) {
-            int align = size;
-            if (align > 8) align = 8;
-
-            int offsetInSlot = slots[i].used;
-            if (offsetInSlot % align != 0) {
-                offsetInSlot += align - (offsetInSlot % align);
-            }
-
-            if (offsetInSlot + size <= 8) {
-                v->offset = nextOffset + i * 8 + offsetInSlot;
-                slots[i].used = offsetInSlot + size;
-                placed = true;
-                break;
-            }
-        }
-
-        if (!placed) {
-            v->offset = nextOffset + slots.size() * 8;
-            slots.push_back(Slot{size});
-        }
-    }
+    return nextOffset;
 }
 
 // -----------------------------------------------------------
