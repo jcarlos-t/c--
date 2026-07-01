@@ -119,7 +119,6 @@ void GenCodeVisitor::generate(Program *p) {
 
     // --- Sección .text ---
     out << "\n.text\n";
-    out << ".globl main\n";  // main visible al linker
 
     // Generar código para cada función declarada
     for (auto f : p->functions)
