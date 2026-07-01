@@ -1929,3 +1929,725 @@ functions["main"] = FuncInfo{
 //   resolvedType: intType
 // - Return: verificar d es int
 ```
+
+---
+
+## 7. Strings en C--
+
+### 7.1 Representación de Strings
+
+C-- no tiene un tipo `string` nativo en `semantic_types.h`. Los strings literales se representan como punteros a caracteres (`char*`).
+
+**AST:**
+
+```cpp
+class StringLiteralNode : public Exp {
+public:
+    string value;
+    StringLiteralNode(const string& v);
+};
+```
+
+**TypeChecker:**
+
+```cpp
+void TypeChecker::visit(StringLiteralNode* e) {
+    // Tratado como puntero a char (char*)
+    PointerType* pt = new PointerType(charType);
+    typeCache.push_back(pt);
+    e->resolvedType = pt;
+}
+```
+
+**Ejemplo:**
+
+```c
+// Código fuente
+char* s = "hola mundo";
+```
+
+```cpp
+// AST
+VarDecl {
+    type: PointerTypeNode(PrimitiveTypeNode(CHAR)),
+    name: "s",
+    initializer: StringLiteralNode("hola mundo")
+}
+
+// Después de type_from_ast()
+s->type: PointerType{base: charType}
+
+// Después de visit(StringLiteralNode)
+s->initializer->resolvedType = PointerType{base: charType}
+```
+
+### 7.2 Code Generation para Strings
+
+Los strings se almacenan en la sección `.rodata` (read-only data) con labels únicos `.LstrN`.
+
+**GenCodeVisitor::visit(StringLiteralNode):**
+
+```cpp
+void GenCodeVisitor::visit(StringLiteralNode* e) {
+    auto it = stringLabels.find(e->value);
+    int lbl;
+    if (it == stringLabels.end()) {
+        lbl = (int)stringLabels.size();
+        stringLabels[e->value] = lbl;
+        out << ".section .rodata\n";
+        out << ".Lstr" << lbl << ": .string \"" << e->value << "\"\n";
+        out << ".text\n";
+    } else {
+        lbl = it->second;
+    }
+    out << "  leaq .Lstr" << lbl << "(%rip), %rax\n";
+}
+```
+
+**Ejemplo:**
+
+```c
+// Código fuente
+int main() {
+    char* s = "hola";
+    printf("%s\n", s);
+    return 0;
+}
+```
+
+```asm
+.data
+print_fmt: .string "%ld\n"
+println_fmt: .string "\n"
+
+.text
+
+.globl main
+main:
+  pushq %rbp
+  movq %rsp, %rbp
+  subq $16, %rsp
+.section .rodata
+.Lstr0: .string "hola"
+.text
+  leaq .Lstr0(%rip), %rax
+  movq %rax, -8(%rbp)
+.section .rodata
+.Lfmt1: .string "%s\n"
+.text
+  movq -8(%rbp), %rax
+  movq %rax, %rsi
+  leaq .Lfmt1(%rip), %rdi
+  movq $0, %rax
+  call printf@PLT
+  movq $0, %rax
+  movq $0, %rax
+  jmp .end_main
+.end_main:
+  leave
+  ret
+```
+
+### 7.3 Limitaciones del Soporte de Strings
+
+**Operaciones NO soportadas:**
+- Concatenación: `"a" + "b"` → error
+- Comparación de contenido: `s1 == s2` → compara direcciones, no contenido
+- Longitud: `strlen(s)` → no es función nativa
+- Mutación: strings son read-only en `.rodata`
+
+**Operaciones soportadas:**
+- Asignación: `char* s = "hola"` → ✓
+- Paso a funciones: `printf("%s", s)` → ✓
+- Indexación: `s[0]` → devuelve char (como puntero a char)
+- Copia de punteros: `char* s2 = s` → ✓
+
+---
+
+## 8. Punteros y Memoria Dinámica
+
+### 8.1 Tipos de Punteros
+
+**PointerType en semantic_types.h:**
+
+```cpp
+class PointerType : public Type {
+public:
+    Type* base;  // tipo apuntado
+    
+    PointerType(Type* b) : Type(POINTER), base(b) {}
+    
+    bool match(Type* t) const override {
+        if (t->ttype != POINTER) return false;
+        PointerType* pt = (PointerType*)t;
+        return base->match(pt->base);  // equivalencia estructural
+    }
+    
+    int size() const override {
+        return 8;  // tamaño de puntero en x86-64
+    }
+};
+```
+
+**Ejemplo:**
+
+```c
+// Código fuente
+int* ptr;
+float* fptr;
+int** ptrptr;
+```
+
+```cpp
+// Después de type_from_ast()
+ptr->resolvedType = PointerType{base: intType}
+fptr->resolvedType = PointerType{base: floatType}
+ptrptr->resolvedType = PointerType{base: PointerType{base: intType}}
+```
+
+### 8.2 Coerción de Punteros
+
+C-- permite coerción laxa entre punteros: cualquier puntero puede asignarse a cualquier puntero.
+
+**TypeChecker::check_assign:**
+
+```cpp
+bool TypeChecker::check_assign(Type* target, Type* value) {
+    if (target->match(value)) return true;
+    // Cualquier puntero a cualquier puntero (coerción laxa)
+    if (target->ttype == Type::POINTER && value->ttype == Type::POINTER) return true;
+    // ...
+}
+```
+
+**Ejemplo:**
+
+```c
+// Código fuente
+int* iptr;
+float* fptr;
+void* vptr;
+
+iptr = fptr;  // ✓ permitido (coerción laxa)
+vptr = iptr;  // ✓ permitido
+```
+
+### 8.3 Memoria Dinámica (malloc/free)
+
+C-- no tiene operadores `new`/`delete` nativos. Se usa `malloc` y `free` de libc.
+
+**Ejemplo:**
+
+```c
+// Código fuente
+int main() {
+    int* arr = malloc(4 * sizeof(int));
+    arr[0] = 10;
+    arr[1] = 20;
+    free(arr);
+    return 0;
+}
+```
+
+**TypeChecker:**
+- `malloc` se declara como función externa
+- Retorna `void*` que se convierte a `int*` por coerción de punteros
+
+**Code Generation:**
+- Llamada a `malloc@PLT`
+- Llamada a `free@PLT`
+
+### 8.4 Aritmética de Punteros
+
+C-- soporta aritmética básica de punteros a través de indexación.
+
+**Ejemplo:**
+
+```c
+// Código fuente
+int* arr = malloc(4 * sizeof(int));
+arr[0] = 10;  // *(arr + 0)
+arr[1] = 20;  // *(arr + 1)
+```
+
+**GenCodeVisitor::visit(IndexNode):**
+
+```cpp
+void GenCodeVisitor::visit(IndexNode* e) {
+    // Calcular dirección: base + index * sizeof(base)
+    // Cargar valor de esa dirección
+}
+```
+
+---
+
+## 9. Inferencia, Conversión y Promoción de Tipos
+
+### 9.1 Inferencia de Tipos (auto)
+
+C-- soporta inferencia de tipos con la palabra clave `auto`.
+
+**TypeChecker::visit(VarDecl):**
+
+```cpp
+void TypeChecker::visit(VarDecl* v) {
+    if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(v->type)) {
+        if (pt->prim == PrimitiveTypeNode::AUTO) {
+            if (!v->initializer) {
+                error("variable 'auto' requiere inicializador.");
+                return;
+            }
+            v->initializer->accept(this);
+            v->resolvedType = v->initializer->resolvedType;
+            v->memSize = v->resolvedType->size();
+            return;
+        }
+    }
+    // ...
+}
+```
+
+**Ejemplo:**
+
+```c
+// Código fuente
+auto x = 10;        // x → int
+auto y = 3.14;      // y → float
+auto z = "hola";    // z → char*
+```
+
+```cpp
+// Después de typechecking
+x->resolvedType = intType
+y->resolvedType = floatType
+z->resolvedType = PointerType{base: charType}
+```
+
+### 9.2 Reglas de Conversión (check_assign)
+
+**Función check_assign:**
+
+```cpp
+bool TypeChecker::check_assign(Type* target, Type* value) {
+    // 1. Tipos idénticos
+    if (target->match(value)) return true;
+    
+    // 2. Puntero a puntero (coerción laxa)
+    if (target->ttype == Type::POINTER && value->ttype == Type::POINTER) return true;
+    
+    // 3. char ↔ int (truncamiento/promoción)
+    if (target->ttype == Type::CHAR && value->ttype == Type::INT) return true;
+    if (target->ttype == Type::INT && value->ttype == Type::CHAR) return true;
+    
+    // 4. int/char → float/double (promoción aritmética)
+    if (target->ttype == Type::FLOAT && is_integral_type(value)) return true;
+    if (target->ttype == Type::DOUBLE && is_integral_type(value)) return true;
+    
+    // 5. float → double (promoción)
+    if (target->ttype == Type::DOUBLE && value->ttype == Type::FLOAT) return true;
+    
+    // 6. int/char → bool (conversión implícita)
+    if (target->ttype == Type::BOOL && is_integral_type(value)) return true;
+    
+    return false;
+}
+```
+
+**Tabla de Conversiones Permitidas:**
+
+| Target | Value | ¿Permitido? | Nota |
+|--------|-------|-------------|------|
+| `int` | `int` | ✓ | Idénticos |
+| `int` | `char` | ✓ | Promoción |
+| `char` | `int` | ✓ | Truncamiento |
+| `float` | `int` | ✓ | Promoción |
+| `float` | `char` | ✓ | Promoción |
+| `double` | `int` | ✓ | Promoción |
+| `double` | `float` | ✓ | Promoción |
+| `bool` | `int` | ✓ | Conversión |
+| `bool` | `char` | ✓ | Conversión |
+| `int*` | `float*` | ✓ | Coerción laxa |
+| `int` | `float` | ✗ | No permitido |
+
+**Ejemplos:**
+
+```c
+// Código fuente
+int x = 10;
+char c = 'a';
+float f = 3.14;
+double d = 2.71;
+
+x = c;      // ✓ char → int (promoción)
+c = x;      // ✓ int → char (truncamiento)
+f = x;      // ✓ int → float (promoción)
+d = f;      // ✓ float → double (promoción)
+x = f;      // ✗ float → int (no permitido)
+```
+
+### 9.3 Promoción en Operaciones Aritméticas
+
+**TypeChecker::visit(BinaryOpNode):**
+
+```cpp
+void TypeChecker::visit(BinaryOpNode* e) {
+    e->left->accept(this);
+    e->right->accept(this);
+    
+    Type* left = e->left->resolvedType;
+    Type* right = e->right->resolvedType;
+    
+    // Reglas de promoción para +, -, *, /
+    if (is_arithmetic_type(left) && is_arithmetic_type(right)) {
+        if (left->ttype == Type::DOUBLE || right->ttype == Type::DOUBLE) {
+            e->resolvedType = doubleType;
+        } else if (left->ttype == Type::FLOAT || right->ttype == Type::FLOAT) {
+            e->resolvedType = floatType;
+        } else {
+            e->resolvedType = intType;  // int o char promocionan a int
+        }
+        return;
+    }
+    // ...
+}
+```
+
+**Ejemplos:**
+
+```c
+// Código fuente
+int x = 10;
+float f = 3.14;
+double d = 2.71;
+
+auto r1 = x + x;    // int + int → int
+auto r2 = x + f;    // int + float → float
+auto r3 = f + d;    // float + double → double
+auto r4 = d + x;    // double + int → double
+```
+
+---
+
+## 10. Arreglos Multidimensionales
+
+### 10.1 Representación de Arreglos Multidimensionales
+
+Los arreglos multidimensionales se representan como `ArrayType` anidados.
+
+**ArrayType en semantic_types.h:**
+
+```cpp
+class ArrayType : public Type {
+public:
+    Type* base;    // tipo de elemento
+    int length;    // tamaño (-1 para flexible)
+    
+    ArrayType(Type* b, int len) : Type(ARRAY), base(b), length(len) {}
+    
+    int size() const override {
+        if (length < 0) return 8;  // puntero para flexible
+        return base->size() * length;
+    }
+};
+```
+
+**Ejemplo:**
+
+```c
+// Código fuente
+int matrix[2][3];
+int cube[2][3][4];
+```
+
+```cpp
+// Después de type_from_ast()
+matrix->resolvedType = ArrayType{
+    base: ArrayType{base: intType, length: 3},
+    length: 2
+}
+
+cube->resolvedType = ArrayType{
+    base: ArrayType{
+        base: ArrayType{base: intType, length: 4},
+        length: 3
+    },
+    length: 2
+}
+```
+
+### 10.2 Indexación de Arreglos Multidimensionales
+
+**TypeChecker::visit(IndexNode):**
+
+```cpp
+void TypeChecker::visit(IndexNode* e) {
+    e->base->accept(this);
+    Type* baseType = e->base->resolvedType;
+    
+    if (baseType->ttype == Type::ARRAY) {
+        ArrayType* at = (ArrayType*)baseType;
+        e->resolvedType = at->base;  // tipo del elemento
+    } else if (baseType->ttype == Type::POINTER) {
+        PointerType* pt = (PointerType*)baseType;
+        e->resolvedType = pt->base;  // tipo apuntado
+    }
+}
+```
+
+**Ejemplo:**
+
+```c
+// Código fuente
+int matrix[2][3];
+int x = matrix[0][1];
+```
+
+```cpp
+// Flujo de typechecking
+
+// matrix[0]
+baseType = ArrayType{base: ArrayType{base: intType, length: 3}, length: 2}
+resolvedType = ArrayType{base: intType, length: 3}
+
+// matrix[0][1]
+baseType = ArrayType{base: intType, length: 3}
+resolvedType = intType
+
+// x = matrix[0][1]
+targetType = intType
+valueType = intType
+check_assign(intType, intType) → true
+```
+
+### 10.3 Code Generation para Arreglos Multidimensionales
+
+**GenCodeVisitor::visit(IndexNode):**
+
+```cpp
+void GenCodeVisitor::visit(IndexNode* e) {
+    // Para matrix[i][j]:
+    // 1. Calcular dirección de matrix[i]: base + i * sizeof(row)
+    // 2. Calcular dirección de matrix[i][j]: row + j * sizeof(int)
+    // 3. Cargar valor de esa dirección
+}
+```
+
+**Ejemplo:**
+
+```c
+// Código fuente
+int matrix[2][3] = {{1, 2, 3}, {4, 5, 6}};
+int x = matrix[1][2];  // x = 6
+```
+
+```asm
+# Cálculo de matrix[1][2]
+movq matrix(%rip), %rax        # dirección de matrix
+movq $1, %rcx                  # índice i = 1
+imulq $12, %rcx                # i * sizeof(row) = 1 * 12
+addq %rcx, %rax                # dirección de matrix[1]
+movq $2, %rcx                  # índice j = 2
+imulq $4, %rcx                 # j * sizeof(int) = 2 * 4
+addq %rcx, %rax                # dirección de matrix[1][2]
+movl (%rax), %eax              # cargar valor
+```
+
+---
+
+## 11. Funciones Lambda
+
+### 11.1 Sintaxis de Lambdas
+
+C-- soporta funciones lambda con capturas opcionales.
+
+**Sintaxis:**
+
+```c
+[capture_list] (parameter_list) -> return_type { body }
+```
+
+**AST:**
+
+```cpp
+class LambdaExprNode : public Exp {
+public:
+    vector<string> captures;  // variables capturadas
+    vector<VarDecl*> params;  // parámetros
+    Exp* return_type;         // tipo de retorno
+    Body* body;               // cuerpo de la lambda
+};
+```
+
+**Ejemplo:**
+
+```c
+// Código fuente
+auto add = [](int a, int b) -> int {
+    return a + b;
+};
+
+int result = add(3, 4);
+```
+
+### 11.2 Typechecking de Lambdas
+
+**TypeChecker::visit(LambdaExprNode):**
+
+```cpp
+void TypeChecker::visit(LambdaExprNode* e) {
+    // Abrir scope para capturas
+    env.add_level();
+    varEnv.add_level();
+    
+    // Registrar capturas
+    for (auto cap : e->captures) {
+        Type* capType = env.lookup(cap);
+        if (!capType) {
+            error("variable '" + cap + "' no declarada en contexto de captura.");
+            return;
+        }
+        env.add_var(cap, capType);
+    }
+    
+    // Typecheck parámetros y body
+    for (auto p : e->params) {
+        Type* pt = type_from_ast(p->type);
+        p->resolvedType = pt;
+        bind_var_decl(p);
+    }
+    
+    e->return_type->accept(this);
+    retornodefuncion = e->return_type->resolvedType;
+    
+    e->body->accept(this);
+    
+    // Cerrar scope
+    varEnv.remove_level();
+    env.remove_level();
+    
+    // Las lambdas se tratan como punteros a función
+    e->resolvedType = intType;  // simplificación actual
+}
+```
+
+**Ejemplo:**
+
+```c
+// Código fuente
+int x = 10;
+auto lambda = [x](int y) -> int {
+    return x + y;
+};
+```
+
+```cpp
+// Flujo de typechecking
+
+// 1. Abrir scope de capturas
+env.add_level();  // ribs = [{global}, {lambda}]
+
+// 2. Registrar captura "x"
+env.lookup("x") → intType
+env.add_var("x", intType)  // ribs[1] = {"x": intType}
+
+// 3. Typecheck parámetro "y"
+y->resolvedType = intType
+bind_var_decl(y)
+
+// 4. Typecheck body
+x + y → int + int → int
+
+// 5. Cerrar scope
+varEnv.remove_level()
+env.remove_level()
+```
+
+### 11.3 Code Generation para Lambdas
+
+Las lambdas se generan como funciones anónimas con labels `.Llambda_N`.
+
+**GenCodeVisitor::visit(LambdaExprNode):**
+
+```cpp
+void GenCodeVisitor::visit(LambdaExprNode* e) {
+    string oldFuncName = funcName;
+    funcName = ".Llambda_" + to_string(lambdaCounter++);
+    
+    // Generar función anónima
+    out << funcName << ":\n";
+    out << "  pushq %rbp\n";
+    out << "  movq %rsp, %rbp\n";
+    
+    // Generar body
+    e->body->accept(this);
+    
+    out << "  leave\n";
+    out << "  ret\n";
+    
+    funcName = oldFuncName;
+    
+    // Cargar dirección de la lambda en %rax
+    out << "  leaq " << funcName << "(%rip), %rax\n";
+}
+```
+
+**Ejemplo:**
+
+```c
+// Código fuente
+auto add = [](int a, int b) -> int {
+    return a + b;
+};
+```
+
+```asm
+.Llambda_0:
+  pushq %rbp
+  movq %rsp, %rbp
+  movq %rdi, -8(%rbp)    # a
+  movq %rsi, -16(%rbp)   # b
+  movq -8(%rbp), %rax
+  addq -16(%rbp), %rax   # a + b
+  leave
+  ret
+
+main:
+  # ...
+  leaq .Llambda_0(%rip), %rax  # dirección de lambda
+  movq %rax, -8(%rbp)          # guardar en variable 'add'
+```
+
+### 11.4 Limitaciones de Lambdas
+
+**Limitaciones actuales:**
+- Las lambdas se tratan como punteros opacos (`intType`)
+- No hay verificación de tipos en llamadas a lambdas
+- Las capturas se manejan de forma simplificada
+- No hay clausuras (closures) completas
+
+**Ejemplo de limitación:**
+
+```c
+// Código fuente
+auto add = [](int a, int b) -> int { return a + b; };
+int result = add(3, 4);  // ✓ funciona pero no verifica tipos
+add(3.5, 4.5);           // ✓ acepta floats sin error (limitación)
+```
+
+---
+
+## 12. Resumen de Características de Tipos
+
+| Característica | Soporte | Notas |
+|----------------|---------|-------|
+| Tipos primitivos | ✓ | int, char, float, double, bool, void |
+| Punteros | ✓ | T* con coerción laxa |
+| Arreglos | ✓ | T[n] y multidimensionales |
+| Structs | ✓ | Con miembros y acceso por punto/flecha |
+| Templates | ✓ | Structs y funciones con parámetros de tipo |
+| Strings | Parcial | char* (no hay tipo string nativo) |
+| Lambdas | Parcial | Sintaxis completa, verificación limitada |
+| Memoria dinámica | Parcial | malloc/free de libc |
+| Inferencia (auto) | ✓ | Inferencia desde初始izador |
+| Promoción de tipos | ✓ | Reglas aritméticas estándar |
+| Conversión implícita | ✓ | char↔int, int→float, int→bool |
