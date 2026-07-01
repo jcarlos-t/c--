@@ -314,6 +314,7 @@ public:
         Exp* index = nullptr;           // índice simple (legacy / 1D)
         vector<Exp*> indices;           // índices multidimensionales
         vector<string> members;         // lista de miembros para nested structs
+        vector<bool> memberArrow;       // true si el miembro correspondiente se accedió vía ->
         string structName;              // tipo del struct inicial para buscar offsets
         bool isArrow = false;           // true si fue ptr->miembro (vs obj.miembro)
     };

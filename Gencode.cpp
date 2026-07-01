@@ -312,6 +312,17 @@ int GenCodeVisitor::array_elem_size(VarDecl* vd) const {
 //       arrayDimsFor(a) → [5]
 //
 //       int* p → [] (no es arreglo)
+// arrayDimsFromType — obtener dimensiones desde un ArrayType
+static vector<int> arrayDimsForType(Type* t) {
+    vector<int> dims;
+    while (t && t->ttype == Type::ARRAY) {
+        ArrayType* at = (ArrayType*)t;
+        if (at->length > 0) dims.push_back(at->length);
+        t = at->base;
+    }
+    return dims;
+}
+
 static vector<int> arrayDimsFor(VarDecl* vd) {
     if (!vd || !vd->resolvedType) return {};
     vector<int> dims;
@@ -427,7 +438,7 @@ void GenCodeVisitor::emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices
     auto dims = arrayDimsFor(vd);
     int elemSize = array_elem_size(vd);
 
-    if (dims.size() > 1 && indices.size() > 1) {
+    if (dims.size() > 1) {
         // Caso multidimensional: calcular índice lineal manualmente
         leaBinding(vd);
         out << "  movq %rax, %r8\n";
@@ -480,8 +491,9 @@ void GenCodeVisitor::emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices) {
     auto dims = arrayDimsFor(vd);
     int elemSize = array_elem_size(vd);
 
-    if (dims.size() > 1 && indices.size() > 1) {
+    if (dims.size() > 1) {
         emitIndexedAddress(vd, indices);
+        if (indices.size() < dims.size()) return; // result is array → leave address
         if (elemSize == 1) out << "  movzbq (%rax), %rax\n";
         else if (elemSize == 4) out << "  movslq (%rax), %rax\n";
         else out << "  movq (%rax), %rax\n";
@@ -519,7 +531,7 @@ void GenCodeVisitor::emitIndexedStore(VarDecl* vd, const vector<Exp*>& indices,
     if (elemSize == 1 && valueReg == "%rax") reg = "%al";
     else if (elemSize == 4 && valueReg == "%rax") reg = "%eax";
 
-    if (dims.size() > 1 && indices.size() > 1) {
+    if (dims.size() > 1) {
         out << "  movq %rax, %r9\n";
         emitIndexedAddress(vd, indices);
         out << "  movq %rax, %rbx\n";
@@ -593,37 +605,31 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
         vector<Exp*> indices = lv.indices;
         if (indices.empty() && lv.index)
             indices.push_back(lv.index);
-        emitIndexedStore(lv.binding, indices, "%rax");
-        break;
-    }
-    case LValKind::Member:
-    {
-        out << "  movq %rax, %rcx\n"; // Save value in %rcx
 
-        string structName = lv.structName;
-        // First, get base address in %rax
-        if (lv.isArrow && lv.binding) {
-            loadBinding(lv.binding); // p->m, load p first
-        } else if (lv.binding) {
-            leaBinding(lv.binding); // s.m, get &s
-        } else if (lv.kind == LValKind::Index) {
-            emitIndexedAddress(lv.binding, lv.indices);
-        }
-
-        // Now apply all member offsets
-        for (size_t i = 0; i < lv.members.size(); ++i) {
-            const string& m = lv.members[i];
-            int off = structFieldOffset[baseStructName(structName)][m];
-
-            if (i == lv.members.size() - 1) {
-                // Last member: store the value
-                int size = structMemberSizes[baseStructName(structName)][m];
-                string reg = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
-                out << "  " << storeInstr(size) << " " << reg << ", " << off << "(%rax)\n";
-            } else {
-                // Intermediate member: add offset and update structName
+        if (!lv.members.empty()) {
+            out << "  movq %rax, %rcx\n"; // Save value in %rcx for member path
+            // Array is a member of a struct: compute base via member chain + index offset
+            string structName = lv.structName;
+            if (lv.isArrow && lv.binding) {
+                loadBinding(lv.binding);
+            } else if (lv.binding) {
+                leaBinding(lv.binding);
+            }
+            // Determine final member type for dims/elemSize
+            Type* finalMemberType = nullptr;
+            if (!lv.members.empty() && lv.binding &&
+                structMemberTypes.count(lv.structName) &&
+                structMemberTypes[lv.structName].count(lv.members.back())) {
+                finalMemberType = structMemberTypes[lv.structName][lv.members.back()];
+            }
+            // Apply member offsets, loading for nested arrows
+            for (size_t i = 0; i < lv.members.size(); ++i) {
+                const string& m = lv.members[i];
+                if (i > 0 && i < lv.memberArrow.size() && lv.memberArrow[i]) {
+                    out << "  movq (%rax), %rax\n";
+                }
+                int off = structFieldOffset[baseStructName(structName)][m];
                 out << "  addq $" << off << ", %rax\n";
-                // Update structName to type of this member for next iteration
                 if (structMemberTypes.count(baseStructName(structName)) &&
                     structMemberTypes[baseStructName(structName)].count(m)) {
                     Type* mt = structMemberTypes[baseStructName(structName)][m];
@@ -637,6 +643,136 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
                     }
                 }
             }
+            // If final member is a pointer, load to get array address
+            if (finalMemberType && finalMemberType->ttype == Type::POINTER) {
+                out << "  movq (%rax), %rax\n";
+            }
+            // Get array dims and elemSize from the final member type
+            vector<int> dims = (finalMemberType && finalMemberType->ttype == Type::ARRAY)
+                ? arrayDimsForType(finalMemberType) : vector<int>();
+            int elemSize = 4;
+            if (finalMemberType && finalMemberType->ttype == Type::ARRAY) {
+                ArrayType* at = static_cast<ArrayType*>(finalMemberType);
+                while (at->base && at->base->ttype == Type::ARRAY) at = static_cast<ArrayType*>(at->base);
+                if (at->base) elemSize = at->base->size();
+            } else if (finalMemberType && finalMemberType->ttype == Type::POINTER) {
+                PointerType* pt = static_cast<PointerType*>(finalMemberType);
+                if (pt->base) elemSize = pt->base->size();
+            }
+            // Compute linear index with proper strides
+            out << "  pushq %rax\n";
+            out << "  movq $0, %r10\n";
+            for (size_t d = 0; d < indices.size(); d++) {
+                indices[d]->accept(this);
+                int stride = 1;
+                if (dims.size() > 1 && d + 1 < dims.size()) {
+                    for (size_t s = d + 1; s < dims.size(); s++)
+                        stride *= dims[s];
+                }
+                if (stride != 1) {
+                    out << "  movq $" << stride << ", %rdi\n";
+                    out << "  imulq %rdi, %rax\n";
+                }
+                out << "  addq %rax, %r10\n";
+            }
+            out << "  popq %rax\n";
+            // %rax = base address, %r10 = linear index, elemSize = element size
+            if (elemSize == 4) {
+                out << "  leaq (%rax,%r10,4), %rax\n";
+            } else if (elemSize == 8) {
+                out << "  leaq (%rax,%r10,8), %rax\n";
+            } else if (elemSize == 1) {
+                out << "  addq %r10, %rax\n";
+            } else {
+                out << "  movq %rax, %rdi\n";
+                out << "  movq %r10, %rax\n";
+                out << "  movq $" << elemSize << ", %r11\n";
+                out << "  imulq %r11, %rax\n";
+                out << "  addq %rdi, %rax\n";
+            }
+            string reg = (elemSize == 1) ? "%cl" : (elemSize == 4) ? "%ecx" : "%rcx";
+            out << "  " << storeInstr(elemSize) << " " << reg << ", (%rax)\n";
+        } else {
+            emitIndexedStore(lv.binding, indices, "%rax");
+        }
+        break;
+    }
+    case LValKind::Member:
+    {
+        out << "  movq %rax, %rcx\n"; // Save value in %rcx
+
+        string structName = lv.structName;
+        // First, get base address in %rax
+        if (lv.isArrow && lv.binding) {
+            loadBinding(lv.binding); // p->m, load p first
+        } else if (lv.binding) {
+            leaBinding(lv.binding); // s.m, get &s
+        }
+
+        // Apply ALL member offsets to compute address of final member.
+        // For members accessed via -> (arrow), first load the pointer value
+        // at the current address before adding the offset (nested arrows).
+        for (size_t i = 0; i < lv.members.size(); ++i) {
+            const string& m = lv.members[i];
+            // If this member was accessed via -> and it's not the first level
+            // (first level handled by initial loadBinding for isArrow),
+            // load the pointer value at current address before adding offset.
+            if (i > 0 && i < lv.memberArrow.size() && lv.memberArrow[i]) {
+                out << "  movq (%rax), %rax\n";
+            }
+            int off = structFieldOffset[baseStructName(structName)][m];
+            out << "  addq $" << off << ", %rax\n";
+            // Update structName to type of this member for next iteration
+            if (structMemberTypes.count(baseStructName(structName)) &&
+                structMemberTypes[baseStructName(structName)].count(m)) {
+                Type* mt = structMemberTypes[baseStructName(structName)][m];
+                if (mt->ttype == Type::STRUCT) {
+                    structName = ((StructType*)mt)->name;
+                } else if (mt->ttype == Type::POINTER) {
+                    PointerType* pt = (PointerType*)mt;
+                    if (pt->base && pt->base->ttype == Type::STRUCT) {
+                        structName = ((StructType*)pt->base)->name;
+                    }
+                }
+            }
+        }
+
+        // If there are indices (member is an array), apply the index offset
+        if (!lv.indices.empty()) {
+            out << "  pushq %rax\n"; // save base address of the array member
+            // Get elemSize from the resolved type of the final member
+            int elemSize = 4;
+            if (!lv.members.empty() &&
+                structMemberTypes.count(baseStructName(structName)) &&
+                structMemberTypes[baseStructName(structName)].count(lv.members.back())) {
+                Type* mt = structMemberTypes[baseStructName(structName)][lv.members.back()];
+                if (mt && mt->ttype == Type::ARRAY) {
+                    ArrayType* at = static_cast<ArrayType*>(mt);
+                    if (at->base) elemSize = at->base->size();
+                }
+            }
+
+            // Compute linear offset from indices (como emitIndexedAddress)
+            out << "  movq $0, %r10\n";
+            for (size_t d = 0; d < lv.indices.size(); d++) {
+                lv.indices[d]->accept(this);
+                if (elemSize != 1) {
+                    out << "  movq $" << elemSize << ", %rcx\n";
+                    out << "  imulq %rcx, %rax\n";
+                }
+                out << "  addq %rax, %r10\n";
+            }
+            out << "  popq %rax\n";
+            out << "  addq %r10, %rax\n";
+
+            // Store value (%rcx) at final address
+            string reg = (elemSize == 1) ? "%cl" : (elemSize == 4) ? "%ecx" : "%rcx";
+            out << "  " << storeInstr(elemSize) << " " << reg << ", (%rax)\n";
+        } else {
+            // No indices: store at the final member address (%rax = &member)
+            int size = structMemberSizes[baseStructName(structName)][lv.members.back()];
+            string reg = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
+            out << "  " << storeInstr(size) << " " << reg << ", (%rax)\n";
         }
         break;
     }
@@ -1074,35 +1210,40 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
         out << "  movzbq %al, %rax\n";
         break;
     case UnaryOp::PRE_INC:
-        // ++x: incrementa y guarda el nuevo valor.
-        // Limitación: solo si el operando es IdentifierNode directo (no a[i]++).
+    {
+        // ++x: incrementa y guarda el nuevo valor
+        LVal preLv = captureLVal(e->operand);
         out << "  inc" << suffix << " " << reg << "\n";
-        if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
-            storeBinding(id->binding);
+        storeTarget(preLv);
         break;
+    }
     case UnaryOp::PRE_DEC:
+    {
         // --x: decrementa y guarda
+        LVal preLv = captureLVal(e->operand);
         out << "  dec" << suffix << " " << reg << "\n";
-        if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
-            storeBinding(id->binding);
+        storeTarget(preLv);
         break;
+    }
     case UnaryOp::POST_INC:
+    {
         // x++: guarda valor original (push), incrementa, store, restaura (pop)
-        if (auto *id = dynamic_cast<IdentifierNode *>(e->operand)) {
-            out << "  pushq %rax\n";
-            out << "  inc" << suffix << " " << reg << "\n";
-            storeBinding(id->binding);
-            out << "  popq %rax\n";
-        }
+        LVal postLv = captureLVal(e->operand);
+        out << "  pushq %rax\n";
+        out << "  inc" << suffix << " " << reg << "\n";
+        storeTarget(postLv);
+        out << "  popq %rax\n";
         break;
+    }
     case UnaryOp::POST_DEC:
-        if (auto *id = dynamic_cast<IdentifierNode *>(e->operand)) {
-            out << "  pushq %rax\n";
-            out << "  dec" << suffix << " " << reg << "\n";
-            storeBinding(id->binding);
-            out << "  popq %rax\n";
-        }
+    {
+        LVal postLv = captureLVal(e->operand);
+        out << "  pushq %rax\n";
+        out << "  dec" << suffix << " " << reg << "\n";
+        storeTarget(postLv);
+        out << "  popq %rax\n";
         break;
+    }
     case UnaryOp::ADDR:
         // &x: dirección de variable
         if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
@@ -1302,29 +1443,66 @@ void GenCodeVisitor::visit(FcallNode *e) {
 //       a[i] (valor)   → emitIndexedLoad(a, [i]) → carga en %rax
 void GenCodeVisitor::visit(IndexNode *e) {
     if (lvalTarget) {
+        // Recurse into base to capture its LVal, then append our index
+        LVal objLVal;
+        LVal* oldTarget = lvalTarget;
+        lvalTarget = &objLVal;
+        e->base->accept(this);
+        lvalTarget = oldTarget;
+
+        *lvalTarget = objLVal;
         lvalTarget->kind = LValKind::Index;
-        vector<Exp*> indices;
-        Exp* b = nullptr;
-        collectIndices(e, indices, b);
-        if (auto *id = dynamic_cast<IdentifierNode *>(b)) {
-            lvalTarget->name = id->name;
-            lvalTarget->binding = id->binding;
-        }
-        lvalTarget->indices = indices;
-        if (!indices.empty())
-            lvalTarget->index = indices.back();
+        lvalTarget->indices.push_back(e->index);
         return;
     }
 
-    vector<Exp*> indices;
-    Exp* b = nullptr;
-    collectIndices(e, indices, b);
+    // --- Value path ---
+    // Primero intentar collectIndices para arrays planos (a[i][j])
+    if (dynamic_cast<IdentifierNode*>(e->base)) {
+        vector<Exp*> indices;
+        Exp* b = nullptr;
+        collectIndices(e, indices, b);
+        if (auto* id = dynamic_cast<IdentifierNode*>(b)) {
+            if (e->resolvedType && e->resolvedType->ttype == Type::ARRAY) {
+                emitIndexedAddress(id->binding, indices);
+            } else {
+                emitIndexedLoad(id->binding, indices);
+            }
+            return;
+        }
+    }
 
-    VarDecl* arrBinding = nullptr;
-    if (auto* id = dynamic_cast<IdentifierNode*>(b))
-        arrBinding = id->binding;
+    // Path general: evaluar base recursivamente, luego aplicar índice
+    e->base->accept(this); // retorna dirección para arrays, valor para escalares
+    out << "  pushq %rax\n";
+    e->index->accept(this);
+    out << "  movq %rax, %rcx\n";
 
-    emitIndexedLoad(arrBinding, indices);
+    // Element size = sizeof(inner type del array base)
+    int elemSize = 4;
+    if (e->resolvedType) elemSize = e->resolvedType->size();
+    Type* baseType = e->base->resolvedType;
+    if (baseType && baseType->ttype == Type::ARRAY) {
+        ArrayType* at = static_cast<ArrayType*>(baseType);
+        if (at->base) elemSize = at->base->size();
+    }
+
+    if (elemSize != 1) {
+        out << "  movq $" << elemSize << ", %rax\n";
+        out << "  imulq %rcx, %rax\n";
+        out << "  movq %rax, %rcx\n";
+    }
+    out << "  popq %rax\n";
+    out << "  addq %rcx, %rax\n";
+
+    // Si el resultado NO es un array, cargar valor desde la dirección
+    if (!(e->resolvedType && e->resolvedType->ttype == Type::ARRAY)) {
+        int loadSize = 4;
+        if (e->resolvedType) loadSize = e->resolvedType->size();
+        if (loadSize == 1) out << "  movzbq (%rax), %rax\n";
+        else if (loadSize == 4) out << "  movslq (%rax), %rax\n";
+        else out << "  movq (%rax), %rax\n";
+    }
 }
 
 // -----------------------------------------------------------
@@ -1343,11 +1521,11 @@ void GenCodeVisitor::visit(MemberAccessNode *e) {
         e->object->accept(this);
         lvalTarget = oldTarget;
 
-        // Merge into target lval
+        // Merge into target lval (preserve isArrow from inner LVal)
         *lvalTarget = objLVal;
         lvalTarget->kind = LValKind::Member; // <-- Critical! Set kind to Member!
         lvalTarget->members.push_back(e->member);
-        lvalTarget->isArrow = false;
+        lvalTarget->memberArrow.push_back(false);
         if (lvalTarget->structName.empty()) {
             Type* objType = e->object->resolvedType;
             if (objType && objType->ttype == Type::STRUCT) {
@@ -1379,11 +1557,20 @@ void GenCodeVisitor::visit(MemberAccessNode *e) {
     } else if (objLVal.kind == LValKind::Member) {
         // Need to compute address step by step, applying existing member offsets
         if (objLVal.binding) {
-            leaBinding(objLVal.binding);
+            if (objLVal.isArrow) {
+                loadBinding(objLVal.binding); // p->m: load pointer value
+            } else {
+                leaBinding(objLVal.binding);   // s.m: get address of struct
+            }
         }
         // Apply existing members and track currentStructName
         currentStructName = objLVal.structName;
-        for (const string& m : objLVal.members) {
+        for (size_t i = 0; i < objLVal.members.size(); ++i) {
+            const string& m = objLVal.members[i];
+            // For nested arrow accesses, load pointer value before adding offset
+            if (i > 0 && i < objLVal.memberArrow.size() && objLVal.memberArrow[i]) {
+                out << "  movq (%rax), %rax\n";
+            }
             int off = structFieldOffset[baseStructName(currentStructName)][m];
             out << "  addq $" << off << ", %rax\n";
             // Update to type of this member
@@ -1392,6 +1579,11 @@ void GenCodeVisitor::visit(MemberAccessNode *e) {
                 Type* mt = structMemberTypes[baseStructName(currentStructName)][m];
                 if (mt->ttype == Type::STRUCT) {
                     currentStructName = ((StructType*)mt)->name;
+                } else if (mt->ttype == Type::POINTER) {
+                    PointerType* pt = (PointerType*)mt;
+                    if (pt->base && pt->base->ttype == Type::STRUCT) {
+                        currentStructName = ((StructType*)pt->base)->name;
+                    }
                 }
             }
         }
@@ -1406,8 +1598,17 @@ void GenCodeVisitor::visit(MemberAccessNode *e) {
         }
     }
 
-    // Now add offset for final member and load the value!
+    // Add offset for final member
     int off = structFieldOffset[baseStructName(currentStructName)][e->member];
+    // Si el miembro es un array, dejar dirección en %rax (no cargar valor)
+    if (structMemberTypes.count(baseStructName(currentStructName)) &&
+        structMemberTypes[baseStructName(currentStructName)].count(e->member)) {
+        Type* mt = structMemberTypes[baseStructName(currentStructName)][e->member];
+        if (mt && mt->ttype == Type::ARRAY) {
+            out << "  addq $" << off << ", %rax\n";
+            return;
+        }
+    }
     int size = structMemberSizes[baseStructName(currentStructName)][e->member];
     out << "  " << loadInstr(size) << " " << off << "(%rax), %rax\n";
 }
@@ -1431,6 +1632,7 @@ void GenCodeVisitor::visit(ArrowAccessNode *e) {
         *lvalTarget = ptrLVal;
         lvalTarget->kind = LValKind::Member; // Critical! Set kind to Member!
         lvalTarget->members.push_back(e->member);
+        lvalTarget->memberArrow.push_back(true);
         lvalTarget->isArrow = true;
         if (lvalTarget->structName.empty()) {
             Type* ptrType = e->pointer->resolvedType;
@@ -1454,8 +1656,14 @@ void GenCodeVisitor::visit(ArrowAccessNode *e) {
         }
     }
     int off = structFieldOffset[baseStructName(structName)][e->member];
-    int size = structMemberSizes[baseStructName(structName)][e->member];
-    out << "  " << loadInstr(size) << " " << off << "(%rax), %rax\n";
+    // Si el miembro es un array, dejar dirección en %rax (no cargar valor)
+    Type* mt = structMemberTypes[baseStructName(structName)][e->member];
+    if (mt && mt->ttype == Type::ARRAY) {
+        out << "  addq $" << off << ", %rax\n";
+    } else {
+        int size = structMemberSizes[baseStructName(structName)][e->member];
+        out << "  " << loadInstr(size) << " " << off << "(%rax), %rax\n";
+    }
 }
 
 // -----------------------------------------------------------
