@@ -27,13 +27,7 @@ jobs:
 
     - name: Smoke test
       run: |
-        cat > /tmp/smoke.cnn << 'EOF'
-int main() {
-  printf(42);
-  return 0;
-}
-EOF
-        ./c-- /tmp/smoke.cnn --codegen > /dev/null
+        ./c-- tests/integracion/test01_funciones.cnn --codegen > /dev/null
         echo "Smoke test passed"
 
     - name: Determine tag and create release
