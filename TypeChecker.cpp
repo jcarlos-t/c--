@@ -100,6 +100,7 @@ TypeChecker::TypeChecker() {
     retornodefuncion = nullptr;          // se setea al entrar a cada función
     loopDepth = 0;                       // sin loops activos
     switchDepth = 0;                     // sin switches activos
+    functionDepth = 0;
     hasError = false;
 }
 
@@ -516,6 +517,7 @@ void TypeChecker::visit(Program* p) {
 void TypeChecker::visit(FunDecl* f) {
     env.add_level();
     varEnv.add_level();
+    functionDepth++;
 
     retornodefuncion = type_from_ast(f->return_type);
 
@@ -528,6 +530,7 @@ void TypeChecker::visit(FunDecl* f) {
         p->memSize = t->size();
         p->resolvedType = t;
         params.push_back(p);
+        initialized_vars.insert(p);
     }
 
     // Asignar offsets a parámetros (8 bytes por variable)
@@ -618,6 +621,7 @@ void TypeChecker::visit(FunDecl* f) {
 
     varEnv.remove_level();
     env.remove_level();
+    functionDepth--;
 }
 
 // -----------------------------------------------------------
@@ -729,6 +733,29 @@ void TypeChecker::visit(VarDecl* v) {
             }
         }
         bind_var_decl(v);
+        // Validar lista de inicialización
+        if (!v->init_list.empty()) {
+            Type* t = v->resolvedType;
+            if (t->ttype != Type::ARRAY) {
+                error("lista de inicialización '{...}' solo válida para arreglos.");
+            } else {
+                ArrayType* at = (ArrayType*)t;
+                if (at->length > 0 && (int)v->init_list.size() > at->length) {
+                    error("demasiados elementos en inicialización del arreglo '" + v->name + "'.");
+                }
+                Type* elemType = at->base;
+                for (auto initExpr : v->init_list) {
+                    initExpr->accept(this);
+                    if (!check_assign(elemType, initExpr->resolvedType)) {
+                        error("tipo incompatible en elemento de inicialización del arreglo '" + v->name + "'.");
+                    }
+                }
+            }
+        }
+        if (v->initializer || !v->init_list.empty() || v->resolvedType->ttype == Type::STRUCT ||
+            v->resolvedType->ttype == Type::ARRAY) {
+            initialized_vars.insert(v);
+        }
         return;
     }
 
@@ -781,6 +808,29 @@ void TypeChecker::visit(VarDecl* v) {
             error("tipos incompatibles en inicialización de '" + v->name + "'.");
         }
     }
+    // Verificar lista de inicialización para arreglos
+    if (!v->init_list.empty()) {
+        if (t->ttype != Type::ARRAY) {
+            error("lista de inicialización '{...}' solo válida para arreglos.");
+        } else {
+            ArrayType* at = (ArrayType*)t;
+            if (at->length > 0 && (int)v->init_list.size() > at->length) {
+                error("demasiados elementos en inicialización del arreglo '" + v->name + "'.");
+            }
+            Type* elemType = at->base;
+            for (auto initExpr : v->init_list) {
+                initExpr->accept(this);
+                if (!check_assign(elemType, initExpr->resolvedType)) {
+                    error("tipo incompatible en elemento de inicialización del arreglo '" + v->name + "'.");
+                }
+            }
+        }
+    }
+    // Marcar como inicializada: variables con inicializador explícito,
+    //       y variables de tipo struct/arreglo (se inicializan campo a campo)
+    if (v->initializer || !v->init_list.empty() || t->ttype == Type::STRUCT || t->ttype == Type::ARRAY) {
+        initialized_vars.insert(v);
+    }
 }
 
 // -----------------------------------------------------------
@@ -799,6 +849,7 @@ void TypeChecker::visit(StructDecl* s) {
 
     for (auto m : s->members) {
         Type* mt = type_from_ast(m->type);
+        m->resolvedType = mt;
         st->members[m->name] = mt;
         s->memberOffsets[m->name] = offset;
         s->memberSizes[m->name] = mt->size();
@@ -1172,13 +1223,18 @@ void TypeChecker::visit(UnaryOpNode* e) {
 //       f = 3.5 → verifica float ← float ok
 void TypeChecker::visit(AssignmentNode* e) {
     // El target debe ser l-value con resolvedType (Identifier, Index, Member, etc.).
+    isLvalContext = true;
     e->target->accept(this); Type* targetType = e->target->resolvedType;
+    isLvalContext = false;
     e->value->accept(this); Type* valueType = e->value->resolvedType;
     if (!check_assign(targetType, valueType)) {
         error("tipos incompatibles en asignación (se esperaba " +
               targetType->str() + ").");
     }
     e->resolvedType = targetType;
+    if (auto* id = dynamic_cast<IdentifierNode*>(e->target)) {
+        initialized_vars.insert(id->binding);
+    }
 }
 
 // -----------------------------------------------------------
@@ -1424,6 +1480,10 @@ void TypeChecker::visit(IdentifierNode* e) {
     }
     e->binding = vd;
     e->resolvedType = vd->resolvedType;
+    
+    if (!isLvalContext && functionDepth > 0 && initialized_vars.find(vd) == initialized_vars.end()) {
+        error("variable '" + e->name + "' usada sin inicializar.", e->loc);
+    }
 }
 
 // -----------------------------------------------------------
@@ -1487,7 +1547,10 @@ void TypeChecker::visit(SizeOfNode* e) {
 void TypeChecker::visit(LambdaExprNode* e) {
     env.add_level();
     varEnv.add_level();
-    for (auto p : e->params) p->accept(this);
+    for (auto p : e->params) {
+        p->accept(this);
+        initialized_vars.insert(p);
+    }
     // Capturas: reutilizan el VarDecl del ámbito externo (copia por valor en codegen).
     for (auto cap : e->captures) {
         VarDecl* capVd = nullptr;

@@ -1914,6 +1914,29 @@ void GenCodeVisitor::visit(VarDecl *d) {
         }
         storeBinding(d);
     }
+    if (!d->init_list.empty()) {
+        int elemSize = array_elem_size(d);
+        Type* elemType = d->resolvedType;
+        while (elemType && elemType->ttype == Type::ARRAY)
+            elemType = ((ArrayType*)elemType)->base;
+        for (size_t i = 0; i < d->init_list.size(); i++) {
+            d->init_list[i]->accept(this);
+            int off = d->offset + (int)i * elemSize;
+            if (isFloatSemanticType(elemType)) {
+                if (elemType->ttype == Type::DOUBLE) {
+                    out << "  movq %rax, %xmm7\n";
+                    out << "  movsd %xmm7, " << off << "(%rbp)\n";
+                } else {
+                    out << "  movd %eax, %xmm7\n";
+                    out << "  movss %xmm7, " << off << "(%rbp)\n";
+                }
+            } else {
+                int size = elemSize;
+                string reg = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
+                out << "  " << storeInstr(size) << " " << reg << ", " << off << "(%rbp)\n";
+            }
+        }
+    }
 }
 
 // -----------------------------------------------------------

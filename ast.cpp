@@ -145,7 +145,7 @@ FreeStmt::~FreeStmt() { delete expr; }
 // ===================== VarDecl =====================
 VarDecl::VarDecl(Exp* t, const string& n)
     : Stm(), type(t), name(n), initializer(nullptr) {}
-VarDecl::~VarDecl() { delete type; for (auto s : array_sizes) delete s; delete initializer; }
+VarDecl::~VarDecl() { delete type; for (auto s : array_sizes) delete s; delete initializer; for (auto e : init_list) delete e; }
 
 // ===================== FunDecl =====================
 FunDecl::FunDecl(Exp* rt, const string& n, Body* b)

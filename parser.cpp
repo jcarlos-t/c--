@@ -329,7 +329,17 @@ VarDecl* Parser::parse_variable_decl(Exp* type, const string& name) {
 
     // optional initializer
     if (match(Token::ASSIGN)) {
-        vd->initializer = parse_expression();
+        if (match(Token::LBRACE)) {
+            if (!match(Token::RBRACE)) {
+                vd->init_list.push_back(parse_expression());
+                while (match(Token::COMA)) {
+                    vd->init_list.push_back(parse_expression());
+                }
+                consume(Token::RBRACE, "Se esperaba '}' despues de la lista de inicialización");
+            }
+        } else {
+            vd->initializer = parse_expression();
+        }
     }
 
     consume(Token::SEMICOL, "Se esperaba ';' al final de la declaración");

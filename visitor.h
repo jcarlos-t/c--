@@ -5,6 +5,7 @@
 #include "environment.h"
 #include "semantic_types.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <string>
 #include <vector>
 #include <ostream>
@@ -138,6 +139,15 @@ private:
     // Profundidad de bucles/switch para validar break y continue.
     int loopDepth;
     int switchDepth;
+
+    // Conjunto de variables que ya han sido inicializadas o asignadas.
+    unordered_set<VarDecl*> initialized_vars;
+
+    // Profundidad de funciones (0 = global, >=1 = dentro de función).
+    int functionDepth = 0;
+
+    // Flag para omitir chequeo de inicialización en contexto l-value.
+    bool isLvalContext = false;
 
     // Acumulación de errores semánticos (no aborta en el primero).
     vector<string> errors;

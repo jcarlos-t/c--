@@ -370,6 +370,7 @@ public:
     string name;
     vector<Exp*> array_sizes; // para tamaños en arreglos [size1][size2]...
     Exp* initializer; // expresion inicial x = init;
+    vector<Exp*> init_list; // lista de inicialización: = { e1, e2, ... }
     
     // Calculados por TypeChecker
     Type* resolvedType = nullptr;  // tipo semántico resuelto

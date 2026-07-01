@@ -5,6 +5,5 @@ assembly
 inputs
 comparativa/build
 omparativa/scripts/assembly
-tests/integracion/build
 tests/individuales/outputs
 tests/edge
