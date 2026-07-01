@@ -1,0 +1,21 @@
+// Test 21: Tipo long long y unsigned
+int main() {
+    long long big;
+    big = 100000;
+    printf(big); // esperado: 100000
+
+    long long result;
+    result = big + 200000;
+    printf(result); // esperado: 300000
+
+    unsigned u;
+    u = 42;
+    printf(u); // esperado: 42
+
+    unsigned u2;
+    u2 = 100;
+    result = u + u2;
+    printf(result); // esperado: 142
+
+    return 0;
+}

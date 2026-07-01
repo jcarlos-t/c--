@@ -16,13 +16,11 @@ static const char* typeNodeName(Exp* t) {
             case PrimitiveTypeNode::FLOAT: return "float";
             case PrimitiveTypeNode::DOUBLE: return "double";
             case PrimitiveTypeNode::BOOL: return "bool";
-            case PrimitiveTypeNode::AUTO: return "auto";
+            case PrimitiveTypeNode::LONG: return "long";
         }
     }
     if (dynamic_cast<PointerTypeNode*>(t)) return "pointer";
     if (auto* s = dynamic_cast<StructTypeNode*>(t)) return s->name.c_str();
-    if (auto* n = dynamic_cast<NamedTypeNode*>(t)) return n->name.c_str();
-    if (dynamic_cast<TemplateTypeNode*>(t)) return "template_type";
     return "unknown";
 }
 
@@ -139,24 +137,6 @@ static void printExp(ostream& out, Exp* e, int level) {
         return;
     }
 
-    if (auto* lambda = dynamic_cast<LambdaExprNode*>(e)) {
-        indent(out, level);
-        out << "Lambda\n";
-        for (auto cap : lambda->captures) {
-            indent(out, level + 1);
-            out << "Capture";
-            if (cap->mode == CaptureNode::BY_REF) out << "(ref)";
-            out << ": " << cap->name << "\n";
-        }
-        for (auto param : lambda->params) {
-            printVarDecl(out, param, level + 1);
-        }
-        indent(out, level + 1);
-        out << "-> " << typeNodeName(lambda->return_type) << "\n";
-        printStm(out, lambda->body, level + 1);
-        return;
-    }
-
     if (auto* id = dynamic_cast<IdentifierNode*>(e)) {
         indent(out, level);
         out << "Identifier: " << id->name << "\n";
@@ -218,18 +198,6 @@ static void printExp(ostream& out, Exp* e, int level) {
     if (auto* st = dynamic_cast<StructTypeNode*>(e)) {
         indent(out, level);
         out << "StructType: " << st->name << "\n";
-        return;
-    }
-
-    if (auto* nt = dynamic_cast<NamedTypeNode*>(e)) {
-        indent(out, level);
-        out << "NamedType: " << nt->name << "\n";
-        return;
-    }
-
-    if (auto* tt = dynamic_cast<TemplateTypeNode*>(e)) {
-        indent(out, level);
-        out << "TemplateType: " << tt->name << "\n";
         return;
     }
 
@@ -377,21 +345,6 @@ void printAST(Program* program, ostream& out) {
         out << "StructDecl: " << s->name << "\n";
         for (auto m : s->members) {
             printVarDecl(out, m, 2);
-        }
-    }
-
-    for (auto t : program->templates) {
-        indent(out, 1);
-        out << "TemplateDecl";
-        for (size_t i = 0; i < t->params.size(); i++) {
-            out << (i == 0 ? ": " : ", ") << t->params[i];
-        }
-        out << "\n";
-        if (t->func) {
-            // Print the template function pattern
-        }
-        if (t->struct_decl) {
-            // Print the template struct pattern
         }
     }
 

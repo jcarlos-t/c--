@@ -39,7 +39,7 @@ using namespace std;
 class Type {
 public:
     // NOTYPE: valor interno por defecto / error; no es un tipo del lenguaje.
-    enum TType { NOTYPE, VOID, INT, CHAR, BOOL, FLOAT, DOUBLE, POINTER, ARRAY, STRUCT };
+    enum TType { NOTYPE, VOID, INT, CHAR, BOOL, FLOAT, DOUBLE, LONG, POINTER, ARRAY, STRUCT };
     TType ttype;  // discriminante: indica qué subclase lógica es
 
     Type(TType tt) : ttype(tt) {}
@@ -65,6 +65,7 @@ public:
             case BOOL:   return "bool";
             case FLOAT:  return "float";
             case DOUBLE: return "double";
+            case LONG:   return "long long";
             default:     return "unknown";
         }
     }
@@ -80,6 +81,7 @@ public:
             case BOOL:   return 1;
             case FLOAT:  return 4;
             case DOUBLE: return 8;
+            case LONG:   return 8;
             case POINTER: return 8;
             default:     return 8;
         }

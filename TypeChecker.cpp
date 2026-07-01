@@ -1,7 +1,7 @@
 #include "visitor.h"
 #include <iostream>
 #include <sstream>
-#include <functional>
+
 
 using namespace std;
 
@@ -45,15 +45,15 @@ using namespace std;
 
 namespace {
 
-// is_integral_type: true si el tipo es entero (int o char)
+// is_integral_type: true si el tipo es entero (int, char, long)
 //   Sirve para operaciones que solo aceptan enteros
 //   y para promociones donde char → int automáticamente.
 //
-//   Ej: int → true    char → true
+//   Ej: int → true    char → true    long → true
 //       float → false double → false
 //       bool → false   void → false
 bool is_integral_type(Type* t) {
-    return t->ttype == Type::INT || t->ttype == Type::CHAR;
+    return t->ttype == Type::INT || t->ttype == Type::CHAR || t->ttype == Type::LONG;
 }
 
 // is_arithmetic_type: true si el tipo es aritmético
@@ -97,6 +97,7 @@ TypeChecker::TypeChecker() {
     floatType = new Type(Type::FLOAT);   // representa float
     doubleType = new Type(Type::DOUBLE); // representa double
     charType = new Type(Type::CHAR);     // representa char
+    longType = new Type(Type::LONG);     // representa long long
     retornodefuncion = nullptr;          // se setea al entrar a cada función
     loopDepth = 0;                       // sin loops activos
     switchDepth = 0;                     // sin switches activos
@@ -114,6 +115,7 @@ TypeChecker::~TypeChecker() {
     delete floatType;
     delete doubleType;
     delete charType;
+    delete longType;
 }
 
 // ============================================================
@@ -132,7 +134,7 @@ TypeChecker::~TypeChecker() {
 //   Ej: type_from_ast(PrimitiveTypeNode(INT)) → intType
 //       type_from_ast(PointerTypeNode(IntTypeNode)) → PointerType(IntType)
 Type* TypeChecker::type_from_ast(Exp* t) {
-    // --- Tipos primitivos: void, int, char, float, double, bool, auto ---
+    // --- Tipos primitivos: void, int, char, float, double, bool, long ---
     if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(t)) {
         switch (pt->prim) {
             case PrimitiveTypeNode::VOID:   return voidType;
@@ -141,7 +143,7 @@ Type* TypeChecker::type_from_ast(Exp* t) {
             case PrimitiveTypeNode::FLOAT:  return floatType;
             case PrimitiveTypeNode::DOUBLE: return doubleType;
             case PrimitiveTypeNode::BOOL:   return boolType;
-            case PrimitiveTypeNode::AUTO:   return intType; // default, se infiere después
+            case PrimitiveTypeNode::LONG:   return longType;
         }
     }
     // --- Punteros: T* busca el tipo base recursivamente ---
@@ -157,16 +159,6 @@ Type* TypeChecker::type_from_ast(Exp* t) {
         if (it != struct_types.end()) return it->second;
         error("struct '" + st->name + "' no declarado.");
         return intType;
-    }
-    // NamedTypeNode = parámetro de template (ej. T) fuera de sustitución → error.
-    // Solo tiene sentido dentro de instantiate_template / instantiate_function.
-    if (auto* nt = dynamic_cast<NamedTypeNode*>(t)) {
-        error("tipo no reconocido: '" + nt->name + "'.");
-        return intType;  // fallback para seguir reportando más errores
-    }
-    // --- TemplateType (instancia concreta de template struct) ---
-    if (auto* tt = dynamic_cast<TemplateTypeNode*>(t)) {
-        return instantiate_template(tt->name, tt->type_args);
     }
     return intType; // fallback
 }
@@ -185,191 +177,6 @@ Type* TypeChecker::type_from_ast(Exp* t) {
 void TypeChecker::bind_var_decl(VarDecl* v) {
     env.add_var(v->name, v->resolvedType);
     varEnv.add_var(v->name, v);
-}
-
-// ============================================================
-// semantic_to_type_node — convertir Type* semántico a TypeNode
-// ============================================================
-// Hace la operación inversa de type_from_ast: dado un Type*,
-// crea el nodo AST correspondiente. Se usa durante la
-// instanciación de templates para sustituir tipos.
-//
-//   Ej: Type*(INT) → PrimitiveTypeNode(INT)
-//       Type*(FLOAT) → PrimitiveTypeNode(FLOAT)
-TypeNode* TypeChecker::semantic_to_type_node(::Type* t) {
-    if (!t) return new PrimitiveTypeNode(PrimitiveTypeNode::INT);
-    switch (t->ttype) {
-        case Type::INT: return new PrimitiveTypeNode(PrimitiveTypeNode::INT);
-        case Type::FLOAT: return new PrimitiveTypeNode(PrimitiveTypeNode::FLOAT);
-        case Type::DOUBLE: return new PrimitiveTypeNode(PrimitiveTypeNode::DOUBLE);
-        case Type::CHAR: return new PrimitiveTypeNode(PrimitiveTypeNode::CHAR);
-        case Type::BOOL: return new PrimitiveTypeNode(PrimitiveTypeNode::BOOL);
-        default: return new PrimitiveTypeNode(PrimitiveTypeNode::INT);
-    }
-}
-
-// ============================================================
-// mangleTemplateName — generar nombre único para instancia de template
-// ============================================================
-// Convierte un nombre de template con sus argumentos en un
-// string único. Ejemplo:
-//
-//   mangleTemplateName("Vector", {IntTypeNode}) → "Vector<int>"
-//   mangleTemplateName("Par", {IntTypeNode, FloatTypeNode}) → "Par<int,float>"
-//
-// Se usa como key para cachear instancias de templates y como
-// nombre concreto del struct/función generado.
-static string mangleTemplateName(const string& base, const vector<TypeNode*>& args) {
-    string result = base + "<";
-    for (size_t i = 0; i < args.size(); i++) {
-        if (i > 0) result += ",";
-        if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(args[i])) {
-            switch (pt->prim) {
-                case PrimitiveTypeNode::INT: result += "int"; break;
-                case PrimitiveTypeNode::FLOAT: result += "float"; break;
-                case PrimitiveTypeNode::CHAR: result += "char"; break;
-                case PrimitiveTypeNode::DOUBLE: result += "double"; break;
-                case PrimitiveTypeNode::BOOL: result += "bool"; break;
-                default: result += "?"; break;
-            }
-        } else if (auto* st = dynamic_cast<StructTypeNode*>(args[i])) {
-            result += st->name;
-        } else {
-            result += "?";
-        }
-    }
-    result += ">";
-    return result;
-}
-
-// ============================================================
-// instantiate_function — crear instancia concreta de función template
-// ============================================================
-// Dado un TemplateDecl de función (ej: template<typename T> T id(T x))
-// y una lista de argumentos concretos (ej: [int]), genera un FunDecl
-// con los tipos sustituidos.
-//
-// Flujo:
-//   1. Genera key con mangleTemplateName
-//   2. Si ya fue instanciada, retorna la versión cacheada
-//   3. Crea mapa de sustitución: T → int
-//   4. Sustituye tipos en retorno y parámetros
-//   5. Crea nuevo FunDecl, lo cachea y lo registra en program
-//
-//   Ej: template<typename T> T id(T x) → instantiate con int
-//       → FunDecl{return:int, params:[int x]}
-FunDecl* TypeChecker::instantiate_function(TemplateDecl* tdecl, const vector<TypeNode*>& args) {
-    FunDecl* orig = tdecl->func;
-    string key = mangleTemplateName(orig->name, args);
-
-    // Cache: si ya instanciamos esta combinación, reusar
-    auto cached = instantiated_function_cache.find(key);
-    if (cached != instantiated_function_cache.end())
-        return cached->second;
-
-    // Construir mapa de sustitución: T → tipo_concreto
-    unordered_map<string, Type*> subs;
-    for (size_t i = 0; i < tdecl->params.size() && i < args.size(); i++)
-        subs[tdecl->params[i]] = type_from_ast(args[i]);
-
-    // Función lambda que sustituye tipos en el AST
-    function<Exp*(Exp*)> subst_node = [&](Exp* node) -> Exp* {
-        if (auto* nt = dynamic_cast<NamedTypeNode*>(node)) {
-            auto it = subs.find(nt->name);
-            if (it != subs.end()) return semantic_to_type_node(it->second);
-        }
-        if (auto* pt = dynamic_cast<PointerTypeNode*>(node)) {
-            return new PointerTypeNode(dynamic_cast<TypeNode*>(subst_node(pt->base)));
-        }
-        return node;
-    };
-
-    // Crear nuevo FunDecl con tipos sustituidos
-    FunDecl* fd = new FunDecl(subst_node(orig->return_type), orig->name, orig->body);
-    for (auto p : orig->params)
-        fd->params.push_back(new VarDecl(subst_node(p->type), p->name));
-
-    instantiated_function_cache[key] = fd;
-    if (program) program->instantiated_functions.push_back(fd);
-    return fd;
-}
-
-// ============================================================
-// instantiate_template — instanciar struct template
-// ============================================================
-// Similar a instantiate_function pero para structs.
-// Crea un StructType concreto reemplazando los parámetros
-// de template por los tipos dados.
-//
-//   Ej: template<typename T> struct Par { T x; T y; };
-//       instantiate_template("Par", {int})
-//       → StructType("Par<int>") con miembros {x: int, y: int}
-//
-// Flujo:
-//   1. Genera nombre concreto: "Par<int>"
-//   2. Si ya existe en struct_types, retornar
-//   3. Busca TemplateDecl por nombre
-//   4. Sustituye tipos en cada miembro
-//   5. Crea StructType y lo registra
-StructType* TypeChecker::instantiate_template(const string& name, const vector<TypeNode*>& args) {
-    string concrete_name = mangleTemplateName(name, args);
-
-    // Cache
-    auto cit = struct_types.find(concrete_name);
-    if (cit != struct_types.end()) return cit->second;
-
-    // Buscar declaración del template
-    auto it = template_decls.find(name);
-    if (it == template_decls.end() || it->second->is_function) {
-        error("template '" + name + "' no declarado.");
-        StructType* err = new StructType("error");
-        typeCache.push_back(err);
-        return err;
-    }
-
-    TemplateDecl* tdecl = it->second;
-    StructDecl* orig = tdecl->struct_decl;
-
-    // Mapa de sustitución: T → tipo
-    unordered_map<string, Type*> subs;
-    for (size_t i = 0; i < tdecl->params.size() && i < args.size(); i++) {
-        subs[tdecl->params[i]] = type_from_ast(args[i]);
-    }
-
-    // Función para sustituir tipos recursivamente
-    function<Type*(Exp*)> substitute = [&](Exp* ast_type) -> Type* {
-        if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(ast_type)) {
-            return type_from_ast(pt);
-        }
-        if (auto* idt = dynamic_cast<NamedTypeNode*>(ast_type)) {
-            auto sit = subs.find(idt->name);
-            if (sit != subs.end()) return sit->second;
-            error("tipo de template '" + idt->name + "' no reconocido.");
-            return intType;
-        }
-        if (auto* ptr = dynamic_cast<PointerTypeNode*>(ast_type)) {
-            Type* base = substitute(ptr->base);
-            PointerType* result = new PointerType(base);
-            typeCache.push_back(result);
-            return result;
-        }
-        return type_from_ast(ast_type);
-    };
-
-    // Crear StructType concreto
-    StructType* st = new StructType(concrete_name);
-    for (auto member : orig->members) {
-        Type* mt = substitute(member->type);
-        // Wrap en ArrayType si tiene dimensiones
-        for (size_t d = 0; d < member->array_sizes.size(); d++) {
-            ArrayType* at = new ArrayType(mt, -1);
-            typeCache.push_back(at);
-            mt = at;
-        }
-        st->members[member->name] = mt;
-    }
-    struct_types[concrete_name] = st;
-    return st;
 }
 
 // ============================================================
@@ -392,16 +199,18 @@ bool TypeChecker::check_assign(Type* target, Type* value) {
     if (target->match(value)) return true;
     // Cualquier puntero a cualquier puntero (coerción laxa; no compara base).
     if (target->ttype == Type::POINTER && value->ttype == Type::POINTER) return true;
-    // Truncamiento / promoción entre char e int
-    if (target->ttype == Type::CHAR && value->ttype == Type::INT) return true;
-    if (target->ttype == Type::INT && value->ttype == Type::CHAR) return true;
-    // Promoción: int/char → float o double
-    if (target->ttype == Type::FLOAT && is_integral_type(value)) return true;
-    if (target->ttype == Type::DOUBLE && is_integral_type(value)) return true;
+    // Truncamiento / promoción entre char, int, long
+    if (target->ttype == Type::CHAR && (value->ttype == Type::INT || value->ttype == Type::LONG)) return true;
+    if (target->ttype == Type::INT && (value->ttype == Type::CHAR || value->ttype == Type::LONG)) return true;
+    if (target->ttype == Type::LONG && is_integral_type(value)) return true;
+    // Promoción: int/char/long → float o double
+    if ((target->ttype == Type::FLOAT || target->ttype == Type::DOUBLE) && is_integral_type(value)) return true;
     // Promoción: float → double
     if (target->ttype == Type::DOUBLE && value->ttype == Type::FLOAT) return true;
-    // Conversión implícita: int/char → bool
+    // Conversión implícita: int/char/long → bool
     if (target->ttype == Type::BOOL && is_integral_type(value)) return true;
+    // Conversión implícita: bool → int/char/long
+    if (is_integral_type(target) && value->ttype == Type::BOOL) return true;
     return false;
 }
 
@@ -475,20 +284,15 @@ void TypeChecker::typecheck(Program* program) {
 //   2. Abrir scope global
 //   3. Procesar variables globales
 //   4. Procesar declaraciones de struct
-//   5. Procesar templates
-//   6. Procesar funciones (typecheck interno)
-//   7. Procesar funciones instanciadas de templates
-//   8. Cerrar scope global
+//   5. Procesar funciones (typecheck interno)
+//   6. Cerrar scope global
 void TypeChecker::visit(Program* p) {
-    program = p;
     for (auto f : p->functions) add_function(f);
     env.add_level();
     varEnv.add_level();
     for (auto g : p->globals) g->accept(this);
     for (auto s : p->structs) s->accept(this);
-    for (auto t : p->templates) t->accept(this);
     for (auto f : p->functions) f->accept(this);
-    for (auto f : p->instantiated_functions) f->accept(this);
     varEnv.remove_level();
     env.remove_level();
 }
@@ -558,21 +362,6 @@ void TypeChecker::visit(FunDecl* f) {
                 ArrayType* at = new ArrayType(t, dim);
                 typeCache.push_back(at);
                 t = at;
-            }
-            // Inferencia auto: usar placeholder, se resolverá después
-            if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(v->type)) {
-                if (pt->prim == PrimitiveTypeNode::AUTO) {
-                    if (!v->initializer) {
-                        error("variable 'auto' necesita inicializador para inferir tipo.");
-                        t = intType;
-                    } else {
-                        // Placeholder temporal: visit(VarDecl) inferirá el tipo real
-                        // del inicializador y reemplazará resolvedType.
-                        PointerType* placeholder = new PointerType(voidType);
-                        typeCache.push_back(placeholder);
-                        t = placeholder;
-                    }
-                }
             }
             v->resolvedType = t;
             v->memSize = t->size();
@@ -707,7 +496,6 @@ int TypeChecker::assignOffsets(vector<VarDecl*>& vars, int startOffset) {
 // compatibilidad del inicializador.
 //
 //   Ej: int x = 5;  → resolvedType = IntType, verifica 5 es int
-//       auto y = x; → infiere y como int
 //       int a[5];   → resolvedType = ArrayType(IntType, 5)
 void TypeChecker::visit(VarDecl* v) {
     if (v->resolvedType != nullptr) {
@@ -716,17 +504,8 @@ void TypeChecker::visit(VarDecl* v) {
             error("variable '" + v->name + "' ya declarada en este ámbito.");
             return;
         }
-        bool reinferred = false;
-        // Si es auto, inferir tipo del inicializador ahora
-        if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(v->type)) {
-            if (pt->prim == PrimitiveTypeNode::AUTO && v->initializer) {
-                v->initializer->accept(this); v->resolvedType = v->initializer->resolvedType;
-                v->memSize = v->resolvedType->size();
-                reinferred = true;
-            }
-        }
         // Verificar compatibilidad del inicializador con el tipo declarado
-        if (!reinferred && v->initializer) {
+        if (v->initializer) {
             v->initializer->accept(this); Type* initType = v->initializer->resolvedType;
             if (!check_assign(v->resolvedType, initType)) {
                 error("tipos incompatibles en inicialización de '" + v->name + "'.");
@@ -775,18 +554,6 @@ void TypeChecker::visit(VarDecl* v) {
         ArrayType* at = new ArrayType(t, dim);
         typeCache.push_back(at);
         t = at;
-    }
-
-    // Inferencia auto: usar tipo del inicializador
-    if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(v->type)) {
-        if (pt->prim == PrimitiveTypeNode::AUTO) {
-            if (!v->initializer) {
-                error("variable 'auto' necesita inicializador para inferir tipo.");
-                t = intType;
-            } else {
-                v->initializer->accept(this); t = v->initializer->resolvedType;
-            }
-        }
     }
 
     // Verificar redeclaración en el ámbito actual
@@ -986,19 +753,6 @@ void TypeChecker::visit(CaseClause* s) {
         error("valor de case debe ser int o char.");
     }
     for (auto st : s->body) st->accept(this);
-}
-
-// -----------------------------------------------------------
-// visit(TemplateDecl) — registrar template
-// -----------------------------------------------------------
-// Almacena la declaración en template_decls para instanciación
-// posterior. Puede ser template de función o de struct.
-void TypeChecker::visit(TemplateDecl* d) {
-    if (d->is_function) {
-        template_decls[d->func->name] = d;
-    } else {
-        template_decls[d->struct_decl->name] = d;
-    }
 }
 
 // free(ptr): solo verifica que la expresión sea typecheckeable (debería ser puntero).
@@ -1301,72 +1055,14 @@ bool TypeChecker::checkFuncCall(const string& fname, FuncInfo& info, FcallNode* 
 // visit(FcallNode) — typecheck de llamada a función
 // -----------------------------------------------------------
 // Maneja tres casos:
-//   1. Llamada a función template: f<T>(args) → instancia y verifica
-//   2. Llamada a variable (lambda/ptr): f(args) → acepta args, retorna int
-//   3. Llamada a función normal: f(args) → busca firma y verifica
+// Verifica cantidad y tipos de argumentos contra la firma registrada.
 //
 //   Ej: suma(1, 2) → busca función "suma", verifica argumentos
-//       Vector<int>::crear(10) → instancia template, verifica
-//       ptr_lambda(5) → trata como llamada indirecta
 void TypeChecker::visit(FcallNode* e) {
     if (auto* id = dynamic_cast<IdentifierNode*>(e->callee)) {
         string fname = id->name;
 
-        // --- Caso 1: Llamada a función template ---
-        if (!e->template_args.empty()) {
-            auto tit = template_decls.find(fname);
-            if (tit == template_decls.end() || !tit->second->is_function) {
-                error("template de función '" + fname + "' no declarado.");
-                e->resolvedType = intType; return;
-            }
-            TemplateDecl* tdecl = tit->second;
-            instantiate_function(tdecl, e->template_args);
-            FunDecl* tfunc = tdecl->func;
-            // Construir mapa de sustitución
-            unordered_map<string, Type*> subs;
-            for (size_t i = 0; i < tdecl->params.size() && i < e->template_args.size(); i++)
-                subs[tdecl->params[i]] = type_from_ast(e->template_args[i]);
-
-            // Resolver tipo de retorno concreto
-            Type* concrete_ret;
-            if (auto* nt = dynamic_cast<NamedTypeNode*>(tfunc->return_type)) {
-                auto sit = subs.find(nt->name);
-                concrete_ret = (sit != subs.end()) ? sit->second : intType;
-            } else {
-                concrete_ret = type_from_ast(tfunc->return_type);
-            }
-            // Resolver tipos de parámetros concretos
-            vector<Type*> concrete_params;
-            for (auto p : tfunc->params) {
-                Type* pt;
-                if (auto* nt = dynamic_cast<NamedTypeNode*>(p->type)) {
-                    auto sit = subs.find(nt->name);
-                    pt = (sit != subs.end()) ? sit->second : intType;
-                } else {
-                    pt = type_from_ast(p->type);
-                }
-                concrete_params.push_back(pt);
-            }
-            // Registrar firma concreta y verificar llamada
-            FuncInfo info;
-            info.returnType = concrete_ret;
-            info.paramTypes = concrete_params;
-            functions[fname] = info;
-
-            checkFuncCall(fname, info, e);
-            e->resolvedType = info.returnType; return;
-        }
-
-        // Variable local con ese nombre (lambda almacenada como puntero): acepta args
-        // sin verificar firma; retorna int por defecto (limitación del checker).
-        Type* localType = env.lookup(fname);
-        if (localType) {
-            // Acepta argumentos pero no verifica tipos (no tenemos firma)
-            for (auto* arg : e->args) arg->accept(this);
-            e->resolvedType = intType; return;
-        }
-
-        // --- Caso 3: Llamada a función normal ---
+        // --- Llamada a función normal ---
         auto it = functions.find(fname);
         if (it == functions.end()) {
             error("función no declarada '" + fname + "'.");
@@ -1524,10 +1220,6 @@ void TypeChecker::visit(PrimitiveTypeNode* e) { e->resolvedType = type_from_ast(
 void TypeChecker::visit(PointerTypeNode* e) { e->resolvedType = type_from_ast(e); }
 void TypeChecker::visit(StructTypeNode* e) { e->resolvedType = type_from_ast(e); }
 // NamedTypeNode fuera de template → error dentro de type_from_ast.
-void TypeChecker::visit(NamedTypeNode* e) { e->resolvedType = type_from_ast(e); }
-
-void TypeChecker::visit(TemplateTypeNode* e) { e->resolvedType = type_from_ast(e); }
-
 // -----------------------------------------------------------
 // visit(SizeOfNode) — typecheck de sizeof
 // -----------------------------------------------------------
@@ -1542,66 +1234,4 @@ void TypeChecker::visit(SizeOfNode* e) {
     e->resolvedType = intType;
 }
 
-// -----------------------------------------------------------
-// visit(LambdaExprNode) — typecheck de expresión lambda
-// -----------------------------------------------------------
-// Procesa una expresión lambda:
-//   1. Abre nuevo ámbito para parámetros y capturas
-//   2. Resuelve tipos de parámetros
-//   3. Agrega capturas por valor al environment
-//   4. Typecheckea el cuerpo con el tipo de retorno de la lambda
-//   5. Retorna void* (tipo opaco, la lambda es un puntero a función)
-//
-//   Ej: [x](int a) -> int { return a + x; }
-//       → parámetro a: int
-//       → captura x: se agrega al ámbito interno
-//       → retorno: int
-//       → tipo de la expresión: void*
-void TypeChecker::visit(LambdaExprNode* e) {
-    env.add_level();
-    varEnv.add_level();
-    for (auto p : e->params) {
-        p->accept(this);
-        initialized_vars.insert(p);
-    }
-    // Capturas: reutilizan el VarDecl del ámbito externo (copia por valor en codegen).
-    for (auto cap : e->captures) {
-        VarDecl* capVd = nullptr;
-        if (!varEnv.lookup(cap->name, capVd)) {
-            error("variable '" + cap->name + "' no declarada.");
-        } else {
-            env.add_var(cap->name, capVd->resolvedType);
-            varEnv.add_var(cap->name, capVd);
-        }
-    }
-    // Guardar/restaurar retornodefuncion: el body de la lambda usa las mismas reglas
-    // que una función normal para visit(ReturnStmt).
-    Type* savedRet = retornodefuncion;
-    if (e->return_type)
-        retornodefuncion = type_from_ast(e->return_type);
-    else
-        retornodefuncion = voidType;
-    if (e->body) e->body->accept(this);
-    retornodefuncion = savedRet;
-    varEnv.remove_level();
-    env.remove_level();
 
-    // Retorna void* (puntero opaco)
-    PointerType* lambdaPtr = new PointerType(voidType);
-    typeCache.push_back(lambdaPtr);
-    e->resolvedType = lambdaPtr;
-}
-
-// -----------------------------------------------------------
-// visit(CaptureNode) — typecheck de captura en lambda
-// -----------------------------------------------------------
-// Cada variable capturada en [x, y] se verifica. El modo
-// BY_REF (captura por referencia, [&x]) no está soportado.
-//
-//   Ej: [x] → ok, captura por valor
-//       [&x] → error: "captura por referencia no soportada"
-void TypeChecker::visit(CaptureNode* e) {
-    if (e->mode == CaptureNode::BY_REF)
-        error("captura por referencia no soportada, use captura por valor [x].");
-    e->resolvedType = intType;
-}

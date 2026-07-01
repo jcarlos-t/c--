@@ -9,7 +9,6 @@ using namespace std;
 
 class Visitor;
 class VarDecl;
-class TemplateDecl;
 class TypeNode;
 
 struct Location {
@@ -92,7 +91,6 @@ class FcallNode : public Exp {
 public:
     Exp* callee; // nombre
     vector<Exp*> args; // argumentos que recibe la llamada
-    vector<TypeNode*> template_args; // argumentos del template <arg, arg2...>
     FcallNode(Exp* c);
     ~FcallNode();
     void accept(Visitor* visitor);
@@ -391,7 +389,6 @@ public:
     string name;
     vector<VarDecl*> params;
     Body* body;
-    bool is_template;
     
     // Calculados por TypeChecker
     int frameSize = 0;   // tamaño total del frame
@@ -420,15 +417,13 @@ public:
 
 };
 
-// Programa completo: lista de funciones, globales, structs y templates
+// Programa completo: lista de funciones, globales y structs
 class Program {
 public:
     Location loc;
     vector<FunDecl*> functions;
     vector<VarDecl*> globals;
     vector<StructDecl*> structs;
-    vector<TemplateDecl*> templates;
-    vector<FunDecl*> instantiated_functions;
 
     Program();
     ~Program();
@@ -444,10 +439,10 @@ public:
     TypeNode() : Exp() {}
 };
 
-// Tipo primitivo: void, int, char, float, double, bool, auto
+// Tipo primitivo: void, int, char, float, double, bool, long
 class PrimitiveTypeNode : public TypeNode {
 public:
-    enum Prim { VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, AUTO };
+    enum Prim { VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, LONG };
     Prim prim;
     PrimitiveTypeNode(Prim p);
     void accept(Visitor* visitor);
@@ -469,70 +464,6 @@ class StructTypeNode : public TypeNode {
 public:
     string name;
     StructTypeNode(const string& n);
-    void accept(Visitor* visitor);
-
-};
-
-// Tipo nombrado, nodos que representan tipos definidos por el usuario, por ejemplo en templates
-class NamedTypeNode : public TypeNode {
-public:
-    string name;
-    NamedTypeNode(const string& n);
-
-    void accept(Visitor* visitor);
-
-};
-
-// instanciacion concreta de template: Nombre<T1, T2, ...>
-class TemplateTypeNode : public TypeNode {
-public:
-    string name;
-    vector<TypeNode*> type_args;
-    TemplateTypeNode(const string& n, const vector<TypeNode*>& args);
-    ~TemplateTypeNode();
-
-
-    void accept(Visitor* visitor);
-};
-
-// --- Expresiones lambda ---
-
-// Captura de variable en lambda: [&x] o [x]
-class CaptureNode : public Exp {
-public:
-    enum Mode { BY_VALUE, BY_REF };
-    Mode mode;
-    string name;
-    CaptureNode(Mode m, const string& n);
-    void accept(Visitor* visitor);
-
-};
-
-// Expresión lambda: [captures](params) -> tipo { body }
-class LambdaExprNode : public Exp {
-public:
-    vector<CaptureNode*> captures;
-    vector<VarDecl*> params;
-    TypeNode* return_type;
-    Body* body;
-    LambdaExprNode(const vector<CaptureNode*>& caps, const vector<VarDecl*>& p, TypeNode* r, Body* b);
-    ~LambdaExprNode();
-    void accept(Visitor* visitor);
-
-};
-
-// --- Declaraciones template ---
-
-// Declaración template: template<params> func/struct
-class TemplateDecl {
-public:
-    vector<string> params;
-    FunDecl* func;
-    StructDecl* struct_decl;
-    bool is_function;
-    TemplateDecl(const vector<string>& p, FunDecl* f);
-    TemplateDecl(const vector<string>& p, StructDecl* s);
-    ~TemplateDecl();
     void accept(Visitor* visitor);
 
 };

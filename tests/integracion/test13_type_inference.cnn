@@ -1,6 +1,8 @@
 int main() {
-    auto a = 42;        // int
-    auto c = true;      // bool
+    int a;
+    a = 42;
+    int c;
+    c = 1;       // bool representado como int
     
     printf(a);  // esperado: 42
     printf(c);  // esperado: 1

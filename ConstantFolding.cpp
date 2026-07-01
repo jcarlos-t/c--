@@ -182,14 +182,6 @@ void ConstantFolding::visit(SizeOfNode* e) {
     e->constantValue = 0.0;
 }
 
-void ConstantFolding::visit(LambdaExprNode* e) {
-    e->isConstant = false;
-}
-
-void ConstantFolding::visit(CaptureNode* e) {
-    e->isConstant = false;
-}
-
 void ConstantFolding::visit(PrintfNode* e) {
     for (auto arg : e->args) {
         arg->accept(this);
@@ -206,14 +198,6 @@ void ConstantFolding::visit(PointerTypeNode* e) {
 }
 
 void ConstantFolding::visit(StructTypeNode* e) {
-    e->isConstant = false;
-}
-
-void ConstantFolding::visit(NamedTypeNode* e) {
-    e->isConstant = false;
-}
-
-void ConstantFolding::visit(TemplateTypeNode* e) {
     e->isConstant = false;
 }
 
@@ -301,9 +285,6 @@ void ConstantFolding::visit(FunDecl* d) {
 }
 
 void ConstantFolding::visit(StructDecl*) {
-}
-
-void ConstantFolding::visit(TemplateDecl*) {
 }
 
 void ConstantFolding::visit(Program* p) {

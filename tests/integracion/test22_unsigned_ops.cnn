@@ -1,0 +1,26 @@
+// Test 22: Operaciones con unsigned
+int main() {
+    unsigned a;
+    unsigned b;
+    unsigned result;
+    
+    a = 50;
+    b = 30;
+    result = a + b;
+    printf(result); // esperado: 80
+
+    result = a - b;
+    printf(result); // esperado: 20
+
+    result = a * b;
+    printf(result); // esperado: 1500
+
+    result = a / b;
+    printf(result); // esperado: 1
+
+    int ok;
+    ok = (a > b);
+    printf(ok); // esperado: 1
+
+    return 0;
+}

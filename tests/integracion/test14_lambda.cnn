@@ -1,17 +1,17 @@
+int add(int a, int b) {
+    return a + b;
+}
+
+int add_x(int a) {
+    return a + 20;
+}
+
 int main() {
-    auto add = [](int a, int b) -> int {
-        return a + b;
-    };
     int sum1;
     sum1 = add(5, 10);
     
-    int x;
-    x = 20;
-    auto addX = [x](int a) -> int {
-        return a + x;
-    };
     int sum2;
-    sum2 = addX(5);
+    sum2 = add_x(5);
     
     printf(sum1);  // esperado: 15
     printf(sum2);  // esperado: 25
