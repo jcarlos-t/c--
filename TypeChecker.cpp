@@ -849,6 +849,17 @@ void TypeChecker::visit(StructDecl* s) {
 
     for (auto m : s->members) {
         Type* mt = type_from_ast(m->type);
+
+        // Wrap en ArrayType si tiene dimensiones (ej: int data[2][3])
+        for (auto arrSize : m->array_sizes) {
+            int dim = -1;
+            if (auto* il = dynamic_cast<IntegerLiteralNode*>(arrSize))
+                dim = (int)il->value;
+            ArrayType* at = new ArrayType(mt, dim);
+            typeCache.push_back(at);
+            mt = at;
+        }
+
         m->resolvedType = mt;
         st->members[m->name] = mt;
         s->memberOffsets[m->name] = offset;
