@@ -63,4 +63,7 @@ public:
     friend ostream& operator<<(ostream& outs, const Token* tok);
 };
 
+const char* token_name(Token::Type t);
+const char* token_type_to_string(Token::Type t);
+
 #endif

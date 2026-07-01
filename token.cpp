@@ -12,7 +12,7 @@ Token::Token(Type type, char c)
 Token::Token(Type type, const string& source, int first, int last)
     : type(type), text(source.substr(first, last)), line(0), col(0) { }
 
-static const char* token_name(Token::Type t) {
+const char* token_name(Token::Type t) {
     switch (t) {
         case Token::VOID:   return "VOID";
         case Token::INT:    return "INT";
@@ -81,6 +81,42 @@ static const char* token_name(Token::Type t) {
         case Token::END:    return "END";
         case Token::ERR:    return "ERR";
         default:            return "UNKNOWN";
+    }
+}
+
+const char* token_type_to_string(Token::Type t) {
+    switch (t) {
+        case Token::LPAREN:    return "'('";
+        case Token::RPAREN:    return "')'";
+        case Token::LBRACE:    return "'{'";
+        case Token::RBRACE:    return "'}'";
+        case Token::LBRACKET:  return "'['";
+        case Token::RBRACKET:  return "']'";
+        case Token::SEMICOL:   return "';'";
+        case Token::COMA:      return "','";
+        case Token::COLON:     return "':'";
+        case Token::PLUS:      return "'+'";
+        case Token::MINUS:     return "'-'";
+        case Token::STAR:      return "'*'";
+        case Token::DIV:       return "'/'";
+        case Token::MOD:       return "'%'";
+        case Token::POW:       return "'**'";
+        case Token::ASSIGN:    return "'='";
+        case Token::EQ:        return "'=='";
+        case Token::NE:        return "'!='";
+        case Token::LT:        return "'<'";
+        case Token::GT:        return "'>'";
+        case Token::LE:        return "'<='";
+        case Token::GE:        return "'>='";
+        case Token::AND:       return "'&&'";
+        case Token::OR:        return "'||'";
+        case Token::NOT:       return "'!'";
+        case Token::INC:       return "'++'";
+        case Token::DEC:       return "'--'";
+        case Token::AMPERSAND: return "'&'";
+        case Token::ARROW:     return "'->'";
+        case Token::DOT:       return "'.'";
+        default:               return token_name(t);
     }
 }
 
