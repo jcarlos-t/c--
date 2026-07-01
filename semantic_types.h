@@ -7,53 +7,56 @@
 using namespace std;
 
 // ===========================================================
-//  Jerarquía de tipos semánticos del lenguaje C--
-//
-//  Representa tipos ya resueltos (post-análisis sintáctico).
-//  Cada nodo del AST que representa una expresión o
-//  declaración tiene un `resolvedType` apuntando a uno
-//  de estos objetos.
-//
-//  Soporta:
-//    - Tipos primitivos: void, int, char, bool, float, double
-//    - Punteros:         int*, char*, struct Persona*, etc.
-//    - Arreglos:         int[10], char[5][3], etc.
-//    - Structs:          struct Persona { ... }
-//
-//  Ejemplo de uso:
-//    Type* t = new ArrayType(new IntType, 10);
-//    t->str() => "int[10]"
-//    t->size() => 40  (4 bytes * 10)
+// Jerarquía de tipos semánticos del lenguaje C--
 // ===========================================================
+// Representa tipos **ya resueltos** tras el análisis semántico.
+// No confundir con los nodos TypeNode del AST (ast.h), que describen
+// tipos en la sintaxis fuente (int, char*, struct X, Box<int>).
+//
+// TypeChecker convierte TypeNode → Type* (type_from_ast) y guarda el
+// resultado en Exp::resolvedType / VarDecl::resolvedType.
+// GenCodeVisitor lee resolvedType y memSize para emitir movb/movl/movq.
+//
+// Jerarquía de clases:
+//   Type          — base (primitivos + discriminante ttype)
+//   PointerType   — T*
+//   ArrayType     — T[N] o T[] (anidado para multidimensional)
+//   StructType    — struct Nombre { miembros }
+//
+// Ciclo de vida:
+//   - Primitivos: singletons en TypeChecker (intType, charType, ...)
+//   - Compuestos: new en typeCache; delete en ~TypeChecker
+//   - StructType en struct_types: también liberados en destructor
+//
+// Métodos comunes:
+//   match(Type*) — igualdad de tipos (reglas distintas por subclase)
+//   str()        — representación legible para mensajes de error
+//   size()       — tamaño en bytes (layout de stack / structs)
 
 // -----------------------------------------------------------
-// Type (abstracta base) — un tipo semántico del lenguaje
+// Type — clase base de tipos semánticos
 // -----------------------------------------------------------
-// Provee la interfaz común: comparación estructural (match),
-// representación textual (str), y tamaño en bytes (size).
-// La clase `TType` enumera todas las variantes concretas.
 class Type {
 public:
-    // Enumeración de todos los tipos soportados
+    // NOTYPE: valor interno por defecto / error; no es un tipo del lenguaje.
     enum TType { NOTYPE, VOID, INT, CHAR, BOOL, FLOAT, DOUBLE, POINTER, ARRAY, STRUCT };
-    TType ttype;  // discriminante del tipo concreto
+    TType ttype;  // discriminante: indica qué subclase lógica es
 
     Type(TType tt) : ttype(tt) {}
     virtual ~Type() = default;
 
-    // match: comparación estructural de tipos
-    //   Ej: int match int  => true
-    //       int match char => false
-    //       int* match int* => true (PointerType::match recursivo)
-    //       int[5] match int[3] => true (ArrayType::match ignora tamaño)
-    //       struct A match struct A => true (StructType::match por nombre)
+    // match en la clase base: solo compara el discriminante ttype.
+    // Para punteros, arreglos y structs las subclases sobreescriben
+    // con comparación estructural o nominal.
+    //
+    //   int.match(int)   → true
+    //   int.match(char)  → false  (aunque char se promueva en expresiones)
+    //   int*.match(int*) → true si bases coinciden (PointerType)
     virtual bool match(Type* t) const {
         return this->ttype == t->ttype;
     }
 
-    // str: representación textual legible
-    //   int, char, float, double, bool, void
-    //   int*, int[10], struct Persona, etc.
+    // Nombre legible del tipo primitivo. Subclases añaden *, [], struct ...
     virtual string str() const {
         switch (ttype) {
             case VOID:   return "void";
@@ -66,11 +69,9 @@ public:
         }
     }
 
-    // size: tamaño en bytes del tipo
-    //   int, float → 4
-    //   char, bool → 1
-    //   double, puntero, struct → 8 (struct varía)
-    //   arreglo    → base->size() * length
+    // Tamaño en bytes para layout (convención del compilador C--):
+    //   int/float = 4, char/bool = 1, double/puntero = 8
+    // Subclases (ArrayType, StructType) calculan tamaños compuestos.
     virtual int size() const {
         switch (ttype) {
             case VOID:   return 0;
@@ -86,21 +87,20 @@ public:
 };
 
 // -----------------------------------------------------------
-// PointerType — puntero a otro tipo
+// PointerType — puntero a otro tipo (T*)
 // -----------------------------------------------------------
-// Ejemplo:
-//   int x; &x → PointerType(IntType)
-//   char* p; → PointerType(CharType)
-//   struct A* q; → PointerType(StructType("A"))
+// Ejemplos:
+//   int* p     → PointerType(intType)
+//   char** pp  → PointerType(PointerType(charType))
+//   void* (malloc) → PointerType(voidType)
 //
-// match: dos punteros son iguales si apuntan al mismo tipo base
-// str:   "int*", "char*", "struct A*"
-// size:  siempre 8 bytes (x86-64)
+// match: recursivo en el tipo base (int* solo coincide con int*).
+// size: 8 bytes en x86-64 (no sobreescribe; usa case POINTER en Type).
 class PointerType : public Type {
 public:
-    Type* base;  // tipo al que apunta
+    Type* base;  // tipo apuntado (no es propietario; lo gestiona TypeChecker)
     PointerType(Type* b) : Type(POINTER), base(b) {}
-    ~PointerType() override { }
+    ~PointerType() override { }  // no delete base (compartido / en typeCache)
 
     bool match(Type* t) const override {
         if (t->ttype != POINTER) return false;
@@ -114,22 +114,24 @@ public:
 };
 
 // -----------------------------------------------------------
-// ArrayType — arreglo de tamaño fijo o desconocido
+// ArrayType — arreglo de elementos (T[N] o T[])
 // -----------------------------------------------------------
-// Ejemplos:
-//   int a[10];        → ArrayType(IntType, 10)
-//   int m[2][3];      → ArrayType(ArrayType(IntType, 3), 2)
-//   int arr[];        → ArrayType(IntType, -1)   // tamaño desconocido
-//   char s[5][3][10]; → ArrayType(ArrayType(ArrayType(CharType, 10), 3), 5)
+// Multidimensional se modela anidando ArrayType:
+//   int m[2][3] → ArrayType(ArrayType(int, 3), 2)
 //
-// match: se compara solo el tipo base, ignora el tamaño
-//   int[5] match int[3] → true
-// str:   "int[10]", "int[3][2]", "char[]"
-// size:  base->size() * length (si length >= 0), 8 si es dinámico
+// length:
+//   >= 0  tamaño fijo conocido (int a[10])
+//   -1    tamaño desconocido o flexible (int a[])
+//
+// match: compara solo el tipo base; **ignora length**
+//   int[5].match(int[3]) → true (misma regla que C para asignación laxa)
+//
+// size: base->size() * length; si length < 0 → 8 (tratado como puntero)
 class ArrayType : public Type {
 public:
-    Type* base;    // tipo de cada elemento
-    int length;    // número de elementos (-1 si tamaño desconocido)
+    Type* base;
+    int length;  // -1 si desconocido
+
     ArrayType(Type* b, int l = -1) : Type(ARRAY), base(b), length(l) {}
     ~ArrayType() override { }
 
@@ -147,31 +149,31 @@ public:
 
     int size() const override {
         if (length >= 0) return base->size() * length;
-        return 8; // array sin tamaño conocido, tratar como puntero
+        return 8;  // arreglo sin tamaño conocido → como puntero en stack
     }
 };
 
 // -----------------------------------------------------------
-// StructType — tipo struct con nombre y miembros
+// StructType — tipo struct con nombre y tabla de miembros
 // -----------------------------------------------------------
-// Ejemplo:
-//   struct Persona { char nombre[50]; int edad; };
-//   → StructType("Persona")
-//     members["nombre"] = ArrayType(CharType, 50)
-//     members["edad"]   = IntType
+// Equivalencia **nominal**: dos structs son iguales si tienen el mismo
+// nombre, no si tienen la misma estructura de campos.
 //
-// match: igualdad por nombre (equivalencia nominal)
-// str:   "struct Persona"
-// size:  suma de tamaños de todos los miembros
+//   struct Point en un TU vs otro con mismos campos pero distinto nombre
+//   → no match (a diferencia de equivalencia estructural).
+//
+// members se llena en TypeChecker::visit(StructDecl) o instantiate_template.
+// StructDecl también guarda memberOffsets/memberSizes para GenCode.
+//
+// Instancias de templates usan nombres mangled: "Box<int>", "Par<float>".
 class StructType : public Type {
 public:
-    string name;                                    // nombre del struct
-    unordered_map<string, Type*> members;           // nombre del miembro → tipo
+    string name;
+    unordered_map<string, Type*> members;  // nombre del campo → Type*
 
     StructType(const string& n) : Type(STRUCT), name(n) {}
     ~StructType() override { }
 
-    // Dos structs son iguales si tienen el mismo nombre (equivalencia nominal)
     bool match(Type* t) const override {
         if (t->ttype != STRUCT) return false;
         StructType* st = (StructType*)t;
@@ -182,7 +184,7 @@ public:
         return "struct " + name;
     }
 
-    // size: suma acumulada de los tamaños de todos los miembros
+    // Suma lineal de tamaños de miembros (sin padding explícito entre campos).
     int size() const override {
         int total = 0;
         for (auto& pair : members) {

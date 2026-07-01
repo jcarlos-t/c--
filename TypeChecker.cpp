@@ -6,8 +6,42 @@
 using namespace std;
 
 // ============================================================
+// TypeChecker — Análisis semántico (verificación de tipos)
+// ============================================================
+// Implementa Visitor sobre el AST: valida reglas del lenguaje,
+// resuelve tipos y anota nodos para GenCodeVisitor.
+//
+// Salidas principales (campos anotados en el AST):
+//   - Exp::resolvedType   — tipo semántico de cada expresión
+//   - VarDecl::offset, memSize, resolvedType — layout en stack
+//   - IdentifierNode::binding — enlace al VarDecl de la variable
+//   - FunDecl::frameSize — tamaño total del stack frame
+//   - StructDecl::memberOffsets, memberSizes, totalSize
+//
+// Tablas de estado (ver visitor.h):
+//   env / varEnv, functions, struct_types, template_decls, typeCache
+//
+// Flujo en visit(Program):
+//   1. Registrar firmas de funciones (add_function)
+//   2. Globals → structs → templates (solo registro)
+//   3. Typecheck de cada función (visit FunDecl)
+//   4. Funciones instanciadas desde templates
+//
+// Errores: se acumulan en errors[]; typecheck() hace exit(1) al final.
+//
+// Índice del archivo:
+//   1. Helpers anónimos (is_integral_type, is_arithmetic_type, ...)
+//   2. Constructor, type_from_ast, bind_var_decl, templates
+//   3. check_assign, error, add_function, typecheck/check
+//   4. visit(Program), visit(FunDecl), collectVars, assignOffsets
+//   5. visit(declaraciones y statements)
+//   6. visit(expresiones): binarias, llamadas, índices, lambdas, ...
+
+// ============================================================
 //  Funciones auxiliares de verificación de tipos (anónimas)
 // ============================================================
+// En namespace anónimo para evitar colisión con std::is_integral
+// y std::is_arithmetic de <type_traits>.
 
 namespace {
 
@@ -67,7 +101,7 @@ TypeChecker::TypeChecker() {
     loopDepth = 0;                       // sin loops activos
     switchDepth = 0;                     // sin switches activos
     hasError = false;
-    currentOffset = 0;
+    currentOffset = 0;  // reservado; el layout real usa assignOffsets en visit(FunDecl)
 }
 
 TypeChecker::~TypeChecker() {
@@ -124,10 +158,11 @@ Type* TypeChecker::type_from_ast(Exp* t) {
         error("struct '" + st->name + "' no declarado.");
         return intType;
     }
-    // --- NamedType (typename param de template) ---
+    // NamedTypeNode = parámetro de template (ej. T) fuera de sustitución → error.
+    // Solo tiene sentido dentro de instantiate_template / instantiate_function.
     if (auto* nt = dynamic_cast<NamedTypeNode*>(t)) {
         error("tipo no reconocido: '" + nt->name + "'.");
-        return intType;
+        return intType;  // fallback para seguir reportando más errores
     }
     // --- TemplateType (instancia concreta de template struct) ---
     if (auto* tt = dynamic_cast<TemplateTypeNode*>(t)) {
@@ -355,6 +390,7 @@ StructType* TypeChecker::instantiate_template(const string& name, const vector<T
 //       check_assign(char, int) → true
 bool TypeChecker::check_assign(Type* target, Type* value) {
     if (target->match(value)) return true;
+    // Cualquier puntero a cualquier puntero (coerción laxa; no compara base).
     if (target->ttype == Type::POINTER && value->ttype == Type::POINTER) return true;
     // Truncamiento / promoción entre char e int
     if (target->ttype == Type::CHAR && value->ttype == Type::INT) return true;
@@ -542,7 +578,8 @@ void TypeChecker::visit(FunDecl* f) {
                         error("variable 'auto' necesita inicializador para inferir tipo.");
                         t = intType;
                     } else {
-                        // Placeholder: será reemplazado en visit(VarDecl)
+                        // Placeholder temporal: visit(VarDecl) inferirá el tipo real
+                        // del inicializador y reemplazará resolvedType.
                         PointerType* placeholder = new PointerType(voidType);
                         typeCache.push_back(placeholder);
                         t = placeholder;
@@ -560,8 +597,8 @@ void TypeChecker::visit(FunDecl* f) {
     // Alinear a 16 bytes (convención System V)
     f->frameSize = (totalSize + 15) & ~15;
 
-    // Convertir offsets a negativos (en x86-64 el stack crece hacia abajo)
-    // Los offsets positivos son relativos a %rbp, los negativos son (%rbp - offset)
+    // Convertir offsets positivos (desde inicio del frame) a negativos respecto a %rbp.
+    // GenCode usa -8(%rbp), -16(%rbp), etc. (stack crece hacia abajo).
     for (auto p : params) {
         p->offset = p->offset - f->frameSize;
     }
@@ -577,7 +614,8 @@ void TypeChecker::visit(FunDecl* f) {
     // Typecheckear el body
     f->body->accept(this);
 
-    // ---- Verificar que funciones no-void retornen en todos los caminos ----
+    // Comprobación superficial de retorno: solo mira el último statement del body.
+    // No analiza todos los caminos (if sin else al final, etc. pueden pasar o fallar).
     if (!retornodefuncion->match(voidType)) {
         bool endsWithReturn = false;
         if (!f->body->stmts.empty()) {
@@ -607,6 +645,8 @@ void TypeChecker::visit(FunDecl* f) {
 //
 //   Ej: { int a; if (c) { int b; } int c; }
 //       → vars = [a, b, c]
+// Recorre if/while/for/switch pero no abre scopes: todas las VarDecl locales
+// comparten el mismo frame (como en C tradicional con gcc -O0).
 void TypeChecker::collectVars(Stm* stmt, vector<VarDecl*>& vars) {
     if (!stmt) return;
 
@@ -797,6 +837,7 @@ void TypeChecker::visit(Body* b) {
     env.remove_level();
 }
 
+// Expresión como statement: solo verifica tipos de la expresión (descarta el valor).
 void TypeChecker::visit(ExprStmtNode* s) {
     if (s->expr) s->expr->accept(this);
 }
@@ -890,6 +931,8 @@ void TypeChecker::visit(SwitchStmt* s) {
     switchDepth--;
 }
 
+// Valida el literal del case y typecheckea el cuerpo. visit(SwitchStmt) ya validó
+// que la expresión del switch sea int/char.
 void TypeChecker::visit(CaseClause* s) {
     s->value->accept(this); Type* t = s->value->resolvedType;
     if (!is_switch_index_type(t)) {
@@ -911,6 +954,7 @@ void TypeChecker::visit(TemplateDecl* d) {
     }
 }
 
+// free(ptr): solo verifica que la expresión sea typecheckeable (debería ser puntero).
 void TypeChecker::visit(FreeStmt* s) {
     s->expr->accept(this);
 }
@@ -1068,6 +1112,7 @@ void TypeChecker::visit(UnaryOpNode* e) {
     switch (e->op) {
         case UnaryOp::MINUS:
             if (is_arithmetic_type(t)) {
+                // -'a' o -x con char/int → resultado int (promoción); -3.14 → double.
                 resultType = is_integral_type(t) ? intType : t;
             } else {
                 error("operación unaria requiere int, char, float o double.");
@@ -1077,6 +1122,7 @@ void TypeChecker::visit(UnaryOpNode* e) {
         case UnaryOp::PRE_INC: case UnaryOp::PRE_DEC:
         case UnaryOp::POST_INC: case UnaryOp::POST_DEC:
             if (is_arithmetic_type(t)) {
+                // ++/-- conservan el tipo del operando (char sigue siendo char).
                 resultType = t;
             } else {
                 error("operación unaria requiere int, char, float o double.");
@@ -1129,6 +1175,7 @@ void TypeChecker::visit(UnaryOpNode* e) {
 //       x = 3.5 → verifica int ← float → error
 //       f = 3.5 → verifica float ← float ok
 void TypeChecker::visit(AssignmentNode* e) {
+    // El target debe ser l-value con resolvedType (Identifier, Index, Member, etc.).
     e->target->accept(this); Type* targetType = e->target->resolvedType;
     e->value->accept(this); Type* valueType = e->value->resolvedType;
     if (!check_assign(targetType, valueType)) {
@@ -1247,7 +1294,8 @@ void TypeChecker::visit(FcallNode* e) {
             e->resolvedType = info.returnType; return;
         }
 
-        // --- Caso 2: Llamada a variable (lambda o puntero a función) ---
+        // Variable local con ese nombre (lambda almacenada como puntero): acepta args
+        // sin verificar firma; retorna int por defecto (limitación del checker).
         Type* localType = env.lookup(fname);
         if (localType) {
             // Acepta argumentos pero no verifica tipos (no tenemos firma)
@@ -1383,7 +1431,7 @@ void TypeChecker::visit(IdentifierNode* e) {
 }
 
 // -----------------------------------------------------------
-// Visits de literales — cada literal tiene un tipo fijo
+// Visits de literales — cada literal fija resolvedType en el nodo
 // -----------------------------------------------------------
 void TypeChecker::visit(IntegerLiteralNode* e) {
     e->resolvedType = intType;
@@ -1395,18 +1443,18 @@ void TypeChecker::visit(BoolLiteralNode* e) {
     e->resolvedType = boolType;
 }
 void TypeChecker::visit(CharLiteralNode* e) {
-    e->resolvedType = charType;
+    e->resolvedType = charType;  // en expresiones char promueve vía reglas aritméticas
 }
 void TypeChecker::visit(StringLiteralNode* e) {
+    // Tratado como int/puntero opaco (no hay tipo string en semantic_types).
     e->resolvedType = intType;
 }
 
-// -----------------------------------------------------------
-// Visits de nodos de tipo — delegan a type_from_ast
-// -----------------------------------------------------------
+// Nodos de tipo en expresiones/contextos: delegan la resolución a type_from_ast.
 void TypeChecker::visit(PrimitiveTypeNode* e) { e->resolvedType = type_from_ast(e); }
 void TypeChecker::visit(PointerTypeNode* e) { e->resolvedType = type_from_ast(e); }
 void TypeChecker::visit(StructTypeNode* e) { e->resolvedType = type_from_ast(e); }
+// NamedTypeNode fuera de template → error dentro de type_from_ast.
 void TypeChecker::visit(NamedTypeNode* e) { e->resolvedType = type_from_ast(e); }
 
 void TypeChecker::visit(TemplateTypeNode* e) { e->resolvedType = type_from_ast(e); }
@@ -1444,6 +1492,7 @@ void TypeChecker::visit(LambdaExprNode* e) {
     env.add_level();
     varEnv.add_level();
     for (auto p : e->params) p->accept(this);
+    // Capturas: reutilizan el VarDecl del ámbito externo (copia por valor en codegen).
     for (auto cap : e->captures) {
         VarDecl* capVd = nullptr;
         if (!varEnv.lookup(cap->name, capVd)) {
@@ -1453,6 +1502,8 @@ void TypeChecker::visit(LambdaExprNode* e) {
             varEnv.add_var(cap->name, capVd);
         }
     }
+    // Guardar/restaurar retornodefuncion: el body de la lambda usa las mismas reglas
+    // que una función normal para visit(ReturnStmt).
     Type* savedRet = retornodefuncion;
     if (e->return_type)
         retornodefuncion = type_from_ast(e->return_type);
