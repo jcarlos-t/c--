@@ -15,30 +15,10 @@ using namespace std;
 #include <functional>
 
 // ============================================================
-// Control flow exceptions (used by EVALVisitor)
+// Abstract Visitor — Visitor Pattern base for EVALVisitor and
+// ConstantFolding. Each expression returns double, each
+// statement/declaration returns int.
 // ============================================================
-// Excepciones para manejar break, continue y return en el
-// intérprete tree-walking (EVALVisitor). Cuando se encuentra
-// una de estas sentencias, se lanza la excepción correspondiente
-// que es capturada en el nivel adecuado (loop, función, etc.)
-class BreakException : public exception {};
-class ContinueException : public exception {};
-class ReturnException : public exception {
-public:
-    double value;
-    ReturnException(double v) : value(v) {}
-};
-
-// ============================================================
-// Abstract Visitor — Visitor Pattern base para EVALVisitor
-// ============================================================
-// Define la interfaz para recorrer el AST (Abstract Syntax Tree)
-// y evaluar nodos. Cada tipo de nodo tiene un método visit()
-// que retorna double (valor evaluado de la expresión) o int
-// (código de control para statements).
-//
-// El patrón Visitor permite separar el algoritmo (evaluación,
-// typecheck, codegen) de la estructura del AST.
 class Visitor {
 public:
     virtual ~Visitor() = default;
@@ -89,79 +69,6 @@ public:
     virtual int visit(StructDecl* d) = 0;     // struct A { ... };
     virtual int visit(TemplateDecl* d) = 0;   // template<typename T> ...
     virtual int visit(Program* p) = 0;        // programa completo
-};
-
-// ============================================================
-// EVALVisitor — Tree-walking interpreter
-// ============================================================
-// Recorre el AST y evalúa cada nodo, produciendo resultados
-// numéricos. Usa un environment para mantener el estado de
-// variables, funciones, arreglos, structs y heap. Soporta
-// break/continue/return mediante excepciones.
-//
-// Flujo típico:
-//   1. EVALVisitor::interprete(program) inicia la visita
-//   2. visit(Program) registra funciones y evalúa globales
-//   3. visit(FunDecl) crea scope y evalúa el body
-//   4. Cada expresión produce un double como resultado
-class EVALVisitor : public Visitor {
-public:
-    Environment<double> env;                     // variables → valores numéricos
-    Environment<string> typeEnv;                 // variables → nombre del tipo
-    unordered_map<string, FunDecl*> envfun;      // nombre de función → declaración
-    unordered_map<string, string> funReturnTypes; // función → tipo de retorno
-    string last_string;                          // último string procesado (print)
-    unordered_map<string, vector<double>> array_data;     // nombre → datos del arreglo
-    unordered_map<string, unordered_map<string, double>> struct_instances; // struct instances
-    unordered_map<string, vector<string>> struct_defs;    // nombre struct → miembros
-    unordered_map<int, vector<double>> heap;     // dirección → datos (malloc)
-    int next_addr = 1;                           // próxima dirección de heap
-
-    double visit(BinaryOpNode* e) override;
-    double visit(MallocNode* e) override;
-    double visit(SizeOfNode* e) override;
-    double visit(UnaryOpNode* e) override;
-    double visit(AssignmentNode* e) override;
-    double visit(FcallNode* e) override;
-    double visit(IndexNode* e) override;
-    double visit(MemberAccessNode* e) override;
-    double visit(ArrowAccessNode* e) override;
-    double visit(LambdaExprNode* e) override;
-    double visit(CaptureNode* e) override;
-    double visit(IdentifierNode* e) override;
-    double visit(IntegerLiteralNode* e) override;
-    double visit(FloatLiteralNode* e) override;
-    double visit(BoolLiteralNode* e) override;
-    double visit(CharLiteralNode* e) override;
-    double visit(StringLiteralNode* e) override;
-    double visit(PrintfNode* e) override;
-    double visit(PrimitiveTypeNode* e) override;
-    double visit(PointerTypeNode* e) override;
-    double visit(StructTypeNode* e) override;
-    double visit(NamedTypeNode* e) override;
-    double visit(TemplateTypeNode* e) override;
-
-    int visit(Body* s) override;
-    int visit(ExprStmtNode* s) override;
-    int visit(IfStmt* s) override;
-    int visit(WhileStmt* s) override;
-    int visit(DoWhileStmt* s) override;
-    int visit(ForStmt* s) override;
-    int visit(SwitchStmt* s) override;
-    int visit(CaseClause* s) override;
-    int visit(BreakStmt* s) override;
-    int visit(ContinueStmt* s) override;
-    int visit(ReturnStmt* s) override;
-    int visit(FreeStmt* s) override;
-
-    int visit(VarDecl* d) override;
-    int visit(FunDecl* d) override;
-    int visit(StructDecl* d) override;
-    int visit(TemplateDecl* d) override;
-    int visit(Program* p) override;
-
-    void interprete(Program* program);   // entry point del intérprete
-    string getType(Exp* e);              // obtiene tipo textual de una expresión
 };
 
 // ============================================================
@@ -230,7 +137,6 @@ public:
 // Abstract TypeVisitor — Semantic Type Checking
 // ============================================================
 // Define la interfaz para el análisis semántico de tipos.
-// A diferencia de Visitor (que retorna double/int), aquí:
 //   - Statements: retornan void (solo verifican, no evalúan)
 //   - Expressions: retornan Type* (el tipo semántico resultante)
 //

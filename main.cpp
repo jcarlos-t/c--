@@ -28,22 +28,18 @@ int main(int argc, const char* argv[]) {
                 "  --tokens           Imprime los tokens (scanner)\n"
                 "  --ast              Imprime el AST (parser)\n"
                 "  --codegen          Imprime el assembly x86-64 generado\n"
-                "  --no-run           Compila pero no ejecuta (solo en modo RUN)\n"
                 "  -o <archivo.s>     Archivo de salida para el assembly\n"
                 "  Sin flags:         Compila y ejecuta el programa" << endl;
         return argv[1] == "--help" ? 0 : 1;
     }
 
     Mode mode = parseMode(argc, argv);
-    bool runInterpreter = true;
     string outputFile = "";
 
     // Flags compatibles con modo RUN
     for (int i = 2; i < argc; i++) {
         string arg(argv[i]);
-        if (arg == "--no-run") {
-            runInterpreter = false;
-        } else if (arg == "-o" && i + 1 < argc) {
+        if (arg == "-o" && i + 1 < argc) {
             outputFile = argv[++i];
         }
     }
@@ -125,11 +121,6 @@ int main(int argc, const char* argv[]) {
         ofstream outfile(outputFile);
         GenCodeVisitor codegen(outfile);
         codegen.generate(ast);
-    }
-
-    if (runInterpreter) {
-        EVALVisitor interprete;
-        interprete.interprete(ast);
     }
 
     return 0;

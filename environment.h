@@ -24,7 +24,6 @@ using namespace std;
 //   lookup("x") → busca en nivel 2, luego 1, luego 0 → encuentra 10
 //
 // Uso en el compilador:
-//   - EVALVisitor: Environment<double> para variables → valores
 //   - TypeChecker: Environment<Type*> para variables → tipos
 //                  Environment<VarDecl*> para variables → declaraciones
 //
