@@ -13,8 +13,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Build
-      run: g++ -std=c++17 -o c-- *.cpp
+    - name: Build compiler
+      run: make
 
-    - name: Test all inputs
-      run: python3 run_all_inputs.py
+    - name: Run integration tests
+      run: python3 tests/integracion/run_tests.py
