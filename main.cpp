@@ -88,9 +88,12 @@ int main(int argc, const char* argv[]) {
         return 0;
     }
 
-    // Para CODEGEN y RUN: typecheck
+    // Para CODEGEN y RUN: typecheck + constant folding
     TypeChecker tc;
     tc.typecheck(ast);
+
+    ConstantFolding cf;
+    ast->accept(&cf);
 
     if (mode == CODEGEN) {
         GenCodeVisitor codegen(cout);
