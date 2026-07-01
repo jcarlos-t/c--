@@ -6,20 +6,18 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BENCHMARKS_CNN="$PROJECT_DIR/benchmarks_cnn"
 BENCHMARKS_C="$PROJECT_DIR/benchmarks_c"
 RESULTS_DIR="$PROJECT_DIR/results"
-COMPILER="$PROJECT_DIR/../main"
+COMPILER="$PROJECT_DIR/../c--"
 
 # Create results directory
 mkdir -p "$RESULTS_DIR"
 
 # Build the C-- compiler first
 echo "Building C-- compiler..."
-cd "$PROJECT_DIR/.."
-g++ -o main -std=c++17 main.cpp scanner.cpp token.cpp parser.cpp ast.cpp visitor.cpp TypeChecker.cpp ConstantFolding.cpp Gencode.cpp
+make -C "$PROJECT_DIR/.." all 2>/dev/null
 if [ $? -ne 0 ]; then
     echo "Error: Failed to build C-- compiler"
     exit 1
 fi
-cd "$SCRIPT_DIR"
 
 echo "Compilation Time Measurements" > "$RESULTS_DIR/compilation_times.csv"
 echo "Benchmark,C--_Compiler,GCC_O0,GCC_O2" >> "$RESULTS_DIR/compilation_times.csv"
@@ -32,8 +30,7 @@ for bench in "${benchmarks[@]}"; do
     # C-- compiler
     cnn_file="$BENCHMARKS_CNN/$bench.cnn"
     if [ -f "$cnn_file" ]; then
-        time_cnn=$( (time "$COMPILER" "$cnn_file" --no-run > /dev/null 2>&1) 2>&1 | grep real | awk '{print $2}')
-        # Convert time to seconds (remove 'm' and 's')
+        time_cnn=$( (time "$COMPILER" "$cnn_file" -c > /dev/null 2>&1) 2>&1 | grep real | awk '{print $2}')
         time_cnn=$(echo "$time_cnn" | awk -F'[ms]' '{print $1*60 + $2}')
     else
         time_cnn="N/A"

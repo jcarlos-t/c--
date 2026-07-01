@@ -4,10 +4,12 @@ SRCS = $(wildcard *.cpp)
 OBJS = $(SRCS:.cpp=.o)
 TARGET = c--
 
-.PHONY: all clean
+.PHONY: all build clean
 
 all: $(TARGET)
 	rm -f $(OBJS)
+
+build: $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^

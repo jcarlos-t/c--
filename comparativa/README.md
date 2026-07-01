@@ -35,7 +35,7 @@ comparativa/
 
 ```bash
 cd /home/tkaos/UTEC/C5/compi/c--
-g++ -o main -std=c++17 *.cpp
+make
 ```
 
 ### 2. Ejecutar todas las mediciones
@@ -84,7 +84,7 @@ Los resultados se guardan en `comparativa/results/`:
 
 ### Tiempo de Compilación
 Mide la madurez del pipeline del compilador:
-- C--: scanner + parser + typecheck + codegen
+- C--: scanner + parser + typecheck + constant folding + codegen
 - GCC/Clang: cientos de passes de optimización
 
 ### Tiempo de Ejecución
@@ -108,7 +108,7 @@ Código más pequeño suele implicar mejor aprovechamiento de caché.
 - Eliminación de código muerto
 
 ### Optimizaciones implementadas en C--:
-- Constant folding (ya implementado)
+- Constant folding (evaluación de expresiones constantes en tiempo de compilación)
 
 ### Fortalezas de C--:
 - Compilación instantánea (parser simple)

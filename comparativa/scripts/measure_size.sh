@@ -6,13 +6,12 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BENCHMARKS_CNN="$PROJECT_DIR/benchmarks_cnn"
 BENCHMARKS_C="$PROJECT_DIR/benchmarks_c"
 RESULTS_DIR="$PROJECT_DIR/results"
-COMPILER="$PROJECT_DIR/../main"
+COMPILER="$PROJECT_DIR/../c--"
 BUILD_DIR="$PROJECT_DIR/build"
 
 # Create directories
 mkdir -p "$RESULTS_DIR"
 mkdir -p "$BUILD_DIR"
-mkdir -p "$PROJECT_DIR/../assembly"
 
 echo "Binary Size Measurements (bytes)" > "$RESULTS_DIR/binary_sizes.csv"
 echo "Benchmark,C--_Compiler,GCC_O0,GCC_O2" >> "$RESULTS_DIR/binary_sizes.csv"
@@ -25,11 +24,7 @@ for bench in "${benchmarks[@]}"; do
     # C-- compiler
     cnn_file="$BENCHMARKS_CNN/$bench.cnn"
     if [ -f "$cnn_file" ]; then
-        cd "$PROJECT_DIR/.."
-        "$COMPILER" "$cnn_file" --no-run -o "assembly/${bench}.s" 2>/dev/null
-        s_file="assembly/${bench}.s"
-        cd "$SCRIPT_DIR"
-        gcc -no-pie "$PROJECT_DIR/../$s_file" -o "$BUILD_DIR/$bench" 2>/dev/null
+        "$COMPILER" "$cnn_file" --exec -o "$BUILD_DIR/$bench" > /dev/null 2>&1
         if [ -f "$BUILD_DIR/$bench" ]; then
             size_cnn=$(wc -c < "$BUILD_DIR/$bench")
         else

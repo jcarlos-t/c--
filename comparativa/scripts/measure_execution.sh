@@ -6,13 +6,12 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BENCHMARKS_CNN="$PROJECT_DIR/benchmarks_cnn"
 BENCHMARKS_C="$PROJECT_DIR/benchmarks_c"
 RESULTS_DIR="$PROJECT_DIR/results"
-COMPILER="$PROJECT_DIR/../main"
+COMPILER="$PROJECT_DIR/../c--"
 BUILD_DIR="$PROJECT_DIR/build"
 
 # Create directories
 mkdir -p "$RESULTS_DIR"
 mkdir -p "$BUILD_DIR"
-mkdir -p "$PROJECT_DIR/../assembly"
 
 TIMEOUT_SEC=30
 
@@ -27,11 +26,7 @@ for bench in "${benchmarks[@]}"; do
     # C-- compiler
     cnn_file="$BENCHMARKS_CNN/$bench.cnn"
     if [ -f "$cnn_file" ]; then
-        cd "$PROJECT_DIR/.."
-        "$COMPILER" "$cnn_file" --no-run -o "assembly/${bench}.s" 2>/dev/null
-        s_file="assembly/${bench}.s"
-        cd "$SCRIPT_DIR"
-        gcc -no-pie "$PROJECT_DIR/../$s_file" -o "$BUILD_DIR/$bench" 2>/dev/null
+        "$COMPILER" "$cnn_file" --exec -o "$BUILD_DIR/$bench" > /dev/null 2>&1
         if [ -f "$BUILD_DIR/$bench" ]; then
             time_cnn=$( (time timeout $TIMEOUT_SEC "$BUILD_DIR/$bench" > /dev/null 2>&1) 2>&1 | grep real | awk '{print $2}')
             if [ -z "$time_cnn" ]; then

@@ -1,69 +1,100 @@
 import os
 import subprocess
-import shutil
 import sys
 
-# Archivos c++
-programa = ["main.cpp", "scanner.cpp", "token.cpp", "parser.cpp", "ast.cpp", "visitor.cpp",
-            "TypeChecker.cpp", "Gencode.cpp", "ConstantFolding.cpp", "ast_printer.cpp"]
+COMPILER = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "c--"))
+INPUT_DIR = os.path.join(os.path.dirname(__file__), "inputs")
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "outputs")
 
-# Compilar
-compile = ["g++", "-std=c++17"] + programa + ["-o", "c--"]
-print("Compilando:", " ".join(compile))
-result = subprocess.run(compile, capture_output=True, text=True)
+MODES = {
+    "1": ("Tokens", "-t"),
+    "2": ("AST", "-a"),
+    "3": ("Assembly (codegen)", "-c"),
+    "4": ("All (tokens + AST + assembly)", "-A"),
+    "5": ("Ejecutable (--exec)", "--exec"),
+}
 
-if result.returncode != 0:
-    print("Error en compilación:\n", result.stderr)
-    exit(1)
+def build_compiler():
+    print("Compilando c--...")
+    project_dir = os.path.join(os.path.dirname(__file__), "..", "..")
+    result = subprocess.run(["make", "-C", project_dir, "all"], capture_output=True, text=True)
+    if result.returncode != 0:
+        print("Error en compilación:")
+        print(result.stderr)
+        sys.exit(1)
+    print("Compilación exitosa\n")
 
-print("Compilación exitosa")
+def choose_inputs():
+    files = sorted(f for f in os.listdir(INPUT_DIR) if f.endswith(".cnn"))
+    print("Archivos disponibles:")
+    for i, f in enumerate(files, 1):
+        print(f"  {i}. {f}")
+    print("  a. Todos")
+    choice = input("\nSelecciona archivos (ej: 1,3 o a): ").strip()
+    if choice.lower() == "a":
+        return files
+    selected = []
+    for part in choice.split(","):
+        part = part.strip()
+        if part.isdigit():
+            idx = int(part) - 1
+            if 0 <= idx < len(files):
+                selected.append(files[idx])
+    if not selected:
+        print("Ningún archivo válido, ejecutando todos.")
+        return files
+    return selected
 
-# Ejecutar
-input_dir = "inputs"
-output_dir = "outputs"
-os.makedirs(output_dir, exist_ok=True)
+def choose_modes():
+    print("\nModos de salida:")
+    for key, (name, _) in MODES.items():
+        print(f"  {key}. {name}")
+    choice = input("\nSelecciona modos (ej: 1,3 o a para todos): ").strip()
+    modes = []
+    if choice.lower() == "a":
+        return [flag for _, flag in MODES.values()]
+    for part in choice.split(","):
+        part = part.strip()
+        if part in MODES:
+            modes.append(MODES[part][1])
+    if not modes:
+        print("Ningún modo válido, usando assembly (-c).")
+        return ["-c"]
+    return modes
 
-# Si pasan un archivo como argumento, ejecutar solo ese
-if len(sys.argv) > 1:
-    filename = sys.argv[1]
-    if not filename.endswith(".cnn"):
-        filename += ".cnn"
-    filepath = os.path.join(input_dir, filename) if not os.path.dirname(filename) else filename
-    input_files = [os.path.basename(filepath)]
-    single_mode = True
-else:
-    input_files = sorted([f for f in os.listdir(input_dir) if f.endswith(".cnn")])
-    single_mode = False
+def run_compiler(input_file, flags, output_path):
+    cmd = [COMPILER, input_file] + flags
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        if result.stdout:
+            f.write(result.stdout)
+        if result.stderr:
+            if result.stdout:
+                f.write("\n")
+            f.write(result.stderr)
+    return result.returncode
 
-for filename in input_files:
-    if single_mode:
-        filepath = filename if os.path.dirname(filename) else os.path.join(input_dir, filename)
-    else:
-        filepath = os.path.join(input_dir, filename)
-    print(f"Ejecutando {filename}")
-    run_cmd = ["./c--", filepath]
-    result = subprocess.run(run_cmd, capture_output=True, text=True)
+def main():
+    if not os.path.isfile(COMPILER):
+        build_compiler()
 
-    base = filename.replace(".cnn", "").replace("input", "")
-    output_file = os.path.join(output_dir, f"output{base}.txt")
-    with open(output_file, "w", encoding="utf-8") as f:
-        f.write("=== STDOUT ===\n")
-        f.write(result.stdout)
-        f.write("\n=== STDERR ===\n")
-        f.write(result.stderr)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    source_name = os.path.splitext(os.path.basename(filepath))[0]
-    tokens_file = os.path.join(input_dir, f"{source_name}_tokens.txt")
-    ast_file = "ast.dot"
+    input_files = choose_inputs()
+    flags = choose_modes()
 
-    if os.path.isfile(tokens_file):
-        dest_tokens = os.path.join(output_dir, f"tokens_{base}.txt")
-        shutil.move(tokens_file, dest_tokens)
+    mode_suffix = "_".join(f.lstrip("-") for f in flags)
+    for filename in input_files:
+        filepath = os.path.join(INPUT_DIR, filename)
+        base = os.path.splitext(filename)[0]
+        out_name = f"{base}_{mode_suffix}.txt"
+        out_path = os.path.join(OUTPUT_DIR, out_name)
+        print(f"  {filename} -> {out_name}")
+        ret = run_compiler(filepath, flags, out_path)
+        if ret != 0:
+            print(f"    (exit code {ret})")
 
-    if os.path.isfile(ast_file):
-        dest_ast = os.path.join(output_dir, f"ast_{base}.dot")
-        shutil.move(ast_file, dest_ast)
+    print(f"\nResultados guardados en: {OUTPUT_DIR}/")
 
-        output_img = os.path.join(output_dir, f"ast_{base}.png")
-        dot_cmd = ["dot", "-Tpng", dest_ast, "-o", output_img]
-        subprocess.run(dot_cmd, capture_output=True, text=True)
+if __name__ == "__main__":
+    main()

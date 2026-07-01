@@ -41,13 +41,6 @@ static Program* parse(const string& input) {
     }
 }
 
-static void typecheckAndFold(Program* ast) {
-    TypeChecker tc;
-    tc.typecheck(ast);
-    ConstantFolding cf;
-    ast->accept(&cf);
-}
-
 static string generateAssembly(Program* ast) {
     ostringstream ss;
     GenCodeVisitor codegen(ss);
@@ -149,7 +142,11 @@ int main(int argc, const char* argv[]) {
         return 0;
     }
 
-    typecheckAndFold(ast);
+    TypeChecker tc;
+    tc.typecheck(ast);
+    ConstantFolding cf;
+    ast->accept(&cf);
+
     string asmCode = generateAssembly(ast);
 
     if (mode == CODEGEN || mode == RUN) {
