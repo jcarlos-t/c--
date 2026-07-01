@@ -58,12 +58,55 @@ jobs:
 
         echo "Release $VERSION created successfully"
 
-    - name: Trigger Vercel redeploy (optional)
-      env:
-        VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+  # Rebuilds the Vercel Sandbox snapshot used by compi-web (gcc + the compiler
+  # binary pre-installed) so user code runs without paying that setup cost on
+  # every execution. Runs as its own job so a failure here is reported
+  # separately and never reverts the release published above.
+  update-sandbox-snapshot:
+    needs: release
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+      COMPILER_BIN_URL: ${{ secrets.COMPILER_BIN_URL }}
+      # Lets the Vercel CLI resolve the target project non-interactively (no `vercel link`).
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - name: Install @vercel/sandbox
+      working-directory: .github/scripts
       run: |
-        if [ -n "$VERCEL_DEPLOY_HOOK_URL" ]; then
-          curl -s -X POST "$VERCEL_DEPLOY_HOOK_URL" || echo "Deploy hook call failed (non-blocking)"
-        else
-          echo "VERCEL_DEPLOY_HOOK_URL not set, skipping redeploy"
-        fi
+        npm init -y > /dev/null
+        npm install @vercel/sandbox
+
+    - name: Create sandbox snapshot
+      id: snapshot
+      working-directory: .github/scripts
+      run: |
+        set -e
+        SNAPSHOT_ID="$(node create-sandbox-snapshot.mjs | tail -n1)"
+        echo "snapshot_id=${SNAPSHOT_ID}" >> "$GITHUB_OUTPUT"
+
+    - name: Update SANDBOX_SNAPSHOT_ID on compi-web (production)
+      env:
+        SNAPSHOT_ID: ${{ steps.snapshot.outputs.snapshot_id }}
+      run: |
+        set -e
+        npx vercel@latest env rm SANDBOX_SNAPSHOT_ID production --token="$VERCEL_TOKEN" --yes || true
+        echo -n "$SNAPSHOT_ID" | npx vercel@latest env add SANDBOX_SNAPSHOT_ID production --token="$VERCEL_TOKEN"
+
+    - name: Trigger Vercel redeploy for compi-web
+      run: |
+        curl -fsSL -X POST "$VERCEL_DEPLOY_HOOK_URL"

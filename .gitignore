@@ -7,3 +7,6 @@ comparativa/build
 omparativa/scripts/assembly
 tests/individuales/outputs
 tests/edge
+.github/scripts/node_modules
+.github/scripts/package.json
+.github/scripts/package-lock.json
