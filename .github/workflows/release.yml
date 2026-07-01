@@ -17,11 +17,13 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y g++ gcc libc6-dev
+        sudo apt-get install -y g++ gcc
 
     - name: Build static binary
       run: |
         g++ -std=c++17 -Wall -Wextra -O2 -static -o c-- *.cpp
+        file c--
+        ls -lh c--
 
     - name: Smoke test
       run: |
@@ -34,33 +36,40 @@ EOF
         ./c-- /tmp/smoke.cnn --codegen > /dev/null
         echo "Smoke test passed"
 
-    - name: Determine tag
-      id: tag
+    - name: Determine tag and create release
+      id: release
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: |
+        set -e
         if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-          echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          VERSION="${GITHUB_REF_NAME}"
         else
-          echo "version=ci-$(date +%Y%m%d)-${{ github.run_number }}" >> $GITHUB_OUTPUT
+          VERSION="ci-$(date +%Y%m%d)-${{ github.run_number }}"
+        fi
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+        # Check if release already exists for this tag
+        if gh release view "$VERSION" --repo "${{ github.repository }}" &>/dev/null; then
+          echo "Release $VERSION already exists, deleting..."
+          gh release delete "$VERSION" --repo "${{ github.repository }}" --yes || true
         fi
 
-    - name: Create Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ steps.tag.outputs.version }}
-        name: Release ${{ steps.tag.outputs.version }}
-        body: |
-          Compilador c-- para Linux x86_64.
-          Construido automáticamente desde ${{ github.sha }}.
-        files: c--
-        fail_on_unmatched_files: true
-        generate_release_notes: false
+        # Create release and upload binary
+        gh release create "$VERSION" \
+          --repo "${{ github.repository }}" \
+          --title "Release $VERSION" \
+          --notes "Compilador c-- para Linux x86_64. Construido desde ${{ github.sha }}." \
+          "./c--#c--"
+
+        echo "Release $VERSION created successfully"
 
     - name: Trigger Vercel redeploy (optional)
       env:
         VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
       run: |
         if [ -n "$VERCEL_DEPLOY_HOOK_URL" ]; then
-          curl -X POST "$VERCEL_DEPLOY_HOOK_URL" || echo "Deploy hook call failed (non-blocking)"
+          curl -s -X POST "$VERCEL_DEPLOY_HOOK_URL" || echo "Deploy hook call failed (non-blocking)"
         else
           echo "VERCEL_DEPLOY_HOOK_URL not set, skipping redeploy"
         fi
