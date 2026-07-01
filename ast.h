@@ -8,8 +8,6 @@
 using namespace std;
 
 class Visitor;
-class TypeVisitor;
-class CodeGenVisitor;
 class VarDecl;
 class TemplateDecl;
 class TypeNode;
@@ -45,10 +43,8 @@ public:
     
     Exp() {}
     virtual ~Exp() {}
-    virtual double accept(Visitor* visitor);
-    virtual Type* accept(TypeVisitor* visitor);
-    virtual void accept(CodeGenVisitor* visitor);
-    virtual void computeAddress(CodeGenVisitor* visitor);
+    virtual void accept(Visitor* visitor);
+    virtual void computeAddress(Visitor* visitor);
 };
 
 // --- Nodos de expresión ---
@@ -61,9 +57,8 @@ public:
     Exp* right;
     BinaryOpNode(Exp* l, Exp* r, BinaryOp op);
     ~BinaryOpNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Operación unaria (*p, -x, !b, ++i, etc.)
@@ -73,10 +68,9 @@ public:
     Exp* operand;
     UnaryOpNode(Exp* o, UnaryOp op);
     ~UnaryOpNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
-    void computeAddress(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
+    void computeAddress(Visitor* visitor);
 };
 
 // Asignación: =, +=, -=, *=, /=
@@ -87,9 +81,8 @@ public:
     Exp* value;
     AssignmentNode(Exp* t, Exp* v, AssignOp op = AssignOp::ASSIGN);
     ~AssignmentNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 
@@ -102,9 +95,8 @@ public:
     vector<TypeNode*> template_args; // argumentos del template <arg, arg2...>
     FcallNode(Exp* c);
     ~FcallNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Acceso por índice: base[index]
@@ -114,10 +106,9 @@ public:
     Exp* index;
     IndexNode(Exp* b, Exp* i);
     ~IndexNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
-    void computeAddress(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
+    void computeAddress(Visitor* visitor);
 };
 
 // Acceso a miembro de struct: obj.member
@@ -127,10 +118,9 @@ public:
     string member;
     MemberAccessNode(Exp* o, const string& m);
     ~MemberAccessNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
-    void computeAddress(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
+    void computeAddress(Visitor* visitor);
 };
 
 // Acceso a miembro por puntero: ptr->member
@@ -140,10 +130,9 @@ public:
     string member;
     ArrowAccessNode(Exp* p, const string& m);
     ~ArrowAccessNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
-    void computeAddress(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
+    void computeAddress(Visitor* visitor);
 };
 
 // Asignación dinámica: malloc(expr)
@@ -152,9 +141,8 @@ public:
     Exp* size;
     MallocNode(Exp* s);
     ~MallocNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 
@@ -165,9 +153,8 @@ public:
     Exp* target_type;
     SizeOfNode(Exp* t);
     ~SizeOfNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Referencia a variable por nombre
@@ -177,10 +164,9 @@ public:
     VarDecl* binding = nullptr;  // VarDecl resuelto por TypeChecker (scope/shadowing)
     IdentifierNode(const string& n);
     ~IdentifierNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
-    void computeAddress(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
+    void computeAddress(Visitor* visitor);
 };
 
 // Literal entero
@@ -188,9 +174,8 @@ class IntegerLiteralNode : public Exp {
 public:
     long long value;
     IntegerLiteralNode(long long v);
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Literal flotante
@@ -198,9 +183,8 @@ class FloatLiteralNode : public Exp {
 public:
     double value;
     FloatLiteralNode(double v);
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Literal booleano (true/false)
@@ -208,9 +192,8 @@ class BoolLiteralNode : public Exp {
 public:
     bool value;
     BoolLiteralNode(bool v);
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Literal de caracter: 'a'
@@ -218,9 +201,8 @@ class CharLiteralNode : public Exp {
 public:
     char value;
     CharLiteralNode(char v);
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Literal de cadena: "texto"
@@ -228,9 +210,8 @@ class StringLiteralNode : public Exp {
 public:
     string value;
     StringLiteralNode(const string& v);
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Impresión: printf(args...), es exp porque se puede usar en cualquier lugar, en c es valido x = printf("xd");
@@ -241,9 +222,8 @@ public:
     PrintfNode();
     PrintfNode(const string& fmt, const vector<Exp*>& a);
     ~PrintfNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Clase base para todos los statements
@@ -252,9 +232,7 @@ public:
     Location loc;
     Stm() {}
     virtual ~Stm() = 0;
-    virtual int accept(Visitor* visitor) = 0;
-    virtual void accept(TypeVisitor* visitor) = 0;
-    virtual void accept(CodeGenVisitor* visitor) = 0;
+    virtual void accept(Visitor* visitor) = 0;
 };
 
 // Bloque de código: { stmts... }
@@ -263,9 +241,8 @@ public:
     vector<Stm*> stmts;
     Body();
     ~Body();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Statement expresión: expr; | wrapper para poder usar nodes como stmts 
@@ -274,9 +251,8 @@ public:
     Exp* expr;
     ExprStmtNode(Exp* e);
     ~ExprStmtNode();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Condicional: if (cond) then [else]
@@ -287,9 +263,8 @@ public:
     Stm* else_branch;
     IfStmt(Exp* c, Stm* t, Stm* e = nullptr);
     ~IfStmt();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Bucle while: while (cond) body
@@ -299,9 +274,8 @@ public:
     Stm* body;
     WhileStmt(Exp* c, Stm* b);
     ~WhileStmt();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Bucle do-while: do body while (cond)
@@ -311,9 +285,8 @@ public:
     Exp* condition;
     DoWhileStmt(Stm* b, Exp* c);
     ~DoWhileStmt();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Bucle for: for (init; cond; inc) body
@@ -325,9 +298,8 @@ public:
     Stm* body;
     ForStmt(Stm* i, Exp* c, Exp* inc, Stm* b);
     ~ForStmt();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Caso de switch: case value: body
@@ -337,9 +309,8 @@ public:
     vector<Stm*> body;
     CaseClause(Exp* v);
     ~CaseClause();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Switch: switch (expr) { cases... [default: body] }
@@ -350,27 +321,24 @@ public:
     vector<Stm*> default_body;
     SwitchStmt(Exp* e);
     ~SwitchStmt();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // break
 class BreakStmt : public Stm {
 public:
     BreakStmt();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // continue
 class ContinueStmt : public Stm {
 public:
     ContinueStmt();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // return [expr]
@@ -379,9 +347,8 @@ public:
     Exp* expr;
     ReturnStmt(Exp* e = nullptr);
     ~ReturnStmt();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // free(expr)
@@ -390,9 +357,8 @@ public:
     Exp* expr;
     FreeStmt(Exp* e);
     ~FreeStmt();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // --- Nodos de declaración ---
@@ -412,9 +378,8 @@ public:
 
     VarDecl(Exp* t, const string& n);
     ~VarDecl();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Declaración de función
@@ -432,9 +397,8 @@ public:
 
     FunDecl(Exp* rt, const string& n, Body* b);
     ~FunDecl();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Declaración de struct
@@ -451,9 +415,8 @@ public:
 
     StructDecl(const string& n);
     ~StructDecl();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Programa completo: lista de funciones, globales, structs y templates
@@ -468,9 +431,8 @@ public:
 
     Program();
     ~Program();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // --- Nodos de tipo ---
@@ -487,9 +449,8 @@ public:
     enum Prim { VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, AUTO };
     Prim prim;
     PrimitiveTypeNode(Prim p);
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Tipo puntero: T*
@@ -498,9 +459,8 @@ public:
     TypeNode* base;
     PointerTypeNode(TypeNode* b);
     ~PointerTypeNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Tipo struct por nombre, instanciar un struct: struct Point p;
@@ -508,9 +468,8 @@ class StructTypeNode : public TypeNode {
 public:
     string name;
     StructTypeNode(const string& n);
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Tipo nombrado, nodos que representan tipos definidos por el usuario, por ejemplo en templates
@@ -519,9 +478,8 @@ public:
     string name;
     NamedTypeNode(const string& n);
 
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // instanciacion concreta de template: Nombre<T1, T2, ...>
@@ -532,9 +490,8 @@ public:
     TemplateTypeNode(const string& n, const vector<TypeNode*>& args);
     ~TemplateTypeNode();
 
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
-    double accept(Visitor* visitor);
+
+    void accept(Visitor* visitor);
 };
 
 // --- Expresiones lambda ---
@@ -546,9 +503,8 @@ public:
     Mode mode;
     string name;
     CaptureNode(Mode m, const string& n);
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // Expresión lambda: [captures](params) -> tipo { body }
@@ -560,9 +516,8 @@ public:
     Body* body;
     LambdaExprNode(const vector<CaptureNode*>& caps, const vector<VarDecl*>& p, TypeNode* r, Body* b);
     ~LambdaExprNode();
-    double accept(Visitor* visitor);
-    Type* accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 // --- Declaraciones template ---
@@ -577,9 +532,8 @@ public:
     TemplateDecl(const vector<string>& p, FunDecl* f);
     TemplateDecl(const vector<string>& p, StructDecl* s);
     ~TemplateDecl();
-    int accept(Visitor* visitor);
-    void accept(TypeVisitor* visitor);
-    void accept(CodeGenVisitor* visitor);
+    void accept(Visitor* visitor);
+
 };
 
 #endif

@@ -29,35 +29,8 @@ using namespace std;
 //   4. Statements generan código con labels para saltos
 
 // ============================================================
-// accept(CodeGenVisitor*) — double dispatch stubs
+// Stubs for accept dispatch — all handled in visitor.cpp
 // ============================================================
-// Cada nodo del AST llama al visit() correspondiente del
-// CodeGenVisitor. Estos stubs son análogos a los de TypeChecker
-// pero para generación de código.
-
-void BinaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void UnaryOpNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void AssignmentNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void FcallNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void IndexNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void MemberAccessNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void ArrowAccessNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void MallocNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void SizeOfNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void IdentifierNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void IntegerLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void FloatLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void BoolLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void CharLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void StringLiteralNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void PrintfNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void PrimitiveTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void PointerTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void StructTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void NamedTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void TemplateTypeNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void CaptureNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void LambdaExprNode::accept(CodeGenVisitor* v) { v->visit(this); }
 
 // ============================================================
 // baseStructName — extraer nombre base de struct template
@@ -79,36 +52,14 @@ static string baseStructName(const string& structName) {
     return structName;
 }
 
-void Body::accept(CodeGenVisitor* v) { v->visit(this); }
-void ExprStmtNode::accept(CodeGenVisitor* v) { v->visit(this); }
-void IfStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void WhileStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void DoWhileStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void ForStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void SwitchStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void CaseClause::accept(CodeGenVisitor* v) { v->visit(this); }
-void BreakStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void ContinueStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void ReturnStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-void FreeStmt::accept(CodeGenVisitor* v) { v->visit(this); }
-
-void VarDecl::accept(CodeGenVisitor* v) { v->visit(this); }
-void FunDecl::accept(CodeGenVisitor* v) { v->visit(this); }
-void StructDecl::accept(CodeGenVisitor* v) { v->visit(this); }
-void Program::accept(CodeGenVisitor* v) { v->visit(this); }
-void TemplateDecl::accept(CodeGenVisitor* v) { v->visit(this); }
-
 // ============================================================
-// computeAddress(CodeGenVisitor*) — lvalue nodes only
+// computeAddress(Visitor*) — lvalue nodes only
 // ============================================================
-// Estos stubs permiten calcular la dirección efectiva de un
-// l-value (variable, arr[i], s.m, p->m, *p). Son llamados por
-// ComputeAddressNode en lugar del visit normal.
-void UnaryOpNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
-void IdentifierNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
-void IndexNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
-void MemberAccessNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
-void ArrowAccessNode::computeAddress(CodeGenVisitor* v) { v->computeAddress(this); }
+void UnaryOpNode::computeAddress(Visitor* v) { v->computeAddress(this); }
+void IdentifierNode::computeAddress(Visitor* v) { v->computeAddress(this); }
+void IndexNode::computeAddress(Visitor* v) { v->computeAddress(this); }
+void MemberAccessNode::computeAddress(Visitor* v) { v->computeAddress(this); }
+void ArrowAccessNode::computeAddress(Visitor* v) { v->computeAddress(this); }
 
 // ============================================================
 // generate — entry point de generación de código

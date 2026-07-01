@@ -4,51 +4,45 @@
 using namespace std;
 
 // ============================================================
-// accept() methods for Visitor (double-returning)
-// Expressions
+// accept() dispatch stubs for Visitor
 // ============================================================
-double BinaryOpNode::accept(Visitor* v) { return v->visit(this); }
-double UnaryOpNode::accept(Visitor* v) { return v->visit(this); }
-double AssignmentNode::accept(Visitor* v) { return v->visit(this); }
-double FcallNode::accept(Visitor* v) { return v->visit(this); }
-double MallocNode::accept(Visitor* v) { return v->visit(this); }
-double IndexNode::accept(Visitor* v) { return v->visit(this); }
-double MemberAccessNode::accept(Visitor* v) { return v->visit(this); }
-double ArrowAccessNode::accept(Visitor* v) { return v->visit(this); }
-double SizeOfNode::accept(Visitor* v) { return v->visit(this); }
-double LambdaExprNode::accept(Visitor* v) { return v->visit(this); }
-double CaptureNode::accept(Visitor* v) { return v->visit(this); }
-double IdentifierNode::accept(Visitor* v) { return v->visit(this); }
-double IntegerLiteralNode::accept(Visitor* v) { return v->visit(this); }
-double FloatLiteralNode::accept(Visitor* v) { return v->visit(this); }
-double BoolLiteralNode::accept(Visitor* v) { return v->visit(this); }
-double CharLiteralNode::accept(Visitor* v) { return v->visit(this); }
-double StringLiteralNode::accept(Visitor* v) { return v->visit(this); }
-double PrintfNode::accept(Visitor* v) { return v->visit(this); }
-double PrimitiveTypeNode::accept(Visitor* v) { return v->visit(this); }
-double PointerTypeNode::accept(Visitor* v) { return v->visit(this); }
-double StructTypeNode::accept(Visitor* v) { return v->visit(this); }
-double NamedTypeNode::accept(Visitor* v) { return v->visit(this); }
-double TemplateTypeNode::accept(Visitor* v) { return v->visit(this); }
-
-// ============================================================
-// accept() methods for Visitor (int-returning)
-// Statements & Declarations
-// ============================================================
-int Body::accept(Visitor* v) { return v->visit(this); }
-int ExprStmtNode::accept(Visitor* v) { return v->visit(this); }
-int IfStmt::accept(Visitor* v) { return v->visit(this); }
-int WhileStmt::accept(Visitor* v) { return v->visit(this); }
-int DoWhileStmt::accept(Visitor* v) { return v->visit(this); }
-int ForStmt::accept(Visitor* v) { return v->visit(this); }
-int SwitchStmt::accept(Visitor* v) { return v->visit(this); }
-int CaseClause::accept(Visitor* v) { return v->visit(this); }
-int BreakStmt::accept(Visitor* v) { return v->visit(this); }
-int ContinueStmt::accept(Visitor* v) { return v->visit(this); }
-int ReturnStmt::accept(Visitor* v) { return v->visit(this); }
-int FreeStmt::accept(Visitor* v) { return v->visit(this); }
-int VarDecl::accept(Visitor* v) { return v->visit(this); }
-int FunDecl::accept(Visitor* v) { return v->visit(this); }
-int StructDecl::accept(Visitor* v) { return v->visit(this); }
-int TemplateDecl::accept(Visitor* v) { return v->visit(this); }
-int Program::accept(Visitor* v) { return v->visit(this); }
+void BinaryOpNode::accept(Visitor* v) { v->visit(this); }
+void UnaryOpNode::accept(Visitor* v) { v->visit(this); }
+void AssignmentNode::accept(Visitor* v) { v->visit(this); }
+void FcallNode::accept(Visitor* v) { v->visit(this); }
+void MallocNode::accept(Visitor* v) { v->visit(this); }
+void IndexNode::accept(Visitor* v) { v->visit(this); }
+void MemberAccessNode::accept(Visitor* v) { v->visit(this); }
+void ArrowAccessNode::accept(Visitor* v) { v->visit(this); }
+void SizeOfNode::accept(Visitor* v) { v->visit(this); }
+void LambdaExprNode::accept(Visitor* v) { v->visit(this); }
+void CaptureNode::accept(Visitor* v) { v->visit(this); }
+void IdentifierNode::accept(Visitor* v) { v->visit(this); }
+void IntegerLiteralNode::accept(Visitor* v) { v->visit(this); }
+void FloatLiteralNode::accept(Visitor* v) { v->visit(this); }
+void BoolLiteralNode::accept(Visitor* v) { v->visit(this); }
+void CharLiteralNode::accept(Visitor* v) { v->visit(this); }
+void StringLiteralNode::accept(Visitor* v) { v->visit(this); }
+void PrintfNode::accept(Visitor* v) { v->visit(this); }
+void PrimitiveTypeNode::accept(Visitor* v) { v->visit(this); }
+void PointerTypeNode::accept(Visitor* v) { v->visit(this); }
+void StructTypeNode::accept(Visitor* v) { v->visit(this); }
+void NamedTypeNode::accept(Visitor* v) { v->visit(this); }
+void TemplateTypeNode::accept(Visitor* v) { v->visit(this); }
+void Body::accept(Visitor* v) { v->visit(this); }
+void ExprStmtNode::accept(Visitor* v) { v->visit(this); }
+void IfStmt::accept(Visitor* v) { v->visit(this); }
+void WhileStmt::accept(Visitor* v) { v->visit(this); }
+void DoWhileStmt::accept(Visitor* v) { v->visit(this); }
+void ForStmt::accept(Visitor* v) { v->visit(this); }
+void SwitchStmt::accept(Visitor* v) { v->visit(this); }
+void CaseClause::accept(Visitor* v) { v->visit(this); }
+void BreakStmt::accept(Visitor* v) { v->visit(this); }
+void ContinueStmt::accept(Visitor* v) { v->visit(this); }
+void ReturnStmt::accept(Visitor* v) { v->visit(this); }
+void FreeStmt::accept(Visitor* v) { v->visit(this); }
+void VarDecl::accept(Visitor* v) { v->visit(this); }
+void FunDecl::accept(Visitor* v) { v->visit(this); }
+void StructDecl::accept(Visitor* v) { v->visit(this); }
+void TemplateDecl::accept(Visitor* v) { v->visit(this); }
+void Program::accept(Visitor* v) { v->visit(this); }
