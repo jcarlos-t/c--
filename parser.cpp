@@ -321,6 +321,16 @@ FunDecl* Parser::parse_function_decl(Exp* ret_type, const string& name) {
 
 // parse_variable_decl: parsea arreglos opcionales e inicializador
 VarDecl* Parser::parse_variable_decl(Exp* type, const string& name) {
+    return parse_variable_decl_impl(type, name, true);
+}
+
+// parse_variable_decl_no_semicolon: parsea declaración sin consumir ';' (para for)
+VarDecl* Parser::parse_variable_decl_no_semicolon(Exp* type, const string& name) {
+    return parse_variable_decl_impl(type, name, false);
+}
+
+// parse_variable_decl_impl: implementación compartida
+VarDecl* Parser::parse_variable_decl_impl(Exp* type, const string& name, bool consume_semicolon) {
     VarDecl* vd = new VarDecl(type, name);
     vd->loc.line = current->line; vd->loc.column = current->col;
 
@@ -342,7 +352,9 @@ VarDecl* Parser::parse_variable_decl(Exp* type, const string& name) {
         }
     }
 
-    consume(Token::SEMICOL, "Se esperaba ';' al final de la declaración");
+    if (consume_semicolon) {
+        consume(Token::SEMICOL, "Se esperaba ';' al final de la declaración");
+    }
     return vd;
 }
 
@@ -515,7 +527,20 @@ Stm* Parser::parse_for_statement() {
     Stm* init = nullptr;
     if (!check(Token::SEMICOL)) {
         if (can_start_type()) {
-            init = parse_local_var_decl();
+            TypeNode* type = parse_type();
+            if (auto* st = dynamic_cast<StructTypeNode*>(type)) {
+                if (match(Token::LT)) {
+                    vector<TypeNode*> targs;
+                    do {
+                        targs.push_back(parse_type());
+                    } while (match(Token::COMA));
+                    consume(Token::GT, "Se esperaba '>' en instanciación de template");
+                    type = new TemplateTypeNode(st->name, targs);
+                    delete st;
+                }
+            }
+            Token* name = consume(Token::ID, "Se esperaba identificador");
+            init = parse_variable_decl_no_semicolon(type, name->text);
         } else {
             Exp* e = parse_expression();
             init = new ExprStmtNode(e);
