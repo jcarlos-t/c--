@@ -1502,8 +1502,10 @@ void TypeChecker::visit(CharLiteralNode* e) {
     e->resolvedType = charType;  // en expresiones char promueve vía reglas aritméticas
 }
 void TypeChecker::visit(StringLiteralNode* e) {
-    // Tratado como int/puntero opaco (no hay tipo string en semantic_types).
-    e->resolvedType = intType;
+    // Tratado como puntero a char (char*) para permitir asignación a char*
+    PointerType* pt = new PointerType(charType);
+    typeCache.push_back(pt);
+    e->resolvedType = pt;
 }
 
 // Nodos de tipo en expresiones/contextos: delegan la resolución a type_from_ast.
