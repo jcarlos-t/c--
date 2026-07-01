@@ -69,15 +69,15 @@ public:
     virtual void visit(TemplateDecl* d) = 0;     // template de struct o función
     virtual void visit(Program* p) = 0;          // raíz: globals, structs, funciones
 
-    // --- Cálculo de dirección de l-values (valor por defecto: no hace nada) ---
+    // --- Cálculo de dirección de l-values ---
     // Solo GenCodeVisitor los sobreescribe. Se usan para asignaciones y &:
     // en vez de cargar el valor de una variable, se calcula su dirección en memoria.
     // La implementación por defecto vacía permite que otros visitantes ignoren esto.
-    virtual void computeAddress(UnaryOpNode* /*e*/) {}
-    virtual void computeAddress(IdentifierNode* /*e*/) {}
-    virtual void computeAddress(IndexNode* /*e*/) {}
-    virtual void computeAddress(MemberAccessNode* /*e*/) {}
-    virtual void computeAddress(ArrowAccessNode* /*e*/) {}
+    virtual void computeAddress(UnaryOpNode* ) {}
+    virtual void computeAddress(IdentifierNode* ) {}
+    virtual void computeAddress(IndexNode* ) {}
+    virtual void computeAddress(MemberAccessNode* ) {}
+    virtual void computeAddress(ArrowAccessNode* ) {}
 };
 
 // ============================================================
@@ -91,10 +91,9 @@ struct FuncInfo {
 };
 
 // ============================================================
-// TypeChecker — Análisis semántico (verificación de tipos)
+// TypeChecker — Análisis semántico
 // ============================================================
-// Recorre el AST, construye tablas de símbolos, valida reglas del
-// lenguaje y anota nodos con resolvedType, offset, memSize, binding, etc.
+// Recorre el AST, construye tablas de símbolos, valida reglas del lenguaje
 // Esa información la consume GenCodeVisitor después.
 class TypeChecker : public Visitor {
 private:
@@ -144,9 +143,6 @@ private:
     vector<string> errors;
     bool hasError;
 
-    // Reservado para layout en stack; el offset real se calcula en assignOffsets.
-    int currentOffset = 0;
-
     // Programa actual; se usa para añadir funciones instanciadas desde templates
     // a program->instantiated_functions y typechequearlas después.
     Program* program = nullptr;
@@ -194,9 +190,6 @@ public:
     ~TypeChecker();
     // Ejecuta el análisis; si hay errores imprime y termina el proceso (exit).
     void typecheck(Program* program);
-    // Igual que typecheck pero devuelve bool; útil para tests sin matar el proceso.
-    bool check(Program* program);
-
     void visit(Program* p) override;
     void visit(FunDecl* f) override;
     void visit(VarDecl* v) override;
@@ -310,8 +303,8 @@ public:
         VarDecl* binding = nullptr;     // enlace al VarDecl del TypeChecker
         Exp* index = nullptr;           // índice simple (legacy / 1D)
         vector<Exp*> indices;           // índices multidimensionales
-        string member;                  // nombre del miembro en struct
-        string structName;              // tipo del struct para buscar offset
+        vector<string> members;         // lista de miembros para nested structs
+        string structName;              // tipo del struct inicial para buscar offsets
         bool isArrow = false;           // true si fue ptr->miembro (vs obj.miembro)
     };
 
@@ -361,6 +354,7 @@ private:
     unordered_map<string, int> structFieldCount;
     unordered_map<string, unordered_map<string, int>> structFieldOffset;
     unordered_map<string, unordered_map<string, int>> structMemberSizes;
+    unordered_map<string, unordered_map<string, Type*>> structMemberTypes;
 
     // Literales string → índice de etiqueta .LstrN en .rodata
     unordered_map<string, int> stringLabels;

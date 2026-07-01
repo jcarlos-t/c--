@@ -101,7 +101,6 @@ TypeChecker::TypeChecker() {
     loopDepth = 0;                       // sin loops activos
     switchDepth = 0;                     // sin switches activos
     hasError = false;
-    currentOffset = 0;  // reservado; el layout real usa assignOffsets en visit(FunDecl)
 }
 
 TypeChecker::~TypeChecker() {
@@ -400,6 +399,8 @@ bool TypeChecker::check_assign(Type* target, Type* value) {
     if (target->ttype == Type::DOUBLE && is_integral_type(value)) return true;
     // Promoción: float → double
     if (target->ttype == Type::DOUBLE && value->ttype == Type::FLOAT) return true;
+    // Conversión implícita: int/char → bool
+    if (target->ttype == Type::BOOL && is_integral_type(value)) return true;
     return false;
 }
 
@@ -450,8 +451,7 @@ void TypeChecker::add_function(FunDecl* fd) {
 // ============================================================
 // Inicia el análisis semántico del programa. Si encuentra
 // errores, los imprime en stderr y termina con exit(1).
-//
-//   Ej: TypeChecker tc; tc.typecheck(program);
+
 void TypeChecker::typecheck(Program* program) {
     hasError = false;
     errors.clear();
@@ -460,21 +460,6 @@ void TypeChecker::typecheck(Program* program) {
         for (auto& e : errors) cerr << "Error semántico: " << e << endl;
         exit(1);
     }
-}
-
-// ============================================================
-// check — entry point alternativo (retorna bool sin salir)
-// ============================================================
-// Similar a typecheck pero no llama a exit(). Retorna true si
-// no hubo errores, false en caso contrario. Usado para pruebas.
-bool TypeChecker::check(Program* program) {
-    hasError = false;
-    errors.clear();
-    if (program) program->accept(this);
-    if (hasError) {
-        for (auto& e : errors) cerr << "Error semántico: " << e << endl;
-    }
-    return !hasError;
 }
 
 // ============================================================
@@ -1048,7 +1033,18 @@ void TypeChecker::visit(BinaryOpNode* e) {
         case BinaryOp::ADD: case BinaryOp::SUB:
         case BinaryOp::MUL: case BinaryOp::DIV: case BinaryOp::MOD:
         case BinaryOp::POW:
-            if (is_arithmetic_type(left) && is_arithmetic_type(right)) {
+            // Aritmética de punteros: ptr + int o int + ptr o ptr - int o ptr - ptr
+            if ((left->ttype == Type::POINTER && is_integral_type(right)) || 
+                (is_integral_type(left) && right->ttype == Type::POINTER && e->op == BinaryOp::ADD)) {
+                // ptr + int o int + ptr → mismo tipo de puntero
+                resultType = left->ttype == Type::POINTER ? left : right;
+            } else if (left->ttype == Type::POINTER && right->ttype == Type::POINTER && e->op == BinaryOp::SUB) {
+                // ptr - ptr → int
+                resultType = intType;
+            } else if (left->ttype == Type::POINTER && is_integral_type(right) && e->op == BinaryOp::SUB) {
+                // ptr - int → mismo tipo de puntero
+                resultType = left;
+            } else if (is_arithmetic_type(left) && is_arithmetic_type(right)) {
                 // Promoción automática: si alguno es double, resultado double
                 if (left->ttype == Type::DOUBLE || right->ttype == Type::DOUBLE)
                     resultType = doubleType;
@@ -1058,7 +1054,7 @@ void TypeChecker::visit(BinaryOpNode* e) {
                 else
                     resultType = intType; // char promueve a int
             } else {
-                error("operación aritmética requiere int, char, float o double.");
+                error("operación aritmética requiere int, char, float, double o aritmética de punteros.");
                 resultType = intType;
             }
             break;

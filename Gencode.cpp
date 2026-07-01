@@ -598,17 +598,45 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
     }
     case LValKind::Member:
     {
-        out << "  movq %rax, %rcx\n";
-        int size = structMemberSizes[baseStructName(lv.structName)][lv.member];
-        string reg = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
-        if (lv.isArrow) {
-            // p->m: cargar puntero, luego store en offset
-            loadBinding(lv.binding);
-            out << "  " << storeInstr(size) << " " << reg << ", " << structFieldOffset[baseStructName(lv.structName)][lv.member] << "(%rax)\n";
-        } else {
-            // s.m: cargar dirección de s, luego store en offset
-            leaBinding(lv.binding);
-            out << "  " << storeInstr(size) << " " << reg << ", " << structFieldOffset[baseStructName(lv.structName)][lv.member] << "(%rax)\n";
+        out << "  movq %rax, %rcx\n"; // Save value in %rcx
+
+        string structName = lv.structName;
+        // First, get base address in %rax
+        if (lv.isArrow && lv.binding) {
+            loadBinding(lv.binding); // p->m, load p first
+        } else if (lv.binding) {
+            leaBinding(lv.binding); // s.m, get &s
+        } else if (lv.kind == LValKind::Index) {
+            emitIndexedAddress(lv.binding, lv.indices);
+        }
+
+        // Now apply all member offsets
+        for (size_t i = 0; i < lv.members.size(); ++i) {
+            const string& m = lv.members[i];
+            int off = structFieldOffset[baseStructName(structName)][m];
+
+            if (i == lv.members.size() - 1) {
+                // Last member: store the value
+                int size = structMemberSizes[baseStructName(structName)][m];
+                string reg = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
+                out << "  " << storeInstr(size) << " " << reg << ", " << off << "(%rax)\n";
+            } else {
+                // Intermediate member: add offset and update structName
+                out << "  addq $" << off << ", %rax\n";
+                // Update structName to type of this member for next iteration
+                if (structMemberTypes.count(baseStructName(structName)) &&
+                    structMemberTypes[baseStructName(structName)].count(m)) {
+                    Type* mt = structMemberTypes[baseStructName(structName)][m];
+                    if (mt->ttype == Type::STRUCT) {
+                        structName = ((StructType*)mt)->name;
+                    } else if (mt->ttype == Type::POINTER) {
+                        PointerType* pt = (PointerType*)mt;
+                        if (pt->base && pt->base->ttype == Type::STRUCT) {
+                            structName = ((StructType*)pt->base)->name;
+                        }
+                    }
+                }
+            }
         }
         break;
     }
@@ -848,92 +876,154 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
         return;
     }
 
-    // --- Rama entera ---
-    e->left->accept(this);
-    out << "  pushq %rax\n";
-    e->right->accept(this);
-    out << "  movq %rax, %rcx\n";
-    out << "  popq %rax\n";
+    // --- Rama entera y aritmética de punteros ---
+    bool leftIsPtr = leftType && leftType->ttype == Type::POINTER;
+    bool rightIsPtr = rightType && rightType->ttype == Type::POINTER;
 
-    // Usar tamaño de los operandos, no del resultado.
-    // Importante: comparaciones tienen resolvedType bool (1 byte), pero los
-    // operandos son int/char; hay que usar addl/cmpl, no addb/cmpb.
-    int size = 8;
-    if (e->left->resolvedType) {
-        size = e->left->resolvedType->size();
-        if (e->right->resolvedType) {
-            int rsize = e->right->resolvedType->size();
-            if (rsize > size) size = rsize;
+    if ((leftIsPtr && !rightIsPtr) || (!leftIsPtr && rightIsPtr)) {
+        // ptr + int o int + ptr o ptr - int
+        if (leftIsPtr) {
+            e->left->accept(this);  // ptr en %rax
+            out << "  pushq %rax\n";
+            e->right->accept(this); // int en %rax
+            // Multiplicar int por tamaño del tipo base del puntero
+            if (leftType && leftType->ttype == Type::POINTER) {
+                PointerType* pt = static_cast<PointerType*>(leftType);
+                int elemSize = pt->base ? pt->base->size() : 8;
+                if (elemSize != 1) {
+                    out << "  movq $" << elemSize << ", %rcx\n";
+                    out << "  imulq %rcx, %rax\n";
+                }
+            }
+            out << "  popq %rcx\n"; // ptr en %rcx
+            if (e->op == BinaryOp::ADD) {
+                out << "  addq %rax, %rcx\n";
+            } else if (e->op == BinaryOp::SUB) {
+                out << "  subq %rax, %rcx\n";
+            }
+            out << "  movq %rcx, %rax\n";
+        } else {
+            e->right->accept(this); // ptr en %rax
+            out << "  pushq %rax\n";
+            e->left->accept(this);  // int en %rax
+            // Multiplicar int por tamaño del tipo base del puntero
+            if (rightType && rightType->ttype == Type::POINTER) {
+                PointerType* pt = static_cast<PointerType*>(rightType);
+                int elemSize = pt->base ? pt->base->size() : 8;
+                if (elemSize != 1) {
+                    out << "  movq $" << elemSize << ", %rcx\n";
+                    out << "  imulq %rcx, %rax\n";
+                }
+            }
+            out << "  popq %rcx\n"; // ptr en %rcx
+            out << "  addq %rcx, %rax\n";
         }
-    } else if (e->resolvedType) {
-        size = e->resolvedType->size();
-    }
+    } else if (leftIsPtr && rightIsPtr && e->op == BinaryOp::SUB) {
+        // ptr - ptr
+        e->left->accept(this);
+        out << "  pushq %rax\n";
+        e->right->accept(this);
+        out << "  popq %rcx\n";
+        out << "  subq %rax, %rcx\n"; // rcx = left - right (direcciones)
+        // Dividir por el tamaño del tipo base
+        if (leftType && leftType->ttype == Type::POINTER) {
+            PointerType* pt = static_cast<PointerType*>(leftType);
+            int elemSize = pt->base ? pt->base->size() : 8;
+            if (elemSize != 1) {
+                out << "  movq %rcx, %rax\n";
+                out << "  movq $" << elemSize << ", %rcx\n";
+                out << "  cqto\n";
+                out << "  idivq %rcx\n";
+            } else {
+                out << "  movq %rcx, %rax\n";
+            }
+        }
+    } else {
+        // Operaciones normales de enteros
+        e->left->accept(this);
+        out << "  pushq %rax\n";
+        e->right->accept(this);
+        out << "  movq %rax, %rcx\n";
+        out << "  popq %rax\n";
 
-    string suffix = (size == 1) ? "b" : (size == 4) ? "l" : "q";
-    string reg1 = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
-    string reg2 = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
+        // Usar tamaño de los operandos, no del resultado.
+        int size = 8;
+        if (e->left->resolvedType) {
+            size = e->left->resolvedType->size();
+            if (e->right->resolvedType) {
+                int rsize = e->right->resolvedType->size();
+                if (rsize > size) size = rsize;
+            }
+        } else if (e->resolvedType) {
+            size = e->resolvedType->size();
+        }
 
-    switch (e->op) {
-    case BinaryOp::ADD: out << "  add" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
-    case BinaryOp::SUB: out << "  sub" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
-    case BinaryOp::MUL: out << "  imul" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
-    case BinaryOp::DIV:
-        out << "  cqto\n";          // sign-extend %rax → %rdx:%rax
-        out << "  idiv" << suffix << " " << reg2 << "\n";
-        break;
-    case BinaryOp::MOD:
-        out << "  cqto\n";
-        out << "  idiv" << suffix << " " << reg2 << "\n";
-        out << "  movq %rdx, %rax\n";  // módulo queda en %rdx
-        break;
-    case BinaryOp::POW:
-        // Llamar a la función potencia(base=%rax, exp=%rcx)
-        out << "  movq %rax, %rdi\n";
-        out << "  movq %rcx, %rsi\n";
-        out << "  call potencia\n";
-        break;
-    case BinaryOp::EQ:
-        out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
-        out << "  movq $0, %rax\n";
-        out << "  sete %al\n";
-        out << "  movzbq %al, %rax\n";
-        break;
-    case BinaryOp::NE:
-        out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
-        out << "  movq $0, %rax\n";
-        out << "  setne %al\n";
-        out << "  movzbq %al, %rax\n";
-        break;
-    case BinaryOp::LT:
-        out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
-        out << "  movq $0, %rax\n";
-        out << "  setl %al\n";
-        out << "  movzbq %al, %rax\n";
-        break;
-    case BinaryOp::GT:
-        out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
-        out << "  movq $0, %rax\n";
-        out << "  setg %al\n";
-        out << "  movzbq %al, %rax\n";
-        break;
-    case BinaryOp::LE:
-        out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
-        out << "  movq $0, %rax\n";
-        out << "  setle %al\n";
-        out << "  movzbq %al, %rax\n";
-        break;
-    case BinaryOp::GE:
-        out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
-        out << "  movq $0, %rax\n";
-        out << "  setge %al\n";
-        out << "  movzbq %al, %rax\n";
-        break;
-    case BinaryOp::LOG_AND:
-        out << "  and" << suffix << " " << reg2 << ", " << reg1 << "\n";
-        break;
-    case BinaryOp::LOG_OR:
-        out << "  or" << suffix << " " << reg2 << ", " << reg1 << "\n";
-        break;
+        string suffix = (size == 1) ? "b" : (size == 4) ? "l" : "q";
+        string reg1 = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
+        string reg2 = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
+
+        switch (e->op) {
+        case BinaryOp::ADD: out << "  add" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
+        case BinaryOp::SUB: out << "  sub" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
+        case BinaryOp::MUL: out << "  imul" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
+        case BinaryOp::DIV:
+            out << "  cqto\n";          // sign-extend %rax → %rdx:%rax
+            out << "  idiv" << suffix << " " << reg2 << "\n";
+            break;
+        case BinaryOp::MOD:
+            out << "  cqto\n";
+            out << "  idiv" << suffix << " " << reg2 << "\n";
+            out << "  movq %rdx, %rax\n";  // módulo queda en %rdx
+            break;
+        case BinaryOp::POW:
+            // Llamar a la función potencia(base=%rax, exp=%rcx)
+            out << "  movq %rax, %rdi\n";
+            out << "  movq %rcx, %rsi\n";
+            out << "  call potencia\n";
+            break;
+        case BinaryOp::EQ:
+            out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
+            out << "  movq $0, %rax\n";
+            out << "  sete %al\n";
+            out << "  movzbq %al, %rax\n";
+            break;
+        case BinaryOp::NE:
+            out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
+            out << "  movq $0, %rax\n";
+            out << "  setne %al\n";
+            out << "  movzbq %al, %rax\n";
+            break;
+        case BinaryOp::LT:
+            out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
+            out << "  movq $0, %rax\n";
+            out << "  setl %al\n";
+            out << "  movzbq %al, %rax\n";
+            break;
+        case BinaryOp::GT:
+            out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
+            out << "  movq $0, %rax\n";
+            out << "  setg %al\n";
+            out << "  movzbq %al, %rax\n";
+            break;
+        case BinaryOp::LE:
+            out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
+            out << "  movq $0, %rax\n";
+            out << "  setle %al\n";
+            out << "  movzbq %al, %rax\n";
+            break;
+        case BinaryOp::GE:
+            out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
+            out << "  movq $0, %rax\n";
+            out << "  setge %al\n";
+            out << "  movzbq %al, %rax\n";
+            break;
+        case BinaryOp::LOG_AND:
+            out << "  and" << suffix << " " << reg2 << ", " << reg1 << "\n";
+            break;
+        case BinaryOp::LOG_OR:
+            out << "  or" << suffix << " " << reg2 << ", " << reg1 << "\n";
+            break;
+        }
     }
 }
 
@@ -1246,38 +1336,80 @@ void GenCodeVisitor::visit(IndexNode *e) {
 //   Ej: p.x → lea p; movslq offset_x(%rax), %rax
 void GenCodeVisitor::visit(MemberAccessNode *e) {
     if (lvalTarget) {
-        if (auto *id = dynamic_cast<IdentifierNode *>(e->object)) {
-            lvalTarget->kind = LValKind::Member;
-            lvalTarget->name = id->name;
-            lvalTarget->binding = id->binding;
-            lvalTarget->member = e->member;
-            lvalTarget->isArrow = false;
+        // First capture lval for object
+        LVal objLVal;
+        LVal *oldTarget = lvalTarget;
+        lvalTarget = &objLVal;
+        e->object->accept(this);
+        lvalTarget = oldTarget;
+
+        // Merge into target lval
+        *lvalTarget = objLVal;
+        lvalTarget->kind = LValKind::Member; // <-- Critical! Set kind to Member!
+        lvalTarget->members.push_back(e->member);
+        lvalTarget->isArrow = false;
+        if (lvalTarget->structName.empty()) {
             Type* objType = e->object->resolvedType;
-            if (!objType && id->binding)
-                objType = id->binding->resolvedType;
             if (objType && objType->ttype == Type::STRUCT) {
                 lvalTarget->structName = ((StructType*)objType)->name;
-            } else {
-                lvalTarget->structName = id->name;
+            } else if (objLVal.binding && objLVal.binding->resolvedType && 
+                       objLVal.binding->resolvedType->ttype == Type::STRUCT) {
+                lvalTarget->structName = ((StructType*)objLVal.binding->resolvedType)->name;
             }
         }
         return;
     }
-    if (auto *id = dynamic_cast<IdentifierNode *>(e->object)) {
-        leaBinding(id->binding);
-        string structName;
-        Type* objType = id->resolvedType;
-        if (objType && objType->ttype == Type::STRUCT) {
-            structName = ((StructType*)objType)->name;
-        } else if (id->binding && id->binding->resolvedType &&
-                   id->binding->resolvedType->ttype == Type::STRUCT) {
-            structName = ((StructType*)id->binding->resolvedType)->name;
-        } else {
-            structName = id->name;
+    // Get the ADDRESS of the object (e->object), leave it in %rax, and get currentStructName
+    Type* objType = e->object->resolvedType;
+    string currentStructName;
+    
+    // Use captureLVal to get address of e->object
+    LVal objLVal = captureLVal(e->object);
+    
+    // Now compute the address of the object from objLVal
+    if (objLVal.kind == LValKind::Id) {
+        leaBinding(objLVal.binding);
+        // Get struct name
+        if (objLVal.binding && objLVal.binding->resolvedType && 
+            objLVal.binding->resolvedType->ttype == Type::STRUCT) {
+            currentStructName = ((StructType*)objLVal.binding->resolvedType)->name;
         }
-        int size = structMemberSizes[baseStructName(structName)][e->member];
-        out << "  " << loadInstr(size) << " " << structFieldOffset[baseStructName(structName)][e->member] << "(%rax), %rax\n";
+    } else if (objLVal.kind == LValKind::Index) {
+        emitIndexedAddress(objLVal.binding, objLVal.indices);
+    } else if (objLVal.kind == LValKind::Member) {
+        // Need to compute address step by step, applying existing member offsets
+        if (objLVal.binding) {
+            leaBinding(objLVal.binding);
+        }
+        // Apply existing members and track currentStructName
+        currentStructName = objLVal.structName;
+        for (const string& m : objLVal.members) {
+            int off = structFieldOffset[baseStructName(currentStructName)][m];
+            out << "  addq $" << off << ", %rax\n";
+            // Update to type of this member
+            if (structMemberTypes.count(baseStructName(currentStructName)) && 
+                structMemberTypes[baseStructName(currentStructName)].count(m)) {
+                Type* mt = structMemberTypes[baseStructName(currentStructName)][m];
+                if (mt->ttype == Type::STRUCT) {
+                    currentStructName = ((StructType*)mt)->name;
+                }
+            }
+        }
+    } else if (objLVal.kind == LValKind::Deref) {
+        // For dereference, we already have the address
     }
+    
+    // Now, if objLVal.structName is still empty, try to get it from objType
+    if (currentStructName.empty() && objType) {
+        if (objType->ttype == Type::STRUCT) {
+            currentStructName = ((StructType*)objType)->name;
+        }
+    }
+
+    // Now add offset for final member and load the value!
+    int off = structFieldOffset[baseStructName(currentStructName)][e->member];
+    int size = structMemberSizes[baseStructName(currentStructName)][e->member];
+    out << "  " << loadInstr(size) << " " << off << "(%rax), %rax\n";
 }
 
 // -----------------------------------------------------------
@@ -1288,41 +1420,42 @@ void GenCodeVisitor::visit(MemberAccessNode *e) {
 //   Ej: p->x → loadBinding(p); movslq offset_x(%rax), %rax
 void GenCodeVisitor::visit(ArrowAccessNode *e) {
     if (lvalTarget) {
-        lvalTarget->kind = LValKind::Member;
-        if (auto *id = dynamic_cast<IdentifierNode *>(e->pointer)) {
-            lvalTarget->name = id->name;
-            lvalTarget->binding = id->binding;
-            if (id->resolvedType && id->resolvedType->ttype == Type::POINTER) {
-                PointerType* pt = (PointerType*)id->resolvedType;
+        // First capture lval for pointer
+        LVal ptrLVal;
+        LVal *oldTarget = lvalTarget;
+        lvalTarget = &ptrLVal;
+        e->pointer->accept(this);
+        lvalTarget = oldTarget;
+
+        // Merge into target lval
+        *lvalTarget = ptrLVal;
+        lvalTarget->kind = LValKind::Member; // Critical! Set kind to Member!
+        lvalTarget->members.push_back(e->member);
+        lvalTarget->isArrow = true;
+        if (lvalTarget->structName.empty()) {
+            Type* ptrType = e->pointer->resolvedType;
+            if (ptrType && ptrType->ttype == Type::POINTER) {
+                PointerType* pt = (PointerType*)ptrType;
                 if (pt->base && pt->base->ttype == Type::STRUCT) {
                     lvalTarget->structName = ((StructType*)pt->base)->name;
-                } else {
-                    lvalTarget->structName = id->name;
                 }
-            } else {
-                lvalTarget->structName = id->name;
             }
         }
-        lvalTarget->member = e->member;
-        lvalTarget->isArrow = true;
         return;
     }
-    if (auto *id = dynamic_cast<IdentifierNode *>(e->pointer)) {
-        loadBinding(id->binding);
-        string structName;
-        if (id->resolvedType && id->resolvedType->ttype == Type::POINTER) {
-            PointerType* pt = (PointerType*)id->resolvedType;
-            if (pt->base && pt->base->ttype == Type::STRUCT) {
-                structName = ((StructType*)pt->base)->name;
-            } else {
-                structName = id->name;
-            }
-        } else {
-            structName = id->name;
+    // Load pointer value (address of struct), then add member offset
+    e->pointer->accept(this); // %rax has pointer value (struct address)
+    Type* ptrType = e->pointer->resolvedType;
+    string structName;
+    if (ptrType && ptrType->ttype == Type::POINTER) {
+        PointerType* pt = (PointerType*)ptrType;
+        if (pt->base && pt->base->ttype == Type::STRUCT) {
+            structName = ((StructType*)pt->base)->name;
         }
-        int size = structMemberSizes[baseStructName(structName)][e->member];
-        out << "  " << loadInstr(size) << " " << structFieldOffset[baseStructName(structName)][e->member] << "(%rax), %rax\n";
     }
+    int off = structFieldOffset[baseStructName(structName)][e->member];
+    int size = structMemberSizes[baseStructName(structName)][e->member];
+    out << "  " << loadInstr(size) << " " << off << "(%rax), %rax\n";
 }
 
 // -----------------------------------------------------------
@@ -1857,6 +1990,9 @@ void GenCodeVisitor::visit(StructDecl *d) {
     }
     for (auto& pair : d->memberSizes) {
         structMemberSizes[d->name][pair.first] = pair.second;
+    }
+    for (VarDecl* m : d->members) {
+        structMemberTypes[d->name][m->name] = m->resolvedType;
     }
     structFieldCount[d->name] = (int)d->members.size();
 }
