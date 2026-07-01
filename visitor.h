@@ -15,22 +15,14 @@ using namespace std;
 #include <functional>
 
 // ============================================================
-// Visitor — Clase base abstracta para todos los visitantes del AST
+// Visitor
 // ============================================================
-// Implementa el patrón Visitor: cada nodo del AST tiene un método
-// accept(visitor) que delega en visit(TipoNodo*) del visitante concreto.
-// Así se separa la estructura del árbol (ast.h) de las operaciones
-// que se le aplican (typecheck, codegen, constant folding, etc.).
-//
-// Todos los visit() devuelven void aquí; cada visitante concreto guarda
-// su resultado donde corresponda (p. ej. resolvedType en el nodo, o texto
-// en un ostream de ensamblador).
+
 class Visitor {
 public:
     virtual ~Visitor() = default;
 
     // --- Expresiones ---
-    // Cada método recibe el nodo concreto ya tipado (dynamic dispatch).
     virtual void visit(BinaryOpNode* e) = 0;
     virtual void visit(UnaryOpNode* e) = 0;
     virtual void visit(AssignmentNode* e) = 0;
@@ -41,7 +33,7 @@ public:
     virtual void visit(ArrowAccessNode* e) = 0;    // ptr->miembro
     virtual void visit(SizeOfNode* e) = 0;
     virtual void visit(LambdaExprNode* e) = 0;
-    virtual void visit(CaptureNode* e) = 0;      // [&x] en lambda
+    virtual void visit(CaptureNode* e) = 0;      // [x] en lambda
     virtual void visit(IdentifierNode* e) = 0;
     virtual void visit(IntegerLiteralNode* e) = 0;
     virtual void visit(FloatLiteralNode* e) = 0;
@@ -49,7 +41,7 @@ public:
     virtual void visit(CharLiteralNode* e) = 0;
     virtual void visit(StringLiteralNode* e) = 0;
     virtual void visit(PrintfNode* e) = 0;
-    // Nodos de *tipo* en el AST (aparecen en declaraciones, no como expresiones runtime)
+    // Nodos de *tipo* en el AST 
     virtual void visit(PrimitiveTypeNode* e) = 0;  // int, char, void, ...
     virtual void visit(PointerTypeNode* e) = 0;    // T*
     virtual void visit(StructTypeNode* e) = 0;     // struct Nombre
@@ -384,6 +376,7 @@ private:
     string currentContinueLabel;      // etiqueta destino del continue más interno
     string funcName;                  // nombre de la función que se está generando
     string returnLabel;               // etiquapa común de salida de la función
+    bool usedPow = false;             // true si el código fuente usa el operador **
 
 public:
     explicit GenCodeVisitor(ostream &out) : out(out) {}

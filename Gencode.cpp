@@ -96,6 +96,7 @@ void ArrowAccessNode::computeAddress(Visitor* v) { v->computeAddress(this); }
 //       → produce código ASM en el ostream `out`
 void GenCodeVisitor::generate(Program *p) {
     stringLabels.clear();
+    usedPow = false;
     for (auto g : p->globals)
         memoriaGlobal[g->name] = true;
 
@@ -129,42 +130,42 @@ void GenCodeVisitor::generate(Program *p) {
         f->accept(this);
 
     // --- Función auxiliar: potencia(base^exp) ---
-    // Implementación recursiva con exponenciación binaria O(log n)
-    // Argumentos: %rdi = base, %rsi = exponente
-    // Retorno: %rax
-    out << "\npotencia:\n";
-    out << "  pushq %rbp\n";
-    out << "  movq %rsp, %rbp\n";
-    out << "  cmpq $0, %rsi\n";
-    out << "  jne .pot_nz\n";
-    out << "  movq $1, %rax\n";       // x^0 = 1
-    out << "  jmp .pot_end\n";
-    out << ".pot_nz:\n";
-    out << "  cmpq $1, %rsi\n";
-    out << "  jne .pot_rec\n";
-    out << "  movq %rdi, %rax\n";     // x^1 = x
-    out << "  jmp .pot_end\n";
-    out << ".pot_rec:\n";
-    out << "  pushq %rbx\n";
-    out << "  movq %rdi, %rbx\n";     // guardar base original
-    out << "  testq $1, %rsi\n";
-    out << "  jz .pot_even\n";        // exponente par?
-    // Exponencial impar: result = base * (base^2)^(exp/2)
-    out << "  imulq %rdi, %rdi\n";    // base^2
-    out << "  sarq $1, %rsi\n";       // exp / 2
-    out << "  call potencia\n";
-    out << "  imulq %rbx, %rax\n";    // multiplicar por base original
-    out << "  popq %rbx\n";
-    out << "  jmp .pot_end\n";
-    // Exponencial par: result = (base^2)^(exp/2)
-    out << ".pot_even:\n";
-    out << "  imulq %rdi, %rdi\n";    // base^2
-    out << "  sarq $1, %rsi\n";       // exp / 2
-    out << "  call potencia\n";
-    out << "  popq %rbx\n";
-    out << ".pot_end:\n";
-    out << "  leave\n";
-    out << "  ret\n";
+    // Solo se emite si el código realmente usa **
+    if (usedPow) {
+        out << "\npotencia:\n";
+        out << "  pushq %rbp\n";
+        out << "  movq %rsp, %rbp\n";
+        out << "  cmpq $0, %rsi\n";
+        out << "  jne .pot_nz\n";
+        out << "  movq $1, %rax\n";       // x^0 = 1
+        out << "  jmp .pot_end\n";
+        out << ".pot_nz:\n";
+        out << "  cmpq $1, %rsi\n";
+        out << "  jne .pot_rec\n";
+        out << "  movq %rdi, %rax\n";     // x^1 = x
+        out << "  jmp .pot_end\n";
+        out << ".pot_rec:\n";
+        out << "  pushq %rbx\n";
+        out << "  movq %rdi, %rbx\n";     // guardar base original
+        out << "  testq $1, %rsi\n";
+        out << "  jz .pot_even\n";        // exponente par?
+        // Exponencial impar: result = base * (base^2)^(exp/2)
+        out << "  imulq %rdi, %rdi\n";    // base^2
+        out << "  sarq $1, %rsi\n";       // exp / 2
+        out << "  call potencia\n";
+        out << "  imulq %rbx, %rax\n";    // multiplicar por base original
+        out << "  popq %rbx\n";
+        out << "  jmp .pot_end\n";
+        // Exponencial par: result = (base^2)^(exp/2)
+        out << ".pot_even:\n";
+        out << "  imulq %rdi, %rdi\n";    // base^2
+        out << "  sarq $1, %rsi\n";       // exp / 2
+        out << "  call potencia\n";
+        out << "  popq %rbx\n";
+        out << ".pot_end:\n";
+        out << "  leave\n";
+        out << "  ret\n";
+    }
 
     out << "\n.section .note.GNU-stack,\"\",@progbits\n";
 }
@@ -714,6 +715,7 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
 
     // Optimización para potencias: x^2, x^4
     if (e->op == BinaryOp::POW) {
+        usedPow = true;
         auto *rightNum = dynamic_cast<IntegerLiteralNode *>(e->right);
         if (rightNum && rightNum->value == 2) {
             e->left->accept(this);
