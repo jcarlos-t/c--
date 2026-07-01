@@ -1,0 +1,8 @@
+date: 2026-07-01T01:40:09-05:00
+runs_per_measurement: 7
+metric: median
+exec_timeout_sec: 120
+
+gcc: gcc (GCC) 16.1.1 20260625
+clang: clang version 22.1.6
+python: Python 3.14.6

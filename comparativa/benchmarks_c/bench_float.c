@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 int main() {
-    int n = 100000;
+    int n = 500000;
     
     float sum = 0.0;
     

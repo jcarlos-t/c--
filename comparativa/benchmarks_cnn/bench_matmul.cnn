@@ -1,11 +1,11 @@
 // Matrix multiplication benchmark - tests multidimensional arrays and nested loops
 int main() {
     int n;
-    n = 50;
+    n = 80;
     
-    int A[50][50];
-    int B[50][50];
-    int C[50][50];
+    int A[80][80];
+    int B[80][80];
+    int C[80][80];
     
     int i;
     int j;
@@ -39,6 +39,6 @@ int main() {
         i = i + 1;
     }
     
-    printf(C[50][50]);
+    printf(C[79][79]);
     return 0;
 }

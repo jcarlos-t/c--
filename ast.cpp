@@ -14,17 +14,17 @@ void Exp::computeAddress(Visitor*) {
 
 // ===================== BinaryOpNode =====================
 BinaryOpNode::BinaryOpNode(Exp* l, Exp* r, BinaryOp o)
-    : Exp(), left(l), right(r), op(o) {}
+    : Exp(), op(o), left(l), right(r) {}
 BinaryOpNode::~BinaryOpNode() { delete left; delete right; }
 
 // ===================== UnaryOpNode =====================
 UnaryOpNode::UnaryOpNode(Exp* o, UnaryOp uop)
-    : Exp(), operand(o), op(uop) {}
+    : Exp(), op(uop), operand(o) {}
 UnaryOpNode::~UnaryOpNode() { delete operand; }
 
 // ===================== AssignmentNode =====================
 AssignmentNode::AssignmentNode(Exp* t, Exp* v, AssignOp o)
-    : Exp(), target(t), value(v), op(o) {}
+    : Exp(), op(o), target(t), value(v) {}
 AssignmentNode::~AssignmentNode() { delete target; delete value; }
 
 

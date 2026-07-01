@@ -7,7 +7,7 @@ struct Point {
 };
 
 int main() {
-    int n = 100000;
+    int n = 500000;
     
     struct Point p;
     p.x = 1;

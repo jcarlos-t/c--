@@ -1,8 +1,7 @@
-Binary Size Measurements (bytes)
-Benchmark,C--_Compiler,GCC_O0,GCC_O2
-bench_fib,16352,16000,16000
-bench_matmul,16528,16032,16032
-bench_float,16296,15976,15976
-bench_struct,16296,16032,15976
-bench_prime,16480,15976,15976
-bench_mixed,16296,15976,15976
+Benchmark,C--_Compiler,GCC_O0,GCC_O2,Clang_O0,Clang_O2
+bench_fib,16352,16000,16000,16016,16016
+bench_matmul,16528,16032,16088,16048,16104
+bench_float,16296,15976,15976,15992,15992
+bench_struct,16296,16032,15976,16048,15992
+bench_prime,16480,15976,15976,15992,15992
+bench_mixed,16296,15976,15976,15992,15992

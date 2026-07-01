@@ -2,11 +2,11 @@
 #include <stdio.h>
 
 int main() {
-    int n = 50;
+    int n = 80;
     
-    int A[50][50];
-    int B[50][50];
-    int C[50][50];
+    int A[80][80];
+    int B[80][80];
+    int C[80][80];
     
     int i, j, k;
     
@@ -28,6 +28,6 @@ int main() {
         }
     }
     
-    printf("%ld\n", C[50][50]);
+    printf("%ld\n", (long)C[79][79]);
     return 0;
 }

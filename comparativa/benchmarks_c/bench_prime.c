@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 int main() {
-    int n = 10000;
+    int n = 40000;
     
     int count = 0;
     

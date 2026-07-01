@@ -736,7 +736,6 @@ Exp* Parser::parse_postfix() {
 
             bool isTemplate = is_type_keyword(laType) || laType == Token::STRUCT;
             if (!isTemplate && laType == Token::ID) {
-                Scanner::Pos inner = scanner->getPos();
                 Token* idTok = scanner->nextToken();
                 Token* after = scanner->nextToken();
                 isTemplate = after && (after->type == Token::GT || after->type == Token::COMA);

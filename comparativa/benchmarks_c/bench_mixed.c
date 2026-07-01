@@ -7,7 +7,7 @@ struct Data {
 };
 
 int main() {
-    int n = 10000;
+    int n = 150000;
     
     struct Data d;
     d.value = 0;

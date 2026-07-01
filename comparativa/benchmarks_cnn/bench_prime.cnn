@@ -1,7 +1,7 @@
 // Prime numbers benchmark - tests loops, modulo, and conditionals
 int main() {
     int n;
-    n = 10000;
+    n = 40000;
     
     int count;
     count = 0;

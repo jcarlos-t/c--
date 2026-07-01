@@ -81,11 +81,11 @@ public:
     // Solo GenCodeVisitor los sobreescribe. Se usan para asignaciones y &:
     // en vez de cargar el valor de una variable, se calcula su dirección en memoria.
     // La implementación por defecto vacía permite que otros visitantes ignoren esto.
-    virtual void computeAddress(UnaryOpNode* e) {}
-    virtual void computeAddress(IdentifierNode* e) {}
-    virtual void computeAddress(IndexNode* e) {}
-    virtual void computeAddress(MemberAccessNode* e) {}
-    virtual void computeAddress(ArrowAccessNode* e) {}
+    virtual void computeAddress(UnaryOpNode* /*e*/) {}
+    virtual void computeAddress(IdentifierNode* /*e*/) {}
+    virtual void computeAddress(IndexNode* /*e*/) {}
+    virtual void computeAddress(MemberAccessNode* /*e*/) {}
+    virtual void computeAddress(ArrowAccessNode* /*e*/) {}
 };
 
 // ============================================================

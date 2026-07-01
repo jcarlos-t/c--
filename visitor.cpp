@@ -4,7 +4,7 @@
 using namespace std;
 
 // ============================================================
-// accept() dispatch stubs for Visitor
+// accept()
 // ============================================================
 void BinaryOpNode::accept(Visitor* v) { v->visit(this); }
 void UnaryOpNode::accept(Visitor* v) { v->visit(this); }

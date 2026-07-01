@@ -240,7 +240,7 @@ static void printExp(ostream& out, Exp* e, int level) {
 static void printVarDecl(ostream& out, VarDecl* vd, int level) {
     indent(out, level);
     out << "VarDecl: " << typeNodeName(vd->type) << " " << vd->name;
-    for (auto sz : vd->array_sizes) {
+    for ([[maybe_unused]] auto sz : vd->array_sizes) {
         out << "[]";
     }
     out << "\n";

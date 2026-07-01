@@ -1,7 +1,7 @@
 // Float arithmetic benchmark - tests intensive float/double operations
 int main() {
     int n;
-    n = 100000;
+    n = 500000;
     
     float sum;
     sum = 0.0;
