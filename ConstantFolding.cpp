@@ -121,14 +121,6 @@ void ConstantFolding::visit(UnaryOpNode* e) {
             case UnaryOp::LOG_NOT:
                 e->constantValue = (operand == 0) ? 1.0 : 0.0;
                 break;
-            case UnaryOp::PRE_INC:
-            case UnaryOp::POST_INC:
-                e->constantValue = operand + 1;
-                break;
-            case UnaryOp::PRE_DEC:
-            case UnaryOp::POST_DEC:
-                e->constantValue = operand - 1;
-                break;
             case UnaryOp::ADDR:
             case UnaryOp::DEREF:
                 e->isConstant = false;
@@ -179,7 +171,10 @@ void ConstantFolding::visit(ArrowAccessNode* e) {
 
 void ConstantFolding::visit(SizeOfNode* e) {
     e->isConstant = true;
-    e->constantValue = 0.0;
+    if (e->target_type && e->target_type->resolvedType)
+        e->constantValue = e->target_type->resolvedType->size();
+    else
+        e->constantValue = 0.0;
 }
 
 void ConstantFolding::visit(LambdaExprNode* e) {
