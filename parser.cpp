@@ -64,7 +64,7 @@ Token* Parser::consume(Token::Type ttype, const string& msg) {
     }
     ostringstream oss;
     oss << "line " << current->line << ":" << current->col << " - " << msg
-        << " (se esperaba " << ttype << " pero se encontró '" << current->text << "')";
+        << " (se esperaba " << token_type_to_string(ttype) << " pero se encontró '" << current->text << "')";
     throw runtime_error(oss.str());
 }
 
