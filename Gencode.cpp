@@ -766,6 +766,71 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
 }
 
 // ============================================================
+// directStoreForConstant — store directo a variable con valor constante
+// ============================================================
+// Si `value` es un literal o una expresión ya evaluada por ConstantFolding
+// (isConstant == true), emite el store directo a memoria usando la constante
+// como inmediato, sin pasar por %rax. Retorna true si emitió, false en caso
+// contrario (y se usa el camino normal: eval -> %rax -> store).
+//
+// Casos cubiertos:
+//   IntegerLiteral, BoolLiteral, CharLiteral, FloatLiteral, isConstant
+// Destinos cubiertos:
+//   int (4B), char/bool (1B), long (8B), float (4B)
+//   double no aplica: imm64 no puede ir directo a memoria en x86-64.
+//
+//   Ej: x = 5;       -> movl $5, -8(%rbp)
+//       int x = 5;   -> movl $5, -8(%rbp)
+//       float f = 3.14; -> movl $0x4048f5c3, -4(%rbp)
+bool GenCodeVisitor::directStoreForConstant(Exp* value, VarDecl* vd) {
+    if (!value || !vd || !vd->resolvedType) return false;
+
+    long long intVal = 0;
+    unsigned int floatBits = 0;
+    bool hasFloatBits = false;
+
+    if (auto* p = dynamic_cast<IntegerLiteralNode*>(value)) {
+        intVal = (long long)p->value;
+    } else if (auto* p = dynamic_cast<BoolLiteralNode*>(value)) {
+        intVal = p->value ? 1 : 0;
+    } else if (auto* p = dynamic_cast<CharLiteralNode*>(value)) {
+        intVal = (int)p->value;
+    } else if (auto* p = dynamic_cast<FloatLiteralNode*>(value)) {
+        union { float f; unsigned int i; } fc;
+        fc.f = (float)p->value;
+        floatBits = fc.i;
+        hasFloatBits = true;
+        intVal = (long long)fc.i;
+    } else if (value->isConstant) {
+        intVal = (long long)value->constantValue;
+    } else {
+        return false;
+    }
+
+    Type* tt = vd->resolvedType;
+    int size = vd->memSize > 0 ? vd->memSize : tt->size();
+    string mem = bindingMem(vd);
+
+    if (tt->ttype == Type::FLOAT) {
+        if (!hasFloatBits) {
+            union { float f; unsigned int i; } fc;
+            fc.f = (float)intVal;
+            floatBits = fc.i;
+        }
+        out << "  movl $0x" << hex << floatBits << dec << ", " << mem << "\n";
+        return true;
+    }
+
+    if (tt->ttype == Type::DOUBLE) {
+        return false;
+    }
+
+    string instr = (size == 1) ? "movb" : (size == 4) ? "movl" : "movq";
+    out << "  " << instr << " $" << intVal << ", " << mem << "\n";
+    return true;
+}
+
+// ============================================================
 //  Expressions
 // ============================================================
 
@@ -1325,6 +1390,13 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
 //       a[i] = 3 → captureLVal(a[i]); eval(3); emitIndexedStore
 void GenCodeVisitor::visit(AssignmentNode *e) {
     LVal target = captureLVal(e->target);
+
+    // Atajo: si el destino es una variable simple y el valor es constante,
+    // emitir el store directo (sin pasar por %rax).
+    if (target.kind == LValKind::Id && target.binding) {
+        if (directStoreForConstant(e->value, target.binding))
+            return;
+    }
 
     e->value->accept(this); // value in %rax
 
