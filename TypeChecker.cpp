@@ -636,6 +636,7 @@ void TypeChecker::visit(VarDecl* v) {
 //         totalSize: 8
 void TypeChecker::visit(StructDecl* s) {
     StructType* st = new StructType(s->name);
+    struct_types[s->name] = st;   // Registrar antes de procesar miembros (soporta auto-referencia)
     int offset = 0;
 
     for (auto m : s->members) {
@@ -659,7 +660,6 @@ void TypeChecker::visit(StructDecl* s) {
     }
 
     s->totalSize = offset;
-    struct_types[s->name] = st;
 }
 
 // -----------------------------------------------------------
