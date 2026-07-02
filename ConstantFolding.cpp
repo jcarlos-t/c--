@@ -267,8 +267,14 @@ void ConstantFolding::visit(FreeStmt* s) {
 }
 
 void ConstantFolding::visit(VarDecl* d) {
+    for (auto sz : d->array_sizes) {
+        sz->accept(this);
+    }
     if (d->initializer) {
         d->initializer->accept(this);
+    }
+    for (auto init : d->init_list) {
+        init->accept(this);
     }
 }
 

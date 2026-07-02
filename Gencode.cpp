@@ -95,7 +95,8 @@ void GenCodeVisitor::generate(Program *p) {
 
     // --- Sección .data ---
     out << ".data\n";
-    out << "print_fmt: .string \"%ld\\n\"\n";    // formato por defecto para printf
+    out << "print_fmt: .string \"%ld\\n\"\n";    // formato por defecto para printf (int/bool/ptr)
+    out << "print_fmt_float: .string \"%f\\n\"\n"; // formato por defecto para float/double 
     out << "println_fmt: .string \"\\n\"\n";     // salto de línea
 
     // Variables globales (inicializadas a 0)
@@ -765,6 +766,71 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
 }
 
 // ============================================================
+// directStoreForConstant — store directo a variable con valor constante
+// ============================================================
+// Si `value` es un literal o una expresión ya evaluada por ConstantFolding
+// (isConstant == true), emite el store directo a memoria usando la constante
+// como inmediato, sin pasar por %rax. Retorna true si emitió, false en caso
+// contrario (y se usa el camino normal: eval -> %rax -> store).
+//
+// Casos cubiertos:
+//   IntegerLiteral, BoolLiteral, CharLiteral, FloatLiteral, isConstant
+// Destinos cubiertos:
+//   int (4B), char/bool (1B), long (8B), float (4B)
+//   double no aplica: imm64 no puede ir directo a memoria en x86-64.
+//
+//   Ej: x = 5;       -> movl $5, -8(%rbp)
+//       int x = 5;   -> movl $5, -8(%rbp)
+//       float f = 3.14; -> movl $0x4048f5c3, -4(%rbp)
+bool GenCodeVisitor::directStoreForConstant(Exp* value, VarDecl* vd) {
+    if (!value || !vd || !vd->resolvedType) return false;
+
+    long long intVal = 0;
+    unsigned int floatBits = 0;
+    bool hasFloatBits = false;
+
+    if (auto* p = dynamic_cast<IntegerLiteralNode*>(value)) {
+        intVal = (long long)p->value;
+    } else if (auto* p = dynamic_cast<BoolLiteralNode*>(value)) {
+        intVal = p->value ? 1 : 0;
+    } else if (auto* p = dynamic_cast<CharLiteralNode*>(value)) {
+        intVal = (int)p->value;
+    } else if (auto* p = dynamic_cast<FloatLiteralNode*>(value)) {
+        union { float f; unsigned int i; } fc;
+        fc.f = (float)p->value;
+        floatBits = fc.i;
+        hasFloatBits = true;
+        intVal = (long long)fc.i;
+    } else if (value->isConstant) {
+        intVal = (long long)value->constantValue;
+    } else {
+        return false;
+    }
+
+    Type* tt = vd->resolvedType;
+    int size = vd->memSize > 0 ? vd->memSize : tt->size();
+    string mem = bindingMem(vd);
+
+    if (tt->ttype == Type::FLOAT) {
+        if (!hasFloatBits) {
+            union { float f; unsigned int i; } fc;
+            fc.f = (float)intVal;
+            floatBits = fc.i;
+        }
+        out << "  movl $0x" << hex << floatBits << dec << ", " << mem << "\n";
+        return true;
+    }
+
+    if (tt->ttype == Type::DOUBLE) {
+        return false;
+    }
+
+    string instr = (size == 1) ? "movb" : (size == 4) ? "movl" : "movq";
+    out << "  " << instr << " $" << intVal << ", " << mem << "\n";
+    return true;
+}
+
+// ============================================================
 //  Expressions
 // ============================================================
 
@@ -780,11 +846,16 @@ void GenCodeVisitor::visit(IntegerLiteralNode *e) {
 // Float: se empaqueta como bits IEEE-754 en %eax y se extiende a %rax.
 // No usa %xmm aquí para mantener la convención “resultado en %rax”.
 void GenCodeVisitor::visit(FloatLiteralNode *e) {
-    // Empaqueta float como entero de 32 bits y lo carga
-    union { float f; unsigned int i; } fc;
-    fc.f = (float)e->value;
-    out << "  movl $0x" << hex << fc.i << dec << ", %eax\n";
-    out << "  movslq %eax, %rax\n";
+    if (e->resolvedType && e->resolvedType->ttype == Type::DOUBLE) {
+        union { double d; unsigned long long i; } dc;
+        dc.d = e->value;
+        out << "  movq $0x" << hex << dc.i << dec << ", %rax\n";
+    } else {
+        union { float f; unsigned int i; } fc;
+        fc.f = (float)e->value;
+        out << "  movl $0x" << hex << fc.i << dec << ", %eax\n";
+        out << "  movslq %eax, %rax\n";
+    }
 }
 
 void GenCodeVisitor::visit(BoolLiteralNode *e) {
@@ -850,7 +921,21 @@ void GenCodeVisitor::visit(IdentifierNode *e) {
 void GenCodeVisitor::visit(BinaryOpNode *e) {
     // Si constante (después de constant folding), emitir directamente
     if (e->isConstant) {
-        out << "  movq $" << (long long)e->constantValue << ", %rax\n";
+        double val = e->constantValue;
+        if (e->resolvedType && isFloatSemanticType(e->resolvedType)) {
+            if (e->resolvedType->ttype == Type::DOUBLE) {
+                union { double d; unsigned long long i; } dc;
+                dc.d = val;
+                out << "  movq $0x" << hex << dc.i << dec << ", %rax\n";
+            } else {
+                union { float f; unsigned int i; } fc;
+                fc.f = (float)val;
+                out << "  movl $0x" << hex << fc.i << dec << ", %eax\n";
+                out << "  movslq %eax, %rax\n";
+            }
+        } else {
+            out << "  movq $" << (long long)val << ", %rax\n";
+        }
         return;
     }
 
@@ -1190,7 +1275,21 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
 
     // Constante (después de constant folding)
     if (e->isConstant) {
-        out << "  movq $" << (long long)e->constantValue << ", %rax\n";
+        double val = e->constantValue;
+        if (e->resolvedType && isFloatSemanticType(e->resolvedType)) {
+            if (e->resolvedType->ttype == Type::DOUBLE) {
+                union { double d; unsigned long long i; } dc;
+                dc.d = val;
+                out << "  movq $0x" << hex << dc.i << dec << ", %rax\n";
+            } else {
+                union { float f; unsigned int i; } fc;
+                fc.f = (float)val;
+                out << "  movl $0x" << hex << fc.i << dec << ", %eax\n";
+                out << "  movslq %eax, %rax\n";
+            }
+        } else {
+            out << "  movq $" << (long long)val << ", %rax\n";
+        }
         return;
     }
 
@@ -1205,7 +1304,25 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
 
     switch (e->op) {
     case UnaryOp::MINUS:
-        out << "  neg" << suffix << " " << reg << "\n";
+        // Para float/double: negación SSE (flip sign bit via xorps/xorpd)
+        if (e->resolvedType && isFloatSemanticType(e->resolvedType)) {
+            if (e->resolvedType->ttype == Type::DOUBLE) {
+                out << "  movq %rax, %xmm0\n";
+                out << "  movabsq $0x8000000000000000, %rcx\n";
+                out << "  movq %rcx, %xmm7\n";
+                out << "  xorpd %xmm7, %xmm0\n";
+                out << "  movq %xmm0, %rax\n";
+            } else {
+                out << "  movd %eax, %xmm0\n";
+                out << "  movl $0x80000000, %ecx\n";
+                out << "  movd %ecx, %xmm7\n";
+                out << "  xorps %xmm7, %xmm0\n";
+                out << "  movd %xmm0, %eax\n";
+                out << "  movslq %eax, %rax\n";
+            }
+        } else {
+            out << "  neg" << suffix << " " << reg << "\n";
+        }
         break;
     case UnaryOp::LOG_NOT:
         out << "  cmpq $0, %rax\n";
@@ -1274,6 +1391,13 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
 void GenCodeVisitor::visit(AssignmentNode *e) {
     LVal target = captureLVal(e->target);
 
+    // Atajo: si el destino es una variable simple y el valor es constante,
+    // emitir el store directo (sin pasar por %rax).
+    if (target.kind == LValKind::Id && target.binding) {
+        if (directStoreForConstant(e->value, target.binding))
+            return;
+    }
+
     e->value->accept(this); // value in %rax
 
     // Promociones automáticas según el tipo del destino
@@ -1281,14 +1405,21 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
         Type* tgtType = target.binding->resolvedType;
         Type* valType = e->value->resolvedType;
         if (tgtType && tgtType->ttype == Type::DOUBLE) {
-            if (!valType || valType->ttype == Type::FLOAT || valType->ttype == Type::INT ||
-                valType->ttype == Type::CHAR) {
+            if (valType && valType->ttype == Type::FLOAT) {
                 out << "  movd %eax, %xmm7\n";
                 out << "  cvtss2sd %xmm7, %xmm7\n";  // float → double
                 out << "  movq %xmm7, %rax\n";
+            } else if (!valType || valType->ttype == Type::INT || valType->ttype == Type::CHAR) {
+                out << "  cvtsi2sd %rax, %xmm7\n";   // int → double
+                out << "  movq %xmm7, %rax\n";
             }
         } else if (tgtType && tgtType->ttype == Type::FLOAT) {
-            if (!valType || valType->ttype == Type::INT || valType->ttype == Type::CHAR) {
+            if (valType && valType->ttype == Type::DOUBLE) {
+                out << "  movq %rax, %xmm7\n";
+                out << "  cvtsd2ss %xmm7, %xmm7\n";  // double → float
+                out << "  movd %xmm7, %eax\n";
+                out << "  movslq %eax, %rax\n";
+            } else if (!valType || valType->ttype == Type::INT || valType->ttype == Type::CHAR) {
                 out << "  cvtsi2ss %eax, %xmm7\n";   // int → float
                 out << "  movd %xmm7, %eax\n";
                 out << "  movslq %eax, %rax\n";
@@ -1317,9 +1448,18 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
 //   Ej: printf("%d %f", x, y)
 //       → formato en %rdi, x en %rsi, y en %xmm0, %rax = 1
 void GenCodeVisitor::visit(PrintfNode *e) {
-    // Generar label para el formato
+    // Seleccionar formato por defecto según el tipo del primer argumento
     string fmtLabel = "print_fmt";
-    if (e->format != "%ld") {
+    if (e->format == "%ld" && !e->args.empty()) {
+        // Sin formato explícito: elegir según el tipo del primer argumento
+        if (e->args[0]->resolvedType) {
+            Type* t = e->args[0]->resolvedType;
+            if (t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE)
+                fmtLabel = "print_fmt_float";
+            else
+                fmtLabel = "print_fmt";
+        }
+    } else if (e->format != "%ld") {
         auto it = stringLabels.find(e->format);
         int lbl;
         if (it == stringLabels.end()) {
@@ -1343,13 +1483,20 @@ void GenCodeVisitor::visit(PrintfNode *e) {
 
         // Detectar si el argumento es float/double
         bool isFloat = false;
+        Type* argType = nullptr;
         if (e->args[i]->resolvedType) {
-            Type* t = e->args[i]->resolvedType;
-            isFloat = (t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE);
+            argType = e->args[i]->resolvedType;
+            isFloat = (argType->ttype == Type::FLOAT || argType->ttype == Type::DOUBLE);
         }
 
         if (isFloat && i < xmmRegs.size()) {
-            out << "  movq %rax, " << xmmRegs[i] << "\n";
+            // printf %f espera double; convertir float→double si es necesario
+            if (argType && argType->ttype == Type::FLOAT) {
+                out << "  movd %eax, " << xmmRegs[i] << "\n";
+                out << "  cvtss2sd " << xmmRegs[i] << ", " << xmmRegs[i] << "\n";
+            } else {
+                out << "  movq %rax, " << xmmRegs[i] << "\n";
+            }
         } else if (i < intRegs.size()) {
             out << "  movq %rax, " << intRegs[i] << "\n";
         } else {
@@ -1998,14 +2145,24 @@ void GenCodeVisitor::visit(VarDecl *d) {
 
     if (d->initializer) {
         d->initializer->accept(this);
-        // Promover a double si es necesario
+        // Promover/convertir según el tipo del destino
         if (d->resolvedType && d->resolvedType->ttype == Type::DOUBLE) {
             Type* initType = d->initializer->resolvedType;
-            if (!initType || initType->ttype == Type::FLOAT || initType->ttype == Type::INT ||
-                initType->ttype == Type::CHAR) {
+            if (initType && initType->ttype == Type::FLOAT) {
                 out << "  movd %eax, %xmm7\n";
-                out << "  cvtss2sd %xmm7, %xmm7\n";
+                out << "  cvtss2sd %xmm7, %xmm7\n";  // float → double
                 out << "  movq %xmm7, %rax\n";
+            } else if (!initType || initType->ttype == Type::INT || initType->ttype == Type::CHAR) {
+                out << "  cvtsi2sd %rax, %xmm7\n";   // int → double
+                out << "  movq %xmm7, %rax\n";
+            }
+        } else if (d->resolvedType && d->resolvedType->ttype == Type::FLOAT) {
+            Type* initType = d->initializer->resolvedType;
+            if (initType && initType->ttype == Type::DOUBLE) {
+                out << "  movq %rax, %xmm7\n";
+                out << "  cvtsd2ss %xmm7, %xmm7\n";  // double → float
+                out << "  movd %xmm7, %eax\n";
+                out << "  movslq %eax, %rax\n";
             }
         }
         storeBinding(d);
