@@ -96,7 +96,7 @@ void GenCodeVisitor::generate(Program *p) {
     // --- Sección .data ---
     out << ".data\n";
     out << "print_fmt: .string \"%ld\\n\"\n";    // formato por defecto para printf (int/bool/ptr)
-    out << "print_fmt_float: .string \"%f\\n\"\n"; // formato por defecto para float/double 
+    out << "print_fmt_float: .string \"%f\\n\"\n"; // formato por defecto para float/double
     out << "println_fmt: .string \"\\n\"\n";     // salto de línea
 
     // Variables globales (inicializadas a 0)
