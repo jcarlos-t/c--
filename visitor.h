@@ -294,6 +294,10 @@ private:
     // Guarda el valor actual de %rax en el l-value descrito por lv.
     void storeTarget(const LVal &lv);
 
+    // Intenta emitir un store directo a variable si el valor es una constante.
+    // Retorna true si emitió; false para usar el camino normal via %rax.
+    bool directStoreForConstant(Exp* value, VarDecl* vd);
+
     // Registra offset/memoria de una VarDecl en el mapa interno memoria.
     void bind_var_decl(VarDecl* v);
 
