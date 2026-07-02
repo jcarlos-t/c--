@@ -1076,17 +1076,43 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
         string reg1 = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
         string reg2 = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
 
+        bool isUnsigned = (leftType && leftType->isUnsigned) || (rightType && rightType->isUnsigned);
+
         switch (e->op) {
         case BinaryOp::ADD: out << "  add" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
         case BinaryOp::SUB: out << "  sub" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
-        case BinaryOp::MUL: out << "  imul" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
+        case BinaryOp::MUL: 
+            if (isUnsigned) {
+                // Unsigned multiply: single-operand form (uses %rdx:%rax)
+                // For 64-bit, we need to handle it differently
+                if (size == 8) {
+                    // For 64-bit unsigned, we use mulq, which takes one operand
+                    out << "  mulq " << reg2 << "\n";
+                } else {
+                    // For smaller sizes, we can use the single-operand form too
+                    out << "  mul" << suffix << " " << reg2 << "\n";
+                }
+            } else {
+                out << "  imul" << suffix << " " << reg2 << ", " << reg1 << "\n";
+            }
+            break;
         case BinaryOp::DIV:
-            out << "  cqto\n";          // sign-extend %rax → %rdx:%rax
-            out << "  idiv" << suffix << " " << reg2 << "\n";
+            if (isUnsigned) {
+                out << "  xorq %rdx, %rdx\n";  // zero-extend %rax → %rdx:%rax
+                out << "  div" << suffix << " " << reg2 << "\n";
+            } else {
+                out << "  cqto\n";          // sign-extend %rax → %rdx:%rax
+                out << "  idiv" << suffix << " " << reg2 << "\n";
+            }
             break;
         case BinaryOp::MOD:
-            out << "  cqto\n";
-            out << "  idiv" << suffix << " " << reg2 << "\n";
+            if (isUnsigned) {
+                out << "  xorq %rdx, %rdx\n";
+                out << "  div" << suffix << " " << reg2 << "\n";
+            } else {
+                out << "  cqto\n";
+                out << "  idiv" << suffix << " " << reg2 << "\n";
+            }
             out << "  movq %rdx, %rax\n";  // módulo queda en %rdx
             break;
         case BinaryOp::POW:
@@ -1110,25 +1136,25 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
         case BinaryOp::LT:
             out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
             out << "  movq $0, %rax\n";
-            out << "  setl %al\n";
+            out << "  set" << (isUnsigned ? "b" : "l") << " %al\n";
             out << "  movzbq %al, %rax\n";
             break;
         case BinaryOp::GT:
             out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
             out << "  movq $0, %rax\n";
-            out << "  setg %al\n";
+            out << "  set" << (isUnsigned ? "a" : "g") << " %al\n";
             out << "  movzbq %al, %rax\n";
             break;
         case BinaryOp::LE:
             out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
             out << "  movq $0, %rax\n";
-            out << "  setle %al\n";
+            out << "  set" << (isUnsigned ? "be" : "le") << " %al\n";
             out << "  movzbq %al, %rax\n";
             break;
         case BinaryOp::GE:
             out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
             out << "  movq $0, %rax\n";
-            out << "  setge %al\n";
+            out << "  set" << (isUnsigned ? "ae" : "ge") << " %al\n";
             out << "  movzbq %al, %rax\n";
             break;
         case BinaryOp::LOG_AND:

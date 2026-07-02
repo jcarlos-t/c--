@@ -128,35 +128,54 @@ TypeChecker::~TypeChecker() {
 //   int, char, float, double, bool, void → tipo primitivo singleton
 //   int*, char**, etc. → PointerType(base)
 //   struct Persona → StructType("Persona") buscado en struct_types
-//   Nombre<T1, T2> → TemplateTypeNode → instantiate_template()
-//   typename T (NamedTypeNode) → error (debe ser resuelto por template)
 //
 //   Ej: type_from_ast(PrimitiveTypeNode(INT)) → intType
 //       type_from_ast(PointerTypeNode(IntTypeNode)) → PointerType(IntType)
 Type* TypeChecker::type_from_ast(Exp* t) {
+    Type* res = nullptr;
     // --- Tipos primitivos: void, int, char, float, double, bool, long ---
     if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(t)) {
         switch (pt->prim) {
-            case PrimitiveTypeNode::VOID:   return voidType;
-            case PrimitiveTypeNode::INT:    return intType;
-            case PrimitiveTypeNode::CHAR:   return charType;
-            case PrimitiveTypeNode::FLOAT:  return floatType;
-            case PrimitiveTypeNode::DOUBLE: return doubleType;
-            case PrimitiveTypeNode::BOOL:   return boolType;
-            case PrimitiveTypeNode::LONG:   return longType;
+            case PrimitiveTypeNode::VOID:   res = voidType; break;
+            case PrimitiveTypeNode::INT:    res = intType; break;
+            case PrimitiveTypeNode::CHAR:   res = charType; break;
+            case PrimitiveTypeNode::FLOAT:  res = floatType; break;
+            case PrimitiveTypeNode::DOUBLE: res = doubleType; break;
+            case PrimitiveTypeNode::BOOL:   res = boolType; break;
+            case PrimitiveTypeNode::LONG:   res = longType; break;
         }
+        if (res && (pt->isUnsigned || pt->isConst)) {
+            // Clonar tipo para aplicar modificadores (evitar modificar singletons)
+            Type* clone = new Type(res->ttype);
+            clone->isUnsigned = pt->isUnsigned;
+            clone->isConst = pt->isConst;
+            typeCache.push_back(clone);
+            res = clone;
+        }
+        return res;
     }
     // --- Punteros: T* busca el tipo base recursivamente ---
     if (auto* pt = dynamic_cast<PointerTypeNode*>(t)) {
         Type* base = type_from_ast(pt->base);
         PointerType* ptr = new PointerType(base);
+        ptr->isConst = pt->isConst;
         typeCache.push_back(ptr);
         return ptr;
     }
     // --- Structs: busca el StructType por nombre ---
     if (auto* st = dynamic_cast<StructTypeNode*>(t)) {
         auto it = struct_types.find(st->name);
-        if (it != struct_types.end()) return it->second;
+        if (it != struct_types.end()) {
+            res = it->second;
+            if (st->isConst) {
+                StructType* clone = new StructType(st->name);
+                clone->members = ((StructType*)res)->members;
+                clone->isConst = true;
+                typeCache.push_back(clone);
+                res = clone;
+            }
+            return res;
+        }
         error("struct '" + st->name + "' no declarado.");
         return intType;
     }
@@ -196,13 +215,16 @@ void TypeChecker::bind_var_decl(VarDecl* v) {
 //       check_assign(double, int) → true (promoción)
 //       check_assign(char, int) → true
 bool TypeChecker::check_assign(Type* target, Type* value) {
-    if (target->match(value)) return true;
+    // Check for exact match (ignoring isConst for assignability, since const is checked elsewhere)
+    if (target->ttype == value->ttype && target->isUnsigned == value->isUnsigned) return true;
     // Cualquier puntero a cualquier puntero (coerción laxa; no compara base).
     if (target->ttype == Type::POINTER && value->ttype == Type::POINTER) return true;
-    // Truncamiento / promoción entre char, int, long
+    // Truncamiento / promoción entre char, int, long (ignoring unsigned for implicit conversions like C)
     if (target->ttype == Type::CHAR && (value->ttype == Type::INT || value->ttype == Type::LONG)) return true;
     if (target->ttype == Type::INT && (value->ttype == Type::CHAR || value->ttype == Type::LONG)) return true;
     if (target->ttype == Type::LONG && is_integral_type(value)) return true;
+    // Allow assigning between same type even if unsigned differs (like C does implicitly)
+    if (target->ttype == value->ttype && is_integral_type(target)) return true;
     // Promoción: int/char/long → float o double
     if ((target->ttype == Type::FLOAT || target->ttype == Type::DOUBLE) && is_integral_type(value)) return true;
     // Promoción: float → double
@@ -991,6 +1013,11 @@ void TypeChecker::visit(AssignmentNode* e) {
     isLvalContext = true;
     e->target->accept(this); Type* targetType = e->target->resolvedType;
     isLvalContext = false;
+
+    if (targetType->isConst) {
+        error("no se puede asignar a una variable declarada como const.");
+    }
+
     e->value->accept(this); Type* valueType = e->value->resolvedType;
     if (!check_assign(targetType, valueType)) {
         error("tipos incompatibles en asignación (se esperaba " +

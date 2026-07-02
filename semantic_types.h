@@ -41,6 +41,8 @@ public:
     // NOTYPE: valor interno por defecto / error; no es un tipo del lenguaje.
     enum TType { NOTYPE, VOID, INT, CHAR, BOOL, FLOAT, DOUBLE, LONG, POINTER, ARRAY, STRUCT };
     TType ttype;  // discriminante: indica qué subclase lógica es
+    bool isUnsigned = false;
+    bool isConst = false;
 
     Type(TType tt) : ttype(tt) {}
     virtual ~Type() = default;
@@ -53,21 +55,25 @@ public:
     //   int.match(char)  → false  (aunque char se promueva en expresiones)
     //   int*.match(int*) → true si bases coinciden (PointerType)
     virtual bool match(Type* t) const {
-        return this->ttype == t->ttype;
+        return this->ttype == t->ttype && this->isUnsigned == t->isUnsigned;
     }
 
     // Nombre legible del tipo primitivo. Subclases añaden *, [], struct ...
     virtual string str() const {
+        string prefix = isConst ? "const " : "";
+        string suffix = isUnsigned ? "unsigned " : "";
+        string name;
         switch (ttype) {
-            case VOID:   return "void";
-            case INT:    return "int";
-            case CHAR:   return "char";
-            case BOOL:   return "bool";
-            case FLOAT:  return "float";
-            case DOUBLE: return "double";
-            case LONG:   return "long long";
-            default:     return "unknown";
+            case VOID:   name = "void"; break;
+            case INT:    name = "int"; break;
+            case CHAR:   name = "char"; break;
+            case BOOL:   name = "bool"; break;
+            case FLOAT:  name = "float"; break;
+            case DOUBLE: name = "double"; break;
+            case LONG:   name = "long long"; break;
+            default:     name = "unknown"; break;
         }
+        return prefix + suffix + name;
     }
 
     // Tamaño en bytes para layout (convención del compilador C--):

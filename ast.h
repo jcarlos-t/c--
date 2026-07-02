@@ -369,6 +369,7 @@ public:
     vector<Exp*> array_sizes; // para tamaños en arreglos [size1][size2]...
     Exp* initializer; // expresion inicial x = init;
     vector<Exp*> init_list; // lista de inicialización: = { e1, e2, ... }
+    bool isConst = false;   // Modificador const
     
     // Calculados por TypeChecker
     Type* resolvedType = nullptr;  // tipo semántico resuelto
@@ -436,6 +437,7 @@ public:
 // Clase base para nodos de tipo
 class TypeNode : public Exp {
 public:
+    bool isConst = false;
     TypeNode() : Exp() {}
 };
 
@@ -444,6 +446,7 @@ class PrimitiveTypeNode : public TypeNode {
 public:
     enum Prim { VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, LONG };
     Prim prim;
+    bool isUnsigned = false; // Modificador unsigned
     PrimitiveTypeNode(Prim p);
     void accept(Visitor* visitor);
 

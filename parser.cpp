@@ -144,30 +144,42 @@ TypeNode* Parser::parse_type() {
 TypeNode* Parser::parse_basic_type() {
     bool sawLong = false;
     bool sawUnsigned = false;
+    bool sawConst = false;
     while (check(Token::LONG) || check(Token::CONST) || check(Token::UNSIGNED)) {
         if (check(Token::LONG)) sawLong = true;
         if (check(Token::UNSIGNED)) sawUnsigned = true;
+        if (check(Token::CONST)) sawConst = true;
         advance();
     }
-    if (is_type_keyword(current->type) && current->type != Token::LONG) {
+    if (is_type_keyword(current->type) && current->type != Token::LONG && current->type != Token::CONST && current->type != Token::UNSIGNED) {
         Token::Type t = current->type;
         advance();
         PrimitiveTypeNode::Prim p = kind_from_token(t);
-        if (sawLong && sawUnsigned) { /* long unsigned int -> long long */ }
-        return new PrimitiveTypeNode(p);
+        PrimitiveTypeNode* node = new PrimitiveTypeNode(p);
+        node->isUnsigned = sawUnsigned;
+        node->isConst = sawConst;
+        return node;
     }
     // long (long) without following type keyword
     if (sawLong) {
-        return new PrimitiveTypeNode(PrimitiveTypeNode::LONG);
+        PrimitiveTypeNode* node = new PrimitiveTypeNode(PrimitiveTypeNode::LONG);
+        node->isUnsigned = sawUnsigned;
+        node->isConst = sawConst;
+        return node;
     }
     // unsigned without following type -> unsigned int
     if (sawUnsigned) {
-        return new PrimitiveTypeNode(PrimitiveTypeNode::INT);
+        PrimitiveTypeNode* node = new PrimitiveTypeNode(PrimitiveTypeNode::INT);
+        node->isUnsigned = true;
+        node->isConst = sawConst;
+        return node;
     }
     // struct person <- esto es un tipo
     if (match(Token::STRUCT)) {
         Token* name = consume(Token::ID, "Se esperaba nombre de struct");
-        return new StructTypeNode(name->text);
+        StructTypeNode* node = new StructTypeNode(name->text);
+        node->isConst = sawConst;
+        return node;
     }
     sync_error("Se esperaba un tipo (int, float, void, char, double, bool, long, struct)");
     return nullptr;
@@ -269,6 +281,11 @@ FunDecl* Parser::parse_function_decl(Exp* ret_type, const string& name) {
 VarDecl* Parser::parse_variable_decl(Exp* type, const string& name, bool consume_semicolon) {
     VarDecl* vd = new VarDecl(type, name);
     vd->loc.line = current->line; vd->loc.column = current->col;
+
+    // Copy const flag from type to VarDecl
+    if (TypeNode* tn = dynamic_cast<TypeNode*>(type)) {
+        vd->isConst = tn->isConst;
+    }
 
     // array_suffix
     parse_array_suffix(vd);
