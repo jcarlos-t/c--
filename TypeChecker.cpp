@@ -229,6 +229,8 @@ bool TypeChecker::check_assign(Type* target, Type* value) {
     if ((target->ttype == Type::FLOAT || target->ttype == Type::DOUBLE) && is_integral_type(value)) return true;
     // Promoción: float → double
     if (target->ttype == Type::DOUBLE && value->ttype == Type::FLOAT) return true;
+    // Narrowing: double → float (C compatible)
+    if (target->ttype == Type::FLOAT && value->ttype == Type::DOUBLE) return true;
     // Conversión implícita: int/char/long → bool
     if (target->ttype == Type::BOOL && is_integral_type(value)) return true;
     // Conversión implícita: bool → int/char/long
@@ -1227,7 +1229,7 @@ void TypeChecker::visit(IntegerLiteralNode* e) {
     e->resolvedType = intType;
 }
 void TypeChecker::visit(FloatLiteralNode* e) {
-    e->resolvedType = floatType;
+    e->resolvedType = doubleType;
 }
 void TypeChecker::visit(BoolLiteralNode* e) {
     e->resolvedType = boolType;
