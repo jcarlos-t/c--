@@ -377,11 +377,11 @@ void TypeChecker::visit(FunDecl* f) {
                 error("no se puede declarar variable de tipo void.");
                 t = intType;
             }
-            // Wrap en ArrayType si tiene dimensiones de arreglo
+            // Wrap en ArrayType si tiene dimensiones de arreglo (orden inverso)
             // Ej: int a[5][3] → ArrayType(ArrayType(IntType, 3), 5)
-            for (auto s : v->array_sizes) {
+            for (int idx = (int)v->array_sizes.size() - 1; idx >= 0; idx--) {
                 int dim = -1;
-                if (auto* il = dynamic_cast<IntegerLiteralNode*>(s))
+                if (auto* il = dynamic_cast<IntegerLiteralNode*>(v->array_sizes[idx]))
                     dim = (int)il->value;
                 ArrayType* at = new ArrayType(t, dim);
                 typeCache.push_back(at);
@@ -570,10 +570,10 @@ void TypeChecker::visit(VarDecl* v) {
         return;
     }
 
-    // Wrap en ArrayType si tiene dimensiones
-    for (auto s : v->array_sizes) {
+    // Wrap en ArrayType si tiene dimensiones (orden inverso: primera dimensión = outermost)
+    for (int idx = (int)v->array_sizes.size() - 1; idx >= 0; idx--) {
         int dim = -1;
-        if (auto* il = dynamic_cast<IntegerLiteralNode*>(s))
+        if (auto* il = dynamic_cast<IntegerLiteralNode*>(v->array_sizes[idx]))
             dim = (int)il->value;
         ArrayType* at = new ArrayType(t, dim);
         typeCache.push_back(at);
@@ -642,10 +642,10 @@ void TypeChecker::visit(StructDecl* s) {
     for (auto m : s->members) {
         Type* mt = type_from_ast(m->type);
 
-        // Wrap en ArrayType si tiene dimensiones (ej: int data[2][3])
-        for (auto arrSize : m->array_sizes) {
+        // Wrap en ArrayType si tiene dimensiones (orden inverso: primera dimensión = outermost)
+        for (int idx = (int)m->array_sizes.size() - 1; idx >= 0; idx--) {
             int dim = -1;
-            if (auto* il = dynamic_cast<IntegerLiteralNode*>(arrSize))
+            if (auto* il = dynamic_cast<IntegerLiteralNode*>(m->array_sizes[idx]))
                 dim = (int)il->value;
             ArrayType* at = new ArrayType(mt, dim);
             typeCache.push_back(at);

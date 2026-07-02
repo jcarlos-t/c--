@@ -718,16 +718,21 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
 
         // If there are indices (member is an array), apply the index offset
         if (!lv.indices.empty()) {
+            out << "  pushq %rcx\n"; // save value
             out << "  pushq %rax\n"; // save base address of the array member
-            // Get elemSize from the resolved type of the final member
-            int elemSize = 4;
-            if (!lv.members.empty() &&
+            // strideElemSize: stride for index computation
+            // If binding is an array, indices index into it (e.g. arreglo[i].id)
+            int strideElemSize = 4;
+            if (lv.binding && lv.binding->resolvedType &&
+                lv.binding->resolvedType->ttype == Type::ARRAY) {
+                strideElemSize = array_elem_size(lv.binding);
+            } else if (!lv.members.empty() &&
                 structMemberTypes.count(baseStructName(structName)) &&
                 structMemberTypes[baseStructName(structName)].count(lv.members.back())) {
                 Type* mt = structMemberTypes[baseStructName(structName)][lv.members.back()];
                 if (mt && mt->ttype == Type::ARRAY) {
                     ArrayType* at = static_cast<ArrayType*>(mt);
-                    if (at->base) elemSize = at->base->size();
+                    if (at->base) strideElemSize = at->base->size();
                 }
             }
 
@@ -735,18 +740,24 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
             out << "  movq $0, %r10\n";
             for (size_t d = 0; d < lv.indices.size(); d++) {
                 lv.indices[d]->accept(this);
-                if (elemSize != 1) {
-                    out << "  movq $" << elemSize << ", %rcx\n";
+                if (strideElemSize != 1) {
+                    out << "  movq $" << strideElemSize << ", %rcx\n";
                     out << "  imulq %rcx, %rax\n";
                 }
                 out << "  addq %rax, %r10\n";
             }
             out << "  popq %rax\n";
             out << "  addq %r10, %rax\n";
+            out << "  popq %rcx\n"; // restore value
 
-            // Store value (%rcx) at final address
-            string reg = (elemSize == 1) ? "%cl" : (elemSize == 4) ? "%ecx" : "%rcx";
-            out << "  " << storeInstr(elemSize) << " " << reg << ", (%rax)\n";
+            // Store value (%rcx) at final address — use member size, not stride
+            int storeSize = 4;
+            if (!lv.members.empty()) {
+                storeSize = structMemberSizes[baseStructName(
+                    lv.structName.empty() ? structName : lv.structName)][lv.members.back()];
+            }
+            string reg = (storeSize == 1) ? "%cl" : (storeSize == 4) ? "%ecx" : "%rcx";
+            out << "  " << storeInstr(storeSize) << " " << reg << ", (%rax)\n";
         } else {
             // No indices: store at the final member address (%rax = &member)
             int size = structMemberSizes[baseStructName(structName)][lv.members.back()];
@@ -1228,6 +1239,12 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
         return;
     }
 
+    // ADDR: calcular dirección del operando (no evaluar como r-value)
+    if (e->op == UnaryOp::ADDR) {
+        e->operand->computeAddress(this);
+        return;
+    }
+
     e->operand->accept(this);
 
     // Tamaño según tipo del resultado de la operación (TypeChecker).
@@ -1300,14 +1317,11 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
         out << "  popq %rax\n";
         break;
     }
-    case UnaryOp::ADDR:
-        // &x: dirección de variable
-        if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
-            leaBinding(id->binding);
-        break;
     case UnaryOp::DEREF:
         // *p: cargar valor apuntado
         out << "  movq (%rax), %rax\n";
+        break;
+    default:
         break;
     }
 }
