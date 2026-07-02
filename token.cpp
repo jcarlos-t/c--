@@ -20,7 +20,7 @@ const char* token_name(Token::Type t) {
         case Token::FLOAT:  return "FLOAT";
         case Token::DOUBLE: return "DOUBLE";
         case Token::BOOL:   return "BOOL";
-        case Token::AUTO:   return "AUTO";
+        case Token::LONG:   return "LONG";
         case Token::STRUCT:   return "STRUCT";
         case Token::IF:     return "IF";
         case Token::ELSE:   return "ELSE";
@@ -36,8 +36,8 @@ const char* token_name(Token::Type t) {
         case Token::SIZEOF: return "SIZEOF";
         case Token::MALLOC: return "MALLOC";
         case Token::FREE:   return "FREE";
-        case Token::TEMPLATE:return "TEMPLATE";
-        case Token::TYPENAME:return "TYPENAME";
+        case Token::CONST:   return "CONST";
+        case Token::UNSIGNED:return "UNSIGNED";
         case Token::LPAREN: return "LPAREN";
         case Token::RPAREN: return "RPAREN";
         case Token::LBRACE: return "LBRACE";

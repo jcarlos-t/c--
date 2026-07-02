@@ -13,7 +13,6 @@
 
 using namespace std;
 
-#include <functional>
 
 // ============================================================
 // Visitor
@@ -33,8 +32,6 @@ public:
     virtual void visit(MemberAccessNode* e) = 0;   // obj.miembro
     virtual void visit(ArrowAccessNode* e) = 0;    // ptr->miembro
     virtual void visit(SizeOfNode* e) = 0;
-    virtual void visit(LambdaExprNode* e) = 0;
-    virtual void visit(CaptureNode* e) = 0;      // [x] en lambda
     virtual void visit(IdentifierNode* e) = 0;
     virtual void visit(IntegerLiteralNode* e) = 0;
     virtual void visit(FloatLiteralNode* e) = 0;
@@ -46,8 +43,6 @@ public:
     virtual void visit(PrimitiveTypeNode* e) = 0;  // int, char, void, ...
     virtual void visit(PointerTypeNode* e) = 0;    // T*
     virtual void visit(StructTypeNode* e) = 0;     // struct Nombre
-    virtual void visit(NamedTypeNode* e) = 0;      // parámetro de template (ej. T)
-    virtual void visit(TemplateTypeNode* e) = 0;   // Box<int>
 
     // --- Statements ---
     virtual void visit(Body* s) = 0;              // bloque { ... }
@@ -67,7 +62,6 @@ public:
     virtual void visit(VarDecl* d) = 0;
     virtual void visit(FunDecl* d) = 0;
     virtual void visit(StructDecl* d) = 0;
-    virtual void visit(TemplateDecl* d) = 0;     // template de struct o función
     virtual void visit(Program* p) = 0;          // raíz: globals, structs, funciones
 
     // --- Cálculo de dirección de l-values ---
@@ -113,14 +107,7 @@ private:
     // Structs ya resueltos: "Point" o instancias "Box<int>".
     unordered_map<string, StructType*> struct_types;
 
-    // Plantillas declaradas (struct o función) antes de instanciar.
-    unordered_map<string, TemplateDecl*> template_decls;
-
-    // Cache de funciones template materializadas (ej. "max<int>" → FunDecl*).
-    // Evita clonar la misma instancia varias veces.
-    unordered_map<string, FunDecl*> instantiated_function_cache;
-
-    // Tipo de retorno de la función/lambda que se está analizando ahora.
+    // Tipo de retorno de la función que se está analizando ahora.
     // Se consulta en visit(ReturnStmt).
     ::Type* retornodefuncion;
 
@@ -131,6 +118,7 @@ private:
     ::Type* floatType;
     ::Type* doubleType;
     ::Type* charType;
+    ::Type* longType;
 
     // Tipos creados dinámicamente durante el análisis (punteros, arreglos, errores).
     // El destructor de TypeChecker hace delete de todos.
@@ -153,18 +141,6 @@ private:
     vector<string> errors;
     bool hasError;
 
-    // Programa actual; se usa para añadir funciones instanciadas desde templates
-    // a program->instantiated_functions y typechequearlas después.
-    Program* program = nullptr;
-
-    // Convierte Type* semántico → TypeNode* del AST (solo primitivos).
-    // Necesario al instanciar funciones template: reemplazar NamedTypeNode("T")
-    // por PrimitiveTypeNode(INT), etc.
-    TypeNode* semantic_to_type_node(::Type* t);
-
-    // Clona una FunDecl de template sustituyendo parámetros de tipo (T → int, ...).
-    FunDecl* instantiate_function(TemplateDecl* tdecl, const vector<TypeNode*>& args);
-
     // Registra la firma de una función normal en el mapa functions.
     void add_function(FunDecl* fd);
 
@@ -177,9 +153,6 @@ private:
 
     void error(const string& msg);
     void error(const string& msg, const Location& loc);
-
-    // Materializa un struct template: Box<int> → StructType con miembros concretos.
-    StructType* instantiate_template(const string& name, const vector<TypeNode*>& args);
 
     // Registra una variable en env (tipo) y varEnv (nodo VarDecl).
     void bind_var_decl(VarDecl* v);
@@ -204,7 +177,6 @@ public:
     void visit(FunDecl* f) override;
     void visit(VarDecl* v) override;
     void visit(StructDecl* s) override;
-    void visit(TemplateDecl* d) override;
     void visit(Body* b) override;
     void visit(ExprStmtNode* s) override;
     void visit(IfStmt* s) override;
@@ -227,8 +199,6 @@ public:
     void visit(MemberAccessNode* e) override;
     void visit(ArrowAccessNode* e) override;
     void visit(SizeOfNode* e) override;
-    void visit(LambdaExprNode* e) override;
-    void visit(CaptureNode* e) override;
     void visit(IdentifierNode* e) override;
     void visit(IntegerLiteralNode* e) override;
     void visit(FloatLiteralNode* e) override;
@@ -239,8 +209,6 @@ public:
     void visit(PrimitiveTypeNode* e) override;
     void visit(PointerTypeNode* e) override;
     void visit(StructTypeNode* e) override;
-    void visit(NamedTypeNode* e) override;
-    void visit(TemplateTypeNode* e) override;
 };
 
 // ============================================================
@@ -260,8 +228,6 @@ public:
     void visit(MemberAccessNode* e) override;
     void visit(ArrowAccessNode* e) override;
     void visit(SizeOfNode* e) override;
-    void visit(LambdaExprNode* e) override;
-    void visit(CaptureNode* e) override;
     void visit(IdentifierNode* e) override;
     void visit(IntegerLiteralNode* e) override;
     void visit(FloatLiteralNode* e) override;
@@ -272,8 +238,6 @@ public:
     void visit(PrimitiveTypeNode* e) override;
     void visit(PointerTypeNode* e) override;
     void visit(StructTypeNode* e) override;
-    void visit(NamedTypeNode* e) override;
-    void visit(TemplateTypeNode* e) override;
 
     void visit(Body* s) override;
     void visit(ExprStmtNode* s) override;
@@ -291,7 +255,6 @@ public:
     void visit(VarDecl* d) override;
     void visit(FunDecl* d) override;
     void visit(StructDecl* d) override;
-    void visit(TemplateDecl* d) override;
     void visit(Program* p) override;
 };
 
@@ -408,10 +371,6 @@ public:
     void visit(PrimitiveTypeNode *e) override;
     void visit(PointerTypeNode *e) override;
     void visit(StructTypeNode *e) override;
-    void visit(NamedTypeNode *e) override;
-    void visit(TemplateTypeNode *e) override;
-    void visit(CaptureNode *e) override;
-    void visit(LambdaExprNode *e) override;
 
     void visit(Body *s) override;
     void visit(ExprStmtNode *s) override;
@@ -430,7 +389,6 @@ public:
     void visit(FunDecl *d) override;
     void visit(StructDecl *d) override;
     void visit(Program *p) override;
-    void visit(TemplateDecl *d) override;
 
     // Sobreescritura de la base Visitor: calculan dirección del l-value en %rax
     // activando lvalTarget antes de visitar el hijo correspondiente.

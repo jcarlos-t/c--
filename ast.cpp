@@ -149,7 +149,7 @@ VarDecl::~VarDecl() { delete type; for (auto s : array_sizes) delete s; delete i
 
 // ===================== FunDecl =====================
 FunDecl::FunDecl(Exp* rt, const string& n, Body* b)
-    : return_type(rt), name(n), body(b), is_template(false) {}
+    : return_type(rt), name(n), body(b) {}
 FunDecl::~FunDecl() { delete return_type; for (auto p : params) delete p; delete body; }
 
 // ===================== StructDecl =====================
@@ -163,7 +163,6 @@ Program::~Program() {
     for (auto f : functions) delete f;
     for (auto g : globals) delete g;
     for (auto s : structs) delete s;
-    for (auto t : templates) delete t;
 }
 
 // ===================== PrimitiveTypeNode =====================
@@ -179,38 +178,5 @@ PointerTypeNode::~PointerTypeNode() { delete base; }
 StructTypeNode::StructTypeNode(const string& n)
     : TypeNode(), name(n) {}
 
-// ===================== NamedTypeNode =====================
-NamedTypeNode::NamedTypeNode(const string& n)
-    : TypeNode(), name(n) {}
 
-// ===================== TemplateTypeNode =====================
-TemplateTypeNode::TemplateTypeNode(const string& n, const vector<TypeNode*>& args)
-    : TypeNode(), name(n), type_args(args) {}
-TemplateTypeNode::~TemplateTypeNode() {
-    for (auto a : type_args) delete a;
-}
-
-// ===================== CaptureNode =====================
-CaptureNode::CaptureNode(Mode m, const string& n)
-    : Exp(), mode(m), name(n) {}
-
-// ===================== LambdaExprNode =====================
-LambdaExprNode::LambdaExprNode(const vector<CaptureNode*>& caps, const vector<VarDecl*>& p, TypeNode* r, Body* b)
-    : Exp(), captures(caps), params(p), return_type(r), body(b) {}
-LambdaExprNode::~LambdaExprNode() {
-    for (auto c : captures) delete c;
-    for (auto p : params) delete p;
-    delete return_type;
-    delete body;
-}
-
-// ===================== TemplateDecl =====================
-TemplateDecl::TemplateDecl(const vector<string>& p, FunDecl* f)
-    : params(p), func(f), struct_decl(nullptr), is_function(true) {}
-TemplateDecl::TemplateDecl(const vector<string>& p, StructDecl* s)
-    : params(p), func(nullptr), struct_decl(s), is_function(false) {}
-TemplateDecl::~TemplateDecl() {
-    delete func;
-    delete struct_decl;
-}
 

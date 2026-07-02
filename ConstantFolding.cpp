@@ -121,14 +121,6 @@ void ConstantFolding::visit(UnaryOpNode* e) {
             case UnaryOp::LOG_NOT:
                 e->constantValue = (operand == 0) ? 1.0 : 0.0;
                 break;
-            case UnaryOp::PRE_INC:
-            case UnaryOp::POST_INC:
-                e->constantValue = operand + 1;
-                break;
-            case UnaryOp::PRE_DEC:
-            case UnaryOp::POST_DEC:
-                e->constantValue = operand - 1;
-                break;
             case UnaryOp::ADDR:
             case UnaryOp::DEREF:
                 e->isConstant = false;
@@ -179,15 +171,10 @@ void ConstantFolding::visit(ArrowAccessNode* e) {
 
 void ConstantFolding::visit(SizeOfNode* e) {
     e->isConstant = true;
-    e->constantValue = 0.0;
-}
-
-void ConstantFolding::visit(LambdaExprNode* e) {
-    e->isConstant = false;
-}
-
-void ConstantFolding::visit(CaptureNode* e) {
-    e->isConstant = false;
+    if (e->target_type && e->target_type->resolvedType)
+        e->constantValue = e->target_type->resolvedType->size();
+    else
+        e->constantValue = 0.0;
 }
 
 void ConstantFolding::visit(PrintfNode* e) {
@@ -206,14 +193,6 @@ void ConstantFolding::visit(PointerTypeNode* e) {
 }
 
 void ConstantFolding::visit(StructTypeNode* e) {
-    e->isConstant = false;
-}
-
-void ConstantFolding::visit(NamedTypeNode* e) {
-    e->isConstant = false;
-}
-
-void ConstantFolding::visit(TemplateTypeNode* e) {
     e->isConstant = false;
 }
 
@@ -301,9 +280,6 @@ void ConstantFolding::visit(FunDecl* d) {
 }
 
 void ConstantFolding::visit(StructDecl*) {
-}
-
-void ConstantFolding::visit(TemplateDecl*) {
 }
 
 void ConstantFolding::visit(Program* p) {

@@ -1,6 +1,6 @@
 # C-- — Especificación del Lenguaje
 
-Subset de C con punteros, templates, lambdas y memoria dinámica.
+Subset de C con punteros, structs, `long long`, `unsigned` y memoria dinámica.
 Compilado a x86-64 (AT&T/GAS) vía recursive descent + triple dispatch.
 
 ---
@@ -13,23 +13,21 @@ Compilado a x86-64 (AT&T/GAS) vía recursive descent + triple dispatch.
 // ============================================================
 program         = decl*
 
-decl            = fundec | vardec | struct_decl | templ_decl
+decl            = fundec | vardec | struct_decl
 
 fundec          = type ID "(" param_list ")" body
 vardec          = type ID arrsuf [ "=" expr ] ";"
 struct_decl     = "struct" ID "{" vardec* "}" ";"
 
 // ============================================================
-// Tipos (incluye templates)
+// Tipos
 // ============================================================
 type            = btype "*"*
 
 btype           = "void" | "int" | "char" | "float" | "double"
-                | "bool" | "auto" | stype | template_type
+                | "bool" | "long" stype
 
 stype           = "struct" ID
-template_type   = ID "<" type_list ">"              // Vector<int>
-                | "struct" ID "<" type_list ">"      // struct Vector<int>
 
 arrsuf          = ("[" [ expr ] "]")*
 
@@ -86,16 +84,13 @@ unary_expr      = post_expr | "++" unary_expr | "--" unary_expr
 unary_op        = "&" | "*" | "-" | "!"
 post_expr       = prim_expr { "[" expr "]"                      // index
                             | "(" [ arg_list ] ")"              // call
-                            | "<" type_list ">" "(" arg_list ")" // template call f<T>(a)
                             | "." ID | "->" ID
                             | "++" | "--" }
 arg_list        = assign_expr ("," assign_expr)*
-type_list       = type ("," type)*
 prim_expr       = ID | const | "(" expr ")"
                 | "malloc" "(" expr ")"
                 | "sizeof" "(" type ")"
                 | "printf" "(" arg_list ")"
-                | lambda_expr
 
 // ============================================================
 // Constantes
@@ -106,22 +101,6 @@ floatc          = FNUM
 charc           = "'" CHAR "'"
 boolc           = "true" | "false"
 str             = '"' CHAR* '"'
-
-// ============================================================
-// Lambdas
-// ============================================================
-lambda_expr     = "[" [ cap_list ] "]" "(" param_list ")" "->" type body
-cap_list        = cap ("," cap)*
-cap             = "="              // [=] default by-value (parsed, no-op)
-                | "&"              // [&] default by-ref (error semántico)
-                | ID               // [x] named by-value
-                | "&" ID           // [&x] named by-ref (error semántico)
-
-// ============================================================
-// Templates
-// ============================================================
-templ_decl      = "template" "<" tparam_list ">" ( fundec | struct_decl )
-tparam_list     = "typename" ID ("," "typename" ID)*
 
 // ============================================================
 // Tokens léxicos
@@ -142,20 +121,20 @@ digit           = "0".."9"
 
 ### 2.1 Sistema de tipos
 
-| Tipo      | Palabra | Tamaño | Observaciones                                     |
-|-----------|---------|--------|---------------------------------------------------|
-| void      | `void`  | —      | Solo como retorno de función                      |
-| int       | `int`   | 4      | Entero con signo                                  |
-| char      | `char`  | 1      | Tratado como int en aritmética                    |
-| float     | `float` | 4      | Punto flotante precisión simple (SSE)             |
-| double    | `double`| 8      | Punto flotante precisión doble (SSE)              |
-| bool      | `bool`  | 1      | `true` = 1, `false` = 0                           |
-| auto      | `auto`  | —      | Inferido del inicializador obligatorio            |
-| puntero   | `T*`    | 8      | `&x`, `*p`, `p->m`, `arr[i]` sobre puntero       |
-| arreglo   | `T[n]`  | n×|T|  | Multidimensional: `int m[2][3]`                   |
-| struct    | `struct`| ∑      | Declaración: `struct Nombre { ... };`             |
-| string    | n/a     | 8      | Literal: `"hola"` → `int` (dirección en .rodata) |
-| lambda    | n/a     | 8      | Expresión lambda → `void*` (puntero a función)   |
+| Tipo      | Palabra      | Tamaño | Observaciones                                     |
+|-----------|--------------|--------|---------------------------------------------------|
+| void      | `void`       | —      | Solo como retorno de función                      |
+| int       | `int`        | 4      | Entero con signo                                  |
+| long      | `long long`  | 8      | Entero largo con signo                            |
+| char      | `char`       | 1      | Tratado como int en aritmética                    |
+| float     | `float`      | 4      | Punto flotante precisión simple (SSE)             |
+| double    | `double`     | 8      | Punto flotante precisión doble (SSE)              |
+| bool      | `bool`       | 1      | `true` = 1, `false` = 0                           |
+| unsigned  | `unsigned`   | 4      | Modificador sin signo (mapea a `int`)             |
+| puntero   | `T*`         | 8      | `&x`, `*p`, `p->m`, `arr[i]` sobre puntero       |
+| arreglo   | `T[n]`       | n×|T|  | Multidimensional: `int m[2][3]`                   |
+| struct    | `struct`     | ∑      | Declaración: `struct Nombre { ... };`             |
+| string    | n/a          | 8      | Literal: `"hola"` → `int` (dirección en .rodata) |
 
 ### 2.2 Scoping
 
@@ -176,18 +155,16 @@ digit           = "0".."9"
 | Asignación `=`                 | Tipos compatibles (ver 2.4); promoción automática                  |
 | Condición `if` `while` `for`   | Debe ser `bool`                                                    |
 | `&&` `\|\|` `!`                | Operandos `bool`; resultado `bool`                                 |
-| `==` `!=` `<` `>` `<=` `>=`    | Operandos `int`/`char`/`float`/`double`; resultado `bool`          |
-| `+` `-` `*` `/` `%`           | `int`/`char`/`float`/`double`; promoción al más grande             |
-| `**` potencia                  | `int`/`char`/`float`/`double`; exponente entero para código nativo |
+| `==` `!=` `<` `>` `<=` `>=`    | Operandos `int`/`char`/`long`/`float`/`double`; resultado `bool`  |
+| `+` `-` `*` `/` `%`           | `int`/`char`/`long`/`float`/`double`; promoción al más grande      |
+| `**` potencia                  | `int`/`char`/`long`/`float`/`double`; exponente entero para nativo |
 | `[]` indexación                | Base: arreglo o puntero; índice: `int` o `char`                    |
 | `.` acceso miembro             | Objeto debe ser struct; miembro debe existir                       |
 | `->` acceso flecha             | Operando debe ser puntero a struct                                 |
 | Llamada a función              | Aridad y tipos coinciden con firma declarada                       |
-| Llamada a template `f<T>(a)`   | Instancia el template con `T` y verifica argumentos                |
 | `return`                       | Tipo debe coincidir con tipo de retorno (o ser asignable)          |
 | `break` / `continue`           | Solo dentro de `while`, `for`, `do-while` o `switch`               |
 | `malloc` / `free`              | `malloc` retorna `void*`; `free` recibe `void*`                    |
-| `auto`                         | Tipo inferido del inicializador; ej: `auto x = 5` → `int`          |
 | `sizeof`                       | Retorna `int` con el tamaño en bytes del tipo                      |
 | `printf`                       | Acepta formato (string) y argumentos; usa convención variadic ABI  |
 
@@ -195,60 +172,33 @@ digit           = "0".."9"
 
 **Asignación** (`check_assign`): un valor de tipo `V` puede asignarse a destino `T` si:
 
-| Destino (T) | Valor (V)         | Acción                      |
-|-------------|-------------------|-----------------------------|
-| `T`         | `T`               | Directa (match)             |
-| `T*`        | `U*` (cualquier)  | Coerción de puntero         |
-| `int`       | `char`            | Promoción                   |
-| `char`      | `int`             | Truncamiento                |
-| `float`     | `int` o `char`    | `cvtsi2ss` (int→float)      |
-| `double`    | `int` o `char`    | `cvtsi2sd` (int→double)     |
-| `double`    | `float`           | `cvtss2sd` (float→double)   |
+| Destino (T) | Valor (V)              | Acción                      |
+|-------------|------------------------|-----------------------------|
+| `T`         | `T`                    | Directa (match)             |
+| `T*`        | `U*` (cualquier)       | Coerción de puntero         |
+| `int`       | `char` o `long`        | Promoción/truncamiento      |
+| `char`      | `int` o `long`         | Truncamiento                |
+| `long`      | `int`, `char` o `bool` | Promoción                   |
+| `float`     | `int`, `char` o `long` | `cvtsi2ss` (int→float)      |
+| `double`    | `int`, `char` o `long` | `cvtsi2sd` (int→double)     |
+| `double`    | `float`                | `cvtss2sd` (float→double)   |
+| `bool`      | `int`, `char` o `long` | Conversión a booleano       |
+| `int`/`char`/`long` | `bool`          | Extensión                  |
 
 **Aritmética**: el tipo del resultado se determina por el operando más grande:
 - Si algún operando es `double` → resultado `double`
 - Si no, si algún operando es `float` → resultado `float`
+- Si no, si algún operando es `long` → resultado `long`
 - Si no → resultado `int` (char promueve a int)
 
-### 2.5 Capturas en lambdas
-
-| Sintaxis | Comportamiento                                       |
-|----------|------------------------------------------------------|
-| `[x]`    | Captura por valor: copia `x` al frame de la lambda   |
-| `[&x]`   | **Error semántico**: captura por referencia no impl.  |
-| `[=]`    | Captura default por valor (parsed, no funcional)      |
-| `[&]`    | **Error semántico**: captura default por ref no impl. |
-
-Solo `[x]` (captura por valor con nombre) funciona correctamente.
-
-### 2.6 Templates
-
-**Declaración**:
-```
-template<typename T>
-T identidad(T x) { return x; }
-
-template<typename T>
-struct Par { T first; T second; };
-```
-
-**Instanciación en tipos**:
-- `Par<int>` — como tipo directamente (sin `struct`)
-- `struct Par<int>` — con `struct` keyword (equivalente)
-
-**Instanciación en llamadas a función**:
-- `identidad<int>(42)` — argumento template explícito entre `< >`
-- El nombre concreto se genera vía `mangleTemplateName`: `Par<int>`, `Par<float,double>`
-- Las instancias se cachean para evitar duplicados
-
-### 2.7 Strings
+### 2.5 Strings
 
 - Los literales de string (`"hola"`) se almacenan en la sección `.rodata`.
 - El tipo semántico de un string es `int` (se trata como una dirección).
 - `printf` acepta un string como primer argumento (formato) y args adicionales.
 - No hay concatenación de strings ni mutación.
 
-### 2.8 Manejo de errores
+### 2.6 Manejo de errores
 
 | Fase       | Estrategia                                                     |
 |------------|----------------------------------------------------------------|
@@ -269,9 +219,8 @@ Scanner (lexer) ──► tokens
     ▼
 Parser (recursive descent) ──► AST (Program*)
     │
-    ├─► EVALVisitor ──► interpretación directa (prototipado)
-    ├─► TypeChecker ──► verificación semántica + bin packing offsets
-    ├─► ConstantFolding ──► optimización de constantes (deshabilitado)
+    ├─► TypeChecker ──► verificación semántica + offsets de stack frame
+    ├─► ConstantFolding ──► plegado de expresiones constantes
     └─► GenCodeVisitor ──► código ensamblador x86-64 (AT&T/GAS)
 ```
 
@@ -317,7 +266,7 @@ Las clases base del AST son:
 
 - **`Exp`** — expresión (retorna `double` en EVAL, `Type*` en TypeChecker)
 - **`Stm`** — sentencia (retorna `int` en EVAL, `void` en TypeChecker)
-- **Nodos independientes** — `VarDecl`, `FunDecl`, `StructDecl`, `Program`, `TemplateDecl`
+- **Nodos independientes** — `VarDecl`, `FunDecl`, `StructDecl`, `Program`
 
 ### 4.2 Árbol de relaciones
 
@@ -338,15 +287,11 @@ Program
 │   ├── offset (asignado por TypeChecker, relativo a %rbp)
 │   └── memSize (asignado por TypeChecker)
 │
-├── StructDecl
-│   ├── name
-│   ├── VarDecl* members
-│   ├── memberOffsets (calculados por TypeChecker)
-│   └── memberSizes (calculados por TypeChecker)
-│
-└── TemplateDecl
-    ├── params[] (strings: nombres de parámetros de tipo)
-    └── FunDecl / StructDecl (patrón)
+└── StructDecl
+    ├── name
+    ├── VarDecl* members
+    ├── memberOffsets (calculados por TypeChecker)
+    └── memberSizes (calculados por TypeChecker)
 
 Statements (Stm)
 ├── Body ── stmts[]
@@ -369,15 +314,13 @@ Expressions (Exp)
 ├── UnaryOpNode ── operand, op
 │   (ADDR, DEREF, MINUS, LOG_NOT, PRE_INC, PRE_DEC, POST_INC, POST_DEC)
 ├── AssignmentNode ── target, value (ASSIGN)
-├── FcallNode ── callee, args[], template_args[]
+├── FcallNode ── callee, args[]
 ├── IndexNode ── base, index
 ├── MemberAccessNode ── object, member
 ├── ArrowAccessNode ── pointer, member
 ├── MallocNode ── size
 ├── SizeOfNode ── target_type
 ├── PrintfNode ── format, args[]
-├── LambdaExprNode ── captures[], params[], return_type, body
-├── CaptureNode ── mode (BY_VALUE, BY_REF), name
 ├── IdentifierNode ── name, binding (VarDecl*)
 ├── IntegerLiteralNode ── value
 ├── FloatLiteralNode ── value
@@ -385,14 +328,12 @@ Expressions (Exp)
 ├── CharLiteralNode ── value
 ├── StringLiteralNode ── value
 └── TypeNode (base para tipos)
-    ├── PrimitiveTypeNode (VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, AUTO)
+    ├── PrimitiveTypeNode (VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, LONG)
     ├── PointerTypeNode ── base
-    ├── StructTypeNode ── name
-    ├── NamedTypeNode ── name (placeholder para params de template)
-    └── TemplateTypeNode ── name, type_args[]
+    └── StructTypeNode ── name
 
 Type* semánticos (resolvedType)
-├── Type (INT, CHAR, BOOL, FLOAT, DOUBLE, VOID)
+├── Type (INT, CHAR, BOOL, FLOAT, DOUBLE, VOID, LONG)
 ├── PointerType ── base
 ├── ArrayType ── base, length
 └── StructType ── name, members[]

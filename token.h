@@ -10,12 +10,12 @@ class Token {
 public:
     enum Type {
         // Tipos de dato
-        VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, AUTO,
+        VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, LONG,
 
         // Palabras clave de control y declaración
         STRUCT, IF, ELSE, WHILE, DO, FOR, SWITCH,
         CASE, DEFAULT, BREAK, CONTINUE, RETURN,
-        SIZEOF, MALLOC, FREE, TEMPLATE, TYPENAME,
+        SIZEOF, MALLOC, FREE, CONST, UNSIGNED,
 
         // Puntuación y delimitadores
         LPAREN, RPAREN, LBRACE, RBRACE,

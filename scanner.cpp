@@ -108,7 +108,7 @@ Token* Scanner::identifier_or_keyword() {
     if (word == "float")    return make_token(Token::FLOAT);
     if (word == "double")   return make_token(Token::DOUBLE);
     if (word == "bool")     return make_token(Token::BOOL);
-    if (word == "auto")     return make_token(Token::AUTO);
+    if (word == "long")     return make_token(Token::LONG);
     
     // booleanos, estructuras de control
     if (word == "true")     return make_token(Token::TRUE);
@@ -128,8 +128,8 @@ Token* Scanner::identifier_or_keyword() {
     if (word == "sizeof")   return make_token(Token::SIZEOF);
     if (word == "malloc")   return make_token(Token::MALLOC);
     if (word == "free")     return make_token(Token::FREE);
-    if (word == "template") return make_token(Token::TEMPLATE);
-    if (word == "typename") return make_token(Token::TYPENAME);
+    if (word == "const")    return make_token(Token::CONST);
+    if (word == "unsigned") return make_token(Token::UNSIGNED);
 
     if (word == "printf") return make_token(Token::PRINTF);
 
@@ -155,6 +155,12 @@ Token* Scanner::number() {
         if (peek() == '+' || peek() == '-') advance();
         while (current < (int)input.length() && isdigit(peek()))
             advance();
+    }
+
+    // Sufijo ll/LL para long long
+    if (!is_float && (peek() == 'l' || peek() == 'L')) {
+        if (current + 1 < (int)input.length() && input[current + 1] == (peek() == 'l' ? 'l' : 'L'))
+            current += 2;
     }
 
     return make_token(is_float ? Token::FNUM : Token::NUM);

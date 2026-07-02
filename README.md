@@ -84,12 +84,11 @@ Genera el ejecutable `c--`. Los archivos `.o` intermedios se eliminan automátic
 ## Introducción
 
 `C--` es un compilador para un subconjunto del lenguaje C, extendido con
-punteros, arreglos multidimensionales, structs, templates genéricos y
-lambdas con captura por valor. El compilador implementa un pipeline
-clásico de cinco etapas (scanner → parser → typechecker → constant
-folding → generación de código) y produce código ensamblador x86-64
-(sintaxis AT&T/GAS), que puede ensamblarse y enlazarse a un ejecutable
-nativo mediante `gcc`.
+punteros, arreglos multidimensionales, structs, `long long` y `unsigned`.
+El compilador implementa un pipeline clásico de cinco etapas (scanner →
+parser → typechecker → constant folding → generación de código) y
+produce código ensamblador x86-64 (sintaxis AT&T/GAS), que puede
+ensamblarse y enlazarse a un ejecutable nativo mediante `gcc`.
 
 Este informe documenta el diseño del lenguaje, las optimizaciones
 implementadas sobre el código generado, y una comparación empírica de
@@ -103,12 +102,10 @@ rendimiento frente a `gcc` y `clang`.
 respecto al C estándar:
 
 | Se soporta | No se soporta |
-|---|---|
-| Tipos primitivos (`int`, `char`, `float`, `double`, `bool`, `void`), `auto` | Unions, enums |
-| Punteros (`T*`), arreglos multidimensionales (`T[n][m]`) | Punteros a función (salvo lambdas) |
+|---|---|---|
+| Tipos primitivos (`int`, `char`, `float`, `double`, `bool`, `void`, `long`), `unsigned` | Unions, enums |
+| Punteros (`T*`), arreglos multidimensionales (`T[n][m]`) | Punteros a función |
 | Structs (`struct Nombre { ... };`) | Herencia / OOP |
-| Templates genéricos (`template<typename T>`) sobre funciones y structs | Templates variádicos, especialización parcial |
-| Lambdas con captura por valor (`[x](int a) -> int { ... }`) | Captura por referencia (`[&x]`, `[&]`) — error semántico |
 | `malloc` / `free`, `sizeof`, `printf` | Librería estándar (`stdio.h`, `stdlib.h`, etc.) |
 | `if`/`else`, `switch`, `while`, `do-while`, `for`, `break`/`continue` | Asignación compuesta (`+=`, `-=`, ...), operador ternario |
 
@@ -120,23 +117,21 @@ respecto al C estándar:
 // ============================================================
 program         = decl*
 
-decl            = fundec | vardec | struct_decl | templ_decl
+decl            = fundec | vardec | struct_decl
 
 fundec          = type ID "(" param_list ")" body
 vardec          = type ID arrsuf [ "=" expr ] ";"
 struct_decl     = "struct" ID "{" vardec* "}" ";"
 
 // ============================================================
-// Tipos (incluye templates)
+// Tipos
 // ============================================================
 type            = btype "*"*
 
 btype           = "void" | "int" | "char" | "float" | "double"
-                | "bool" | "auto" | stype | template_type
+                | "bool" | "long" stype
 
 stype           = "struct" ID
-template_type   = ID "<" type_list ">"              // Vector<int>
-                | "struct" ID "<" type_list ">"      // struct Vector<int>
 
 arrsuf          = ("[" [ expr ] "]")*
 
@@ -193,16 +188,13 @@ unary_expr      = post_expr | "++" unary_expr | "--" unary_expr
 unary_op        = "&" | "*" | "-" | "!"
 post_expr       = prim_expr { "[" expr "]"                      // index
                             | "(" [ arg_list ] ")"              // call
-                            | "<" type_list ">" "(" arg_list ")" // template call f<T>(a)
                             | "." ID | "->" ID
                             | "++" | "--" }
 arg_list        = assign_expr ("," assign_expr)*
-type_list       = type ("," type)*
 prim_expr       = ID | const | "(" expr ")"
                 | "malloc" "(" expr ")"
                 | "sizeof" "(" type ")"
                 | "printf" "(" arg_list ")"
-                | lambda_expr
 
 // ============================================================
 // Constantes
@@ -213,22 +205,6 @@ floatc          = FNUM
 charc           = "'" CHAR "'"
 boolc           = "true" | "false"
 str             = '"' CHAR* '"'
-
-// ============================================================
-// Lambdas
-// ============================================================
-lambda_expr     = "[" [ cap_list ] "]" "(" param_list ")" "->" type body
-cap_list        = cap ("," cap)*
-cap             = "="              // [=] default by-value (parsed, no-op)
-                | "&"              // [&] default by-ref (error semántico)
-                | ID               // [x] named by-value
-                | "&" ID           // [&x] named by-ref (error semántico)
-
-// ============================================================
-// Templates
-// ============================================================
-templ_decl      = "template" "<" tparam_list ">" ( fundec | struct_decl )
-tparam_list     = "typename" ID ("," "typename" ID)*
 
 // ============================================================
 // Tokens léxicos
@@ -245,36 +221,39 @@ digit           = "0".."9"
 
 ### 1.3 Sistema de tipos
 
-| Tipo      | Palabra | Tamaño | Observaciones                                     |
-|-----------|---------|--------|---------------------------------------------------|
-| void      | `void`  | —      | Solo como retorno de función                      |
-| int       | `int`   | 4      | Entero con signo                                  |
-| char      | `char`  | 1      | Tratado como int en aritmética                    |
-| float     | `float` | 4      | Punto flotante precisión simple (SSE)             |
-| double    | `double`| 8      | Punto flotante precisión doble (SSE)              |
-| bool      | `bool`  | 1      | `true` = 1, `false` = 0                           |
-| auto      | `auto`  | —      | Inferido del inicializador obligatorio            |
-| puntero   | `T*`    | 8      | `&x`, `*p`, `p->m`, `arr[i]` sobre puntero       |
-| arreglo   | `T[n]`  | n×\|T\| | Multidimensional: `int m[2][3]`                   |
-| struct    | `struct`| ∑      | Declaración: `struct Nombre { ... };`             |
-| string    | n/a     | 8      | Literal: `"hola"` → `int` (dirección en .rodata) |
-| lambda    | n/a     | 8      | Expresión lambda → `void*` (puntero a función)   |
+| Tipo      | Palabra      | Tamaño | Observaciones                                     |
+|-----------|--------------|--------|---------------------------------------------------|
+| void      | `void`       | —      | Solo como retorno de función                      |
+| int       | `int`        | 4      | Entero con signo                                  |
+| long      | `long long`  | 8      | Entero largo con signo                            |
+| char      | `char`       | 1      | Tratado como int en aritmética                    |
+| float     | `float`      | 4      | Punto flotante precisión simple (SSE)             |
+| double    | `double`     | 8      | Punto flotante precisión doble (SSE)              |
+| bool      | `bool`       | 1      | `true` = 1, `false` = 0                           |
+| unsigned  | `unsigned`   | 4      | Modificador sin signo (mapea a `int`)             |
+| puntero   | `T*`         | 8      | `&x`, `*p`, `p->m`, `arr[i]` sobre puntero       |
+| arreglo   | `T[n]`       | n×\|T\| | Multidimensional: `int m[2][3]`                   |
+| struct    | `struct`     | ∑      | Declaración: `struct Nombre { ... };`             |
+| string    | n/a          | 8      | Literal: `"hola"` → `int` (dirección en .rodata) |
 
 **Conversiones y promociones** (`check_assign`):
 
-| Destino (T) | Valor (V)         | Acción                      |
-|-------------|-------------------|-----------------------------|
-| `T`         | `T`               | Directa (match)             |
-| `T*`        | `U*` (cualquier)  | Coerción de puntero         |
-| `int`       | `char`            | Promoción                   |
-| `char`      | `int`             | Truncamiento                |
-| `float`     | `int` o `char`    | `cvtsi2ss` (int→float)      |
-| `double`    | `int` o `char`    | `cvtsi2sd` (int→double)     |
-| `double`    | `float`           | `cvtss2sd` (float→double)   |
+| Destino (T) | Valor (V)              | Acción                      |
+|-------------|------------------------|-----------------------------|
+| `T`         | `T`                    | Directa (match)             |
+| `T*`        | `U*` (cualquier)       | Coerción de puntero         |
+| `int`       | `char` o `long`        | Promoción/truncamiento      |
+| `char`      | `int` o `long`         | Truncamiento                |
+| `long`      | `int`, `char` o `bool` | Promoción                   |
+| `float`     | `int`, `char` o `long` | `cvtsi2ss` (int→float)      |
+| `double`    | `int`, `char` o `long` | `cvtsi2sd` (int→double)     |
+| `double`    | `float`                | `cvtss2sd` (float→double)   |
+| `bool`      | `int`, `char` o `long` | Conversión a booleano       |
+| `int`/`char`/`long` | `bool`          | Extensión                  |
 
 En aritmética, el tipo de resultado se determina por el operando más
-grande: `double` domina sobre `float`, que domina sobre `int` (`char`
-promueve a `int`).
+grande: `double` domina sobre `float`, que domina sobre `long`, que
+domina sobre `int` (`char` promueve a `int`).
 
 ### 1.4 Semántica
 
@@ -294,23 +273,10 @@ redefinirse.
 | `[]` indexación                | Base: arreglo o puntero; índice: `int` o `char`                    |
 | `.` / `->`                     | Objeto (o puntero) debe ser struct; miembro debe existir            |
 | Llamada a función              | Aridad y tipos coinciden con la firma declarada                    |
-| Llamada a template `f<T>(a)`   | Instancia el template con `T` y verifica argumentos                |
 | `return`                       | Tipo debe coincidir con el de retorno (o ser asignable)             |
 | `break` / `continue`           | Solo dentro de `while`, `for`, `do-while` o `switch`                |
 | `malloc` / `free`              | `malloc` retorna `void*`; `free` recibe `void*`                    |
-| `auto`                         | Tipo inferido del inicializador obligatorio                        |
 | `sizeof`                       | Retorna `int` con el tamaño en bytes del tipo                      |
-
-**Templates**: se declaran con `template<typename T>` sobre una función
-o un struct. La instanciación en tipos usa `Par<int>` o
-`struct Par<int>` (equivalentes); en llamadas usa `identidad<int>(42)`.
-El nombre concreto se genera con *name mangling* (`Par<int>`) y las
-instancias se cachean para evitar duplicados.
-
-**Lambdas**: solo `[x]` (captura por valor con nombre) es funcional.
-`[&x]` y `[&]` (captura por referencia) están reconocidos por el parser
-pero producen un error semántico, ya que el generador de código no
-implementa upvalues por referencia.
 
 **Manejo de errores**: errores léxicos abortan la compilación en el
 primer carácter no reconocido; errores sintácticos lanzan una excepción
@@ -366,57 +332,41 @@ la jerarquía de nodos del AST, el manejo de l-values (`captureLVal` /
 
 ### 1.7 Ejemplos
 
-**Templates genéricos** (función y struct):
+**Struct:**
 
 ```c
-template <typename T>
-struct Pair {
-    T first;
-    T second;
+struct Punto {
+    int x;
+    int y;
 };
 
-template <typename T>
-T add(T a, T b) {
-    return a + b;
-}
-
 int main() {
-    int s;
-    s = add<int>(10, 20);
-    printf(s); // esperado: 30
-
-    Pair<int> p;
-    p.first = 5;
-    p.second = 15;
-    int sum;
-    sum = p.first + p.second;
-    printf(sum); // esperado: 20
-
+    struct Punto pt;
+    pt.x = 10;
+    pt.y = 20;
+    printf(pt.x + pt.y); // esperado: 30
     return 0;
 }
 ```
 
-**Lambdas con captura por valor:**
+**Long long:**
 
 ```c
 int main() {
-    auto add = [](int a, int b) -> int {
-        return a + b;
-    };
-    int sum1;
-    sum1 = add(5, 10);
+    long long big;
+    big = 100000;
+    printf(big); // esperado: 100000
+    return 0;
+}
+```
 
-    int x;
-    x = 20;
-    auto addX = [x](int a) -> int {
-        return a + x;
-    };
-    int sum2;
-    sum2 = addX(5);
+**Unsigned:**
 
-    printf(sum1);  // esperado: 15
-    printf(sum2);  // esperado: 25
-
+```c
+int main() {
+    unsigned u;
+    u = 42;
+    printf(u); // esperado: 42
     return 0;
 }
 ```
@@ -440,14 +390,16 @@ El lenguaje se valida con 20 pruebas de integración
 | 10 | `test10_expresiones_complejas` | Precedencia y anidamiento de expresiones |
 | 11 | `test11_pointers` | Punteros, `&`, `*`, `->` |
 | 12 | `test12_sizeof` | Operador `sizeof` |
-| 13 | `test13_type_inference` | Inferencia con `auto` |
-| 14 | `test14_lambda` | Lambdas y captura por valor |
-| 15 | `test15_templates` | Templates sobre funciones y structs |
+| 13 | `test13_type_inference` | Declaración con tipo explícito |
+| 14 | `test14_lambda` | Funciones como reemplazo de lambdas |
+| 15 | `test15_templates` | Struct y función simple (sin templates) |
 | 16 | `test16_scope` | Scoping y shadowing |
 | 17 | `test17_multidim_arrays` | Arreglos multidimensionales |
 | 18 | `test18_type_promotion` | Promoción de tipos numéricos |
 | 19 | `test19_strings` | Literales de string |
 | 20 | `test20_float_double` | Aritmética `float`/`double` |
+| 21 | `test21_long_unsigned` | Tipo `long long` y `unsigned` |
+| 22 | `test22_unsigned_ops` | Operaciones aritméticas con `unsigned` |
 
 ## 2. Optimizaciones aplicadas
 
@@ -588,8 +540,8 @@ soporte (potencia, formato `printf`) que GCC maneja vía libc, y a que
 - `C--` cumple su objetivo como compilador didáctico: implementa un
   pipeline completo (scanner → parser → typechecker → constant folding
   → codegen x86-64) capaz de compilar un subset expresivo de C —
-  incluyendo punteros, structs, arreglos multidimensionales, templates
-  genéricos y lambdas — a código ensamblador nativo funcional.
+  incluyendo punteros, structs, arreglos multidimensionales, `long long`
+  y `unsigned` — a código ensamblador nativo funcional.
 - La velocidad de compilación es la principal ventaja frente a
   herramientas de producción: al no implementar optimizaciones
   multi-pase, `C--` compila entre 20× y 35× más rápido que GCC/Clang en

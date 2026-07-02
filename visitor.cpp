@@ -15,8 +15,6 @@ void IndexNode::accept(Visitor* v) { v->visit(this); }
 void MemberAccessNode::accept(Visitor* v) { v->visit(this); }
 void ArrowAccessNode::accept(Visitor* v) { v->visit(this); }
 void SizeOfNode::accept(Visitor* v) { v->visit(this); }
-void LambdaExprNode::accept(Visitor* v) { v->visit(this); }
-void CaptureNode::accept(Visitor* v) { v->visit(this); }
 void IdentifierNode::accept(Visitor* v) { v->visit(this); }
 void IntegerLiteralNode::accept(Visitor* v) { v->visit(this); }
 void FloatLiteralNode::accept(Visitor* v) { v->visit(this); }
@@ -27,8 +25,6 @@ void PrintfNode::accept(Visitor* v) { v->visit(this); }
 void PrimitiveTypeNode::accept(Visitor* v) { v->visit(this); }
 void PointerTypeNode::accept(Visitor* v) { v->visit(this); }
 void StructTypeNode::accept(Visitor* v) { v->visit(this); }
-void NamedTypeNode::accept(Visitor* v) { v->visit(this); }
-void TemplateTypeNode::accept(Visitor* v) { v->visit(this); }
 void Body::accept(Visitor* v) { v->visit(this); }
 void ExprStmtNode::accept(Visitor* v) { v->visit(this); }
 void IfStmt::accept(Visitor* v) { v->visit(this); }
@@ -44,5 +40,4 @@ void FreeStmt::accept(Visitor* v) { v->visit(this); }
 void VarDecl::accept(Visitor* v) { v->visit(this); }
 void FunDecl::accept(Visitor* v) { v->visit(this); }
 void StructDecl::accept(Visitor* v) { v->visit(this); }
-void TemplateDecl::accept(Visitor* v) { v->visit(this); }
 void Program::accept(Visitor* v) { v->visit(this); }

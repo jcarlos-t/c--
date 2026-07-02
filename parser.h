@@ -9,7 +9,6 @@ class Parser {
 private:
     Scanner* scanner;
     Token *current, *previous;
-    unordered_set<string> current_template_params;
 
     bool match(Token::Type ttype);
     bool check(Token::Type ttype) const;
