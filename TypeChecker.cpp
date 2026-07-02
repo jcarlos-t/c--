@@ -665,8 +665,8 @@ void TypeChecker::visit(ExprStmtNode* s) {
 //       → condición x > 0 debe ser bool
 void TypeChecker::visit(IfStmt* s) {
     s->condition->accept(this); Type* t = s->condition->resolvedType;
-    if (!t->match(boolType)) {
-        error("condición de if debe ser bool.");
+    if (t->match(voidType)) {
+        error("condición de if no puede ser void.");
     }
     s->then_branch->accept(this);
     if (s->else_branch) s->else_branch->accept(this);
@@ -679,8 +679,8 @@ void TypeChecker::visit(IfStmt* s) {
 // condición y procesa el cuerpo.
 void TypeChecker::visit(WhileStmt* s) {
     s->condition->accept(this); Type* t = s->condition->resolvedType;
-    if (!t->match(boolType)) {
-        error("condición de while debe ser bool.");
+    if (t->match(voidType)) {
+        error("condición de while no puede ser void.");
     }
     loopDepth++;
     s->body->accept(this);
@@ -697,8 +697,8 @@ void TypeChecker::visit(DoWhileStmt* s) {
     s->body->accept(this);
     loopDepth--;
     s->condition->accept(this); Type* t = s->condition->resolvedType;
-    if (!t->match(boolType)) {
-        error("condición de do-while debe ser bool.");
+    if (t->match(voidType)) {
+        error("condición de do-while no puede ser void.");
     }
 }
 
@@ -715,8 +715,8 @@ void TypeChecker::visit(ForStmt* s) {
     if (s->init) s->init->accept(this);
     if (s->condition) {
         s->condition->accept(this); Type* t = s->condition->resolvedType;
-        if (!t->match(boolType)) {
-            error("condición de for debe ser bool.");
+        if (t->match(voidType)) {
+            error("condición de for no puede ser void.");
         }
     }
     loopDepth++;
