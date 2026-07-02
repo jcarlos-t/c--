@@ -1711,6 +1711,13 @@ void GenCodeVisitor::visit(ExprStmtNode *s) {
 //   Ej: if (x > 0) { a = 1; } else { a = 2; }
 //       → ...cmp $0, %rax; je else_0; ... jmp endif_0; else_0: ... endif_0:
 void GenCodeVisitor::visit(IfStmt *s) {
+    if (s->condition->isConstant) {
+        if (s->condition->constantValue != 0)
+            s->then_branch->accept(this);
+        else if (s->else_branch)
+            s->else_branch->accept(this);
+        return;
+    }
     int lbl = labelcont++;
     s->condition->accept(this);
     out << "  cmpq $0, %rax\n";
@@ -1731,6 +1738,22 @@ void GenCodeVisitor::visit(IfStmt *s) {
 //
 //   Ej: while (i < 10) { i++; }
 void GenCodeVisitor::visit(WhileStmt *s) {
+    if (s->condition->isConstant) {
+        if (s->condition->constantValue == 0)
+            return;
+        int lbl = labelcont++;
+        string oldBreak = currentBreakLabel;
+        string oldContinue = currentContinueLabel;
+        currentBreakLabel = "endwhile_" + to_string(lbl);
+        currentContinueLabel = "while_" + to_string(lbl);
+        out << "while_" << lbl << ":\n";
+        s->body->accept(this);
+        out << "  jmp while_" << lbl << "\n";
+        out << "endwhile_" << lbl << ":\n";
+        currentBreakLabel = oldBreak;
+        currentContinueLabel = oldContinue;
+        return;
+    }
     int lbl = labelcont++;
     string oldBreak = currentBreakLabel;
     string oldContinue = currentContinueLabel;
@@ -1762,6 +1785,15 @@ void GenCodeVisitor::visit(DoWhileStmt *s) {
 
     out << "dowhile_" << lbl << ":\n";
     s->body->accept(this);
+    if (s->condition->isConstant) {
+        if (s->condition->constantValue != 0) {
+            out << "  jmp dowhile_" << lbl << "\n";
+        }
+        out << "endwhile_" << lbl << ":\n";
+        currentBreakLabel = oldBreak;
+        currentContinueLabel = oldContinue;
+        return;
+    }
     out << "docond_" << lbl << ":\n";
     s->condition->accept(this);
     out << "  cmpq $0, %rax\n";
@@ -1785,6 +1817,25 @@ void GenCodeVisitor::visit(ForStmt *s) {
 
     if (s->init)
         s->init->accept(this);
+
+    if (s->condition && s->condition->isConstant) {
+        if (s->condition->constantValue == 0) {
+            out << "endfor_" << lbl << ":\n";
+            currentBreakLabel = oldBreak;
+            currentContinueLabel = oldContinue;
+            return;
+        }
+        out << "for_" << lbl << ":\n";
+        s->body->accept(this);
+        out << "forinc_" << lbl << ":\n";
+        if (s->increment)
+            s->increment->accept(this);
+        out << "  jmp for_" << lbl << "\n";
+        out << "endfor_" << lbl << ":\n";
+        currentBreakLabel = oldBreak;
+        currentContinueLabel = oldContinue;
+        return;
+    }
 
     out << "for_" << lbl << ":\n";
     if (s->condition) {
