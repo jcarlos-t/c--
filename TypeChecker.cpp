@@ -493,21 +493,60 @@ void TypeChecker::collectVars(Stm* stmt, vector<VarDecl*>& vars) {
 }
 
 // -----------------------------------------------------------
-// assignOffsets — asignar offsets en el stack frame
+// assignOffsets — asignar offsets en el stack frame (bin packing)
 // -----------------------------------------------------------
-// Asigna un slot de 8 bytes a cada variable <= 8 bytes, y el
-// tamaño real a variables grandes (arrays, structs > 8 bytes).
-// Esto evita la complejidad del bin packing sin penalización
-// práctica en x86-64.
+// Empaqueta variables en bloques de 8 bytes según su tamaño:
+//   - Variables >8B: tamaño real (arrays, structs grandes)
+//   - Variables de 8B: 1 por bloque (double, long, punteros)
+//   - Variables de 4B: 2 por bloque (int, float)
+//   - Variables de 1B: 4 por bloque (char, bool) en slots de 2B
+//
+// Orden de llenado: más pesados primero para optimizar alineamiento.
 //
 // Retorna el offset final (startOffset + bytes ocupados).
 int TypeChecker::assignOffsets(vector<VarDecl*>& vars, int startOffset) {
-    int nextOffset = startOffset;
+    vector<VarDecl*> large, size8, size4, size1;
+    
     for (auto v : vars) {
-        int slotSize = v->memSize > 8 ? v->memSize : 8;
-        v->offset = nextOffset;
-        nextOffset += slotSize;
+        if (v->memSize > 8) {
+            large.push_back(v);
+        } else if (v->memSize == 8) {
+            size8.push_back(v);
+        } else if (v->memSize == 4) {
+            size4.push_back(v);
+        } else if (v->memSize == 1) {
+            size1.push_back(v);
+        }
     }
+    
+    int nextOffset = startOffset;
+    
+    for (auto v : large) {
+        v->offset = nextOffset;
+        nextOffset += v->memSize;
+    }
+    
+    for (auto v : size8) {
+        v->offset = nextOffset;
+        nextOffset += 8;
+    }
+    
+    for (size_t i = 0; i < size4.size(); i += 2) {
+        size4[i]->offset = nextOffset;
+        if (i + 1 < size4.size()) {
+            size4[i + 1]->offset = nextOffset + 4;
+        }
+        nextOffset += 8;
+    }
+    
+    for (size_t i = 0; i < size1.size(); i += 4) {
+        int blockStart = nextOffset;
+        for (size_t j = 0; j < 4 && i + j < size1.size(); j++) {
+            size1[i + j]->offset = blockStart + (j * 2);
+        }
+        nextOffset += 8;
+    }
+    
     return nextOffset;
 }
 

@@ -2144,6 +2144,9 @@ void GenCodeVisitor::visit(VarDecl *d) {
     bind_var_decl(d);
 
     if (d->initializer) {
+        if (directStoreForConstant(d->initializer, d))
+            return;
+        
         d->initializer->accept(this);
         // Promover/convertir según el tipo del destino
         if (d->resolvedType && d->resolvedType->ttype == Type::DOUBLE) {
