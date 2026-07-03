@@ -569,7 +569,7 @@ void TypeChecker::visit(VarDecl* v) {
             }
         }
     }
-    if (v->initializer || !v->init_list.empty() || t->ttype == Type::STRUCT || t->ttype == Type::ARRAY) {
+    if (functionDepth == 0 || v->initializer || !v->init_list.empty() || t->ttype == Type::STRUCT || t->ttype == Type::ARRAY) {
         initialized_vars.insert(v);
     }
 }
