@@ -1,0 +1,43 @@
+// Test 12: struct arrays con tamaño no potencia de 2 y miembros puntero
+struct Data {
+    int id;       // 4 bytes
+    int* ref;     // 8 bytes → sizeof = 12
+};
+
+int main() {
+    int v1;
+    int v2;
+    int v3;
+    v1 = 10;
+    v2 = 20;
+    v3 = 30;
+
+    // Array de structs con sizeof = 12 (no potencia de 2)
+    struct Data lista[3];
+    lista[0].id = 1;
+    lista[0].ref = &v1;
+    lista[1].id = 2;
+    lista[1].ref = &v2;
+    lista[2].id = 3;
+    lista[2].ref = &v3;
+
+    // Acceso a traves de array de structs (antes stride 8 en vez de 12)
+    printf(*(lista[0].ref)); // esperado: 10
+    printf(*(lista[1].ref)); // esperado: 20
+    printf(*(lista[2].ref)); // esperado: 30
+    printf(lista[0].id);     // esperado: 1
+
+    // Store a traves de puntero dentro de struct
+    *(lista[1].ref) = 200;
+    printf(v2);              // esperado: 200
+
+    // Aritmetica de punteros a struct (stride correcto)
+    struct Data* dp;
+    dp = &lista[0];
+    printf(dp->id);          // esperado: 1
+    dp = dp + 1;
+    printf(dp->id);          // esperado: 2
+    printf(*(dp->ref));      // esperado: 200
+
+    return 0;
+}

@@ -1,0 +1,49 @@
+// Test 05: array-to-pointer decay y correcto tamaño en desreferencia
+int main() {
+    int arr[4];
+    int* p;
+    int* q;
+    int* r;
+    int dif;
+
+    arr[0] = 10;
+    arr[1] = 20;
+    arr[2] = 30;
+    arr[3] = 40;
+
+    // Array-to-pointer decay: r = arr (antes error semantico)
+    r = arr;
+    r = r + 2;
+    *r = 777;              // store con tamaño correcto (4 bytes, no 8)
+    printf(arr[2]);        // esperado: 777
+
+    // Load via puntero con tamaño correcto (movslq, no movq)
+    p = &arr[0];
+    printf(*p);            // esperado: 10
+
+    // Store a elemento no-inicial via aritmetica, sin corromper p
+    *(p + 3) = 99;
+    printf(arr[3]);        // esperado: 99
+
+    // Verificar que p no fue corrompido por store de 8 bytes
+    q = p + 1;
+    printf(*q);            // esperado: 20
+
+    // Ptr - ptr
+    dif = (p + 3) - p;
+    printf(dif);           // esperado: 3
+
+    // Puntero a char con carga correcta (movzbq)
+    char msg[4];
+    char* cp;
+    msg[0] = 'A';
+    msg[1] = 'B';
+    msg[2] = 'C';
+    msg[3] = 'D';
+    cp = &msg[0];
+    printf(*cp);           // esperado: 65
+    cp = cp + 2;
+    printf(*cp);           // esperado: 67
+
+    return 0;
+}

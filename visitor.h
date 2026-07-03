@@ -30,8 +30,8 @@ public:
     virtual void visit(MemberAccessNode* e) = 0;
     virtual void visit(ArrowAccessNode* e) = 0;
     virtual void visit(SizeOfNode* e) = 0;
-    virtual void visit(IdentifierNode* e) = 0;
-    virtual void visit(IntegerLiteralNode* e) = 0;
+    virtual void visit(IdNode* e) = 0;
+    virtual void visit(NumberLiteralNode* e) = 0;
     virtual void visit(FloatLiteralNode* e) = 0;
     virtual void visit(BoolLiteralNode* e) = 0;
     virtual void visit(CharLiteralNode* e) = 0;
@@ -64,7 +64,7 @@ public:
 
     // Para & y asignaciones: calcula dirección en vez de cargar valor
     virtual void computeAddress(UnaryOpNode* ) {}
-    virtual void computeAddress(IdentifierNode* ) {}
+    virtual void computeAddress(IdNode* ) {}
     virtual void computeAddress(IndexNode* ) {}
     virtual void computeAddress(MemberAccessNode* ) {}
     virtual void computeAddress(ArrowAccessNode* ) {}
@@ -144,8 +144,8 @@ public:
     void visit(MemberAccessNode* e) override;
     void visit(ArrowAccessNode* e) override;
     void visit(SizeOfNode* e) override;
-    void visit(IdentifierNode* e) override;
-    void visit(IntegerLiteralNode* e) override;
+    void visit(IdNode* e) override;
+    void visit(NumberLiteralNode* e) override;
     void visit(FloatLiteralNode* e) override;
     void visit(BoolLiteralNode* e) override;
     void visit(CharLiteralNode* e) override;
@@ -168,8 +168,8 @@ public:
     void visit(MemberAccessNode* e) override;
     void visit(ArrowAccessNode* e) override;
     void visit(SizeOfNode* e) override;
-    void visit(IdentifierNode* e) override;
-    void visit(IntegerLiteralNode* e) override;
+    void visit(IdNode* e) override;
+    void visit(NumberLiteralNode* e) override;
     void visit(FloatLiteralNode* e) override;
     void visit(BoolLiteralNode* e) override;
     void visit(CharLiteralNode* e) override;
@@ -207,7 +207,6 @@ public:
         LValKind kind = LValKind::Invalid;
         string name;                    // nombre de variable
         VarDecl* binding = nullptr;     // enlace al VarDecl
-        Exp* index = nullptr;           // índice simple 1D
         vector<Exp*> indices;           // índices multidimensionales
         vector<string> members;         // lista de miembros anidados
         vector<bool> memberArrow;       // true si el miembro se accedió vía ->
@@ -273,8 +272,8 @@ public:
     void visit(ArrowAccessNode *e) override;
     void visit(MallocNode *e) override;
     void visit(SizeOfNode *e) override;
-    void visit(IdentifierNode *e) override;
-    void visit(IntegerLiteralNode *e) override;
+    void visit(IdNode *e) override;
+    void visit(NumberLiteralNode *e) override;
     void visit(FloatLiteralNode *e) override;
     void visit(BoolLiteralNode *e) override;
     void visit(CharLiteralNode *e) override;
@@ -304,7 +303,7 @@ public:
 
     // calculan dirección del l-value en %rax
     void computeAddress(UnaryOpNode *e) override;
-    void computeAddress(IdentifierNode *e) override;
+    void computeAddress(IdNode *e) override;
     void computeAddress(IndexNode *e) override;
     void computeAddress(MemberAccessNode *e) override;
     void computeAddress(ArrowAccessNode *e) override;

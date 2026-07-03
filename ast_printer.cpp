@@ -90,7 +90,7 @@ static void printExp(ostream& out, Exp* e, int level) {
 
     if (auto* fcall = dynamic_cast<FcallNode*>(e)) {
         indent(out, level);
-        if (auto* id = dynamic_cast<IdentifierNode*>(fcall->callee)) {
+        if (auto* id = dynamic_cast<IdNode*>(fcall->callee)) {
             out << "Fcall: " << id->name << "\n";
         } else {
             out << "Fcall\n";
@@ -142,13 +142,13 @@ static void printExp(ostream& out, Exp* e, int level) {
         return;
     }
 
-    if (auto* id = dynamic_cast<IdentifierNode*>(e)) {
+    if (auto* id = dynamic_cast<IdNode*>(e)) {
         indent(out, level);
-        out << "Identifier: " << id->name << "\n";
+        out << "Id: " << id->name << "\n";
         return;
     }
 
-    if (auto* il = dynamic_cast<IntegerLiteralNode*>(e)) {
+    if (auto* il = dynamic_cast<NumberLiteralNode*>(e)) {
         indent(out, level);
         out << "IntLiteral: " << il->value << "\n";
         return;
