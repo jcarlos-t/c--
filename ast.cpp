@@ -1,4 +1,5 @@
 #include "ast.h"
+#include "visitor.h"
 #include <iostream>
 
 using namespace std;
@@ -55,8 +56,12 @@ ArrowAccessNode::~ArrowAccessNode() { delete pointer; }
 
 
 // ===================== SizeOfNode =====================
-SizeOfNode::SizeOfNode(Exp* t) : Exp(), target_type(t) {}
-SizeOfNode::~SizeOfNode() { delete target_type; }
+SizeOfNode::SizeOfNode(TypeNode* t) : Exp(), kind(TYPE_ARG), type_arg(t), expr_arg(nullptr) {}
+SizeOfNode::SizeOfNode(Exp* e) : Exp(), kind(EXPR_ARG), type_arg(nullptr), expr_arg(e) {}
+SizeOfNode::~SizeOfNode() {
+    if (kind == TYPE_ARG) delete type_arg;
+    else delete expr_arg;
+}
 
 // ===================== IdentifierNode =====================
 IdentifierNode::IdentifierNode(const string& n)
@@ -143,12 +148,12 @@ FreeStmt::FreeStmt(Exp* e) : Stm(), expr(e) {}
 FreeStmt::~FreeStmt() { delete expr; }
 
 // ===================== VarDecl =====================
-VarDecl::VarDecl(Exp* t, const string& n)
+VarDecl::VarDecl(TypeNode* t, const string& n)
     : Stm(), type(t), name(n), initializer(nullptr) {}
 VarDecl::~VarDecl() { delete type; for (auto s : array_sizes) delete s; delete initializer; for (auto e : init_list) delete e; }
 
 // ===================== FunDecl =====================
-FunDecl::FunDecl(Exp* rt, const string& n, Body* b)
+FunDecl::FunDecl(TypeNode* rt, const string& n, Body* b)
     : return_type(rt), name(n), body(b) {}
 FunDecl::~FunDecl() { delete return_type; for (auto p : params) delete p; delete body; }
 
@@ -165,18 +170,23 @@ Program::~Program() {
     for (auto s : structs) delete s;
 }
 
+// ===================== TypeNode base =====================
+
 // ===================== PrimitiveTypeNode =====================
 PrimitiveTypeNode::PrimitiveTypeNode(Prim p)
     : TypeNode(), prim(p) {}
+void PrimitiveTypeNode::accept(Visitor* v) { v->visit(this); }
 
 // ===================== PointerTypeNode =====================
 PointerTypeNode::PointerTypeNode(TypeNode* b)
     : TypeNode(), base(b) {}
 PointerTypeNode::~PointerTypeNode() { delete base; }
+void PointerTypeNode::accept(Visitor* v) { v->visit(this); }
 
 // ===================== StructTypeNode =====================
 StructTypeNode::StructTypeNode(const string& n)
     : TypeNode(), name(n) {}
+void StructTypeNode::accept(Visitor* v) { v->visit(this); }
 
 
 

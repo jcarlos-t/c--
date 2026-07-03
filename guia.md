@@ -4,16 +4,381 @@ Esta guía explica cómo se implementaron las siguientes características en el 
 
 ## Contenido
 
-1. [Punteros explícitos (*, &, ->)](#1-punteros-explícitos---)
-2. [Promoción/conversión automática de tipos](#2-promociónconversión-automática-de-tipos)
-3. [float y double](#3-float-y-double)
-4. [Matrices (arreglos multidimensionales)](#4-matrices-arreglos-multidimensionales)
-5. [const](#5-const)
-6. [void](#6-void)
+1. [Arquitectura de tipos: TypeNode vs Type*](#1-arquitectura-de-tipos-typenode-vs-type)
+2. [Punteros explícitos (*, &, ->)](#2-punteros-explícitos---)
+3. [Promoción/conversión automática de tipos](#3-promociónconversión-automática-de-tipos)
+4. [float y double](#4-float-y-double)
+5. [Matrices (arreglos multidimensionales)](#5-matrices-arreglos-multidimensionales)
+6. [const](#6-const)
+7. [void](#7-void)
 
 ---
 
-## 1. Punteros explícitos (*, &, ->)
+## 1. Arquitectura de tipos: TypeNode vs Type*
+
+### Descripción general
+
+El compilador C-- utiliza **dos jerarquías de tipos** separadas para evitar casteo innecesario en el TypeChecker y GenCode:
+
+1. **TypeNode (ast.h):** Nodos del AST que representan tipos en el código fuente
+   - `PrimitiveTypeNode`: int, char, float, double, bool, void, long
+   - `PointerTypeNode`: T* (punteros)
+   - `StructTypeNode`: struct Nombre
+
+2. **Type* (semantic_types.h):** Tipos semánticos resueltos después del análisis
+   - `Type`: Base para tipos primitivos (con discriminante `ttype`)
+   - `PointerType`: Punteros con tipo base resuelto
+   - `ArrayType`: Arreglos con dimensiones y tipo base
+   - `StructType`: Structs con tabla de miembros
+
+**Flujo de conversión:**
+```
+Parser → TypeNode (AST) → TypeChecker::type_from_ast() → Type* (semántico)
+                                                    ↓
+                                            Exp::resolvedType
+                                            VarDecl::resolvedType
+```
+
+### Implementación en el AST
+
+**ast.h - TypeNode y sus subclases:**
+```cpp
+// Clase base para nodos de tipo en el AST
+class TypeNode {
+public:
+    Location loc;
+    bool isConst = false;
+    virtual ~TypeNode() {}
+    virtual void accept(Visitor* visitor) = 0;
+};
+
+// Tipo primitivo: int, char, float, double, bool, void, long
+class PrimitiveTypeNode : public TypeNode {
+public:
+    enum Prim { VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, LONG };
+    Prim prim;
+    bool isUnsigned = false;
+    // ...
+};
+
+// Tipo puntero: T*
+class PointerTypeNode : public TypeNode {
+public:
+    TypeNode* base;  // Tipo base (otro TypeNode)
+    PointerTypeNode(TypeNode* b);
+    // ...
+};
+
+// Tipo struct por nombre
+class StructTypeNode : public TypeNode {
+public:
+    string name;
+    StructTypeNode(const string& n);
+    // ...
+};
+```
+
+**ast.h - Exp y VarDecl con resolvedType:**
+```cpp
+// Expresión con tipo semántico resuelto
+class Exp {
+public:
+    Type* resolvedType = nullptr;  // Tipo semántico (Type*)
+    bool isConstant = false;
+    double constantValue = 0.0;
+    // ...
+};
+
+// Declaración de variable con tipo resuelto
+class VarDecl : public Stm {
+public:
+    TypeNode* type;         // Tipo del AST (sintaxis)
+    Type* resolvedType;      // Tipo semántico (Type*)
+    int offset = 0;         // Offset en stack frame
+    int memSize = 0;        // Tamaño en bytes
+    // ...
+};
+```
+
+### Implementación en semantic_types.h
+
+**semantic_types.h - Jerarquía de tipos semánticos:**
+```cpp
+// Tipo base con discriminante
+class Type {
+public:
+    enum TType { NOTYPE, VOID, INT, CHAR, BOOL, FLOAT, DOUBLE, LONG, POINTER, ARRAY, STRUCT };
+    TType ttype;           // Discriminante: qué subclase es
+    bool isUnsigned = false;
+    bool isConst = false;
+
+    virtual bool match(Type* t) const {
+        return this->ttype == t->ttype && this->isUnsigned == t->isUnsigned;
+    }
+
+    virtual int size() const {
+        switch (ttype) {
+            case VOID:   return 0;
+            case INT:    return 4;
+            case CHAR:   return 1;
+            case BOOL:   return 1;
+            case FLOAT:  return 4;
+            case DOUBLE: return 8;
+            case LONG:   return 8;
+            case POINTER: return 8;
+            default:     return 8;
+        }
+    }
+};
+
+// Puntero semántico
+class PointerType : public Type {
+public:
+    Type* base;  // Tipo apuntado (Type*, no TypeNode)
+    PointerType(Type* b) : Type(POINTER), base(b) {}
+
+    bool match(Type* t) const override {
+        if (t->ttype != POINTER) return false;
+        PointerType* pt = (PointerType*)t;
+        return base->match(pt->base);
+    }
+
+    string str() const override {
+        return base->str() + "*";
+    }
+};
+
+// Arreglo semántico (puede ser multidimensional)
+class ArrayType : public Type {
+public:
+    Type* base;
+    int length;  // -1 si tamaño desconocido
+
+    ArrayType(Type* b, int l = -1) : Type(ARRAY), base(b), length(l) {}
+
+    bool match(Type* t) const override {
+        if (t->ttype != ARRAY) return false;
+        ArrayType* at = (ArrayType*)t;
+        return base->match(at->base);  // Ignora length
+    }
+
+    int size() const override {
+        if (length >= 0) return base->size() * length;
+        return 8;  // Arreglo sin tamaño → como puntero
+    }
+};
+
+// Struct semántico
+class StructType : public Type {
+public:
+    string name;
+    unordered_map<string, Type*> members;  // nombre → Type*
+
+    StructType(const string& n) : Type(STRUCT), name(n) {}
+
+    bool match(Type* t) const override {
+        if (t->ttype != STRUCT) return false;
+        StructType* st = (StructType*)t;
+        return name == st->name;  // Equivalencia nominal
+    }
+
+    int size() const override {
+        int total = 0;
+        for (auto& pair : members) {
+            total += pair.second->size();
+        }
+        return total;
+    }
+};
+```
+
+### Implementación en TypeChecker
+
+**TypeChecker.cpp - type_from_ast (conversión TypeNode → Type*):**
+```cpp
+Type* TypeChecker::type_from_ast(TypeNode* t) {
+    // 1. Tipos primitivos → singletons
+    if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(t)) {
+        switch (pt->prim) {
+            case PrimitiveTypeNode::VOID:   res = voidType; break;
+            case PrimitiveTypeNode::INT:    res = intType; break;
+            case PrimitiveTypeNode::CHAR:   res = charType; break;
+            case PrimitiveTypeNode::FLOAT:  res = floatType; break;
+            case PrimitiveTypeNode::DOUBLE: res = doubleType; break;
+            case PrimitiveTypeNode::BOOL:   res = boolType; break;
+            case PrimitiveTypeNode::LONG:   res = longType; break;
+        }
+        // Clonar si tiene modificadores (unsigned/const)
+        if (res && (pt->isUnsigned || pt->isConst)) {
+            Type* clone = new Type(res->ttype);
+            clone->isUnsigned = pt->isUnsigned;
+            clone->isConst = pt->isConst;
+            typeCache.push_back(clone);
+            res = clone;
+        }
+        return res;
+    }
+
+    // 2. Punteros → PointerType recursivo
+    if (auto* pt = dynamic_cast<PointerTypeNode*>(t)) {
+        Type* base = type_from_ast(pt->base);  // Recursión
+        PointerType* ptr = new PointerType(base);
+        ptr->isConst = pt->isConst;
+        typeCache.push_back(ptr);
+        return ptr;
+    }
+
+    // 3. Structs → StructType por nombre
+    if (auto* st = dynamic_cast<StructTypeNode*>(t)) {
+        auto it = struct_types.find(st->name);
+        if (it != struct_types.end()) {
+            res = it->second;
+            if (st->isConst) {
+                StructType* clone = new StructType(st->name);
+                clone->members = ((StructType*)res)->members;
+                clone->isConst = true;
+                typeCache.push_back(clone);
+                res = clone;
+            }
+            return res;
+        }
+        error("struct '" + st->name + "' no declarado.");
+        return intType;
+    }
+
+    return intType;  // Fallback
+}
+```
+
+**TypeChecker.cpp - Asignación de resolvedType:**
+```cpp
+// En visit(VarDecl):
+Type* t = type_from_ast(v->type);  // TypeNode → Type*
+
+// Wrap en ArrayType si tiene dimensiones
+for (int idx = (int)v->array_sizes.size() - 1; idx >= 0; idx--) {
+    int dim = -1;
+    if (auto* il = dynamic_cast<IntegerLiteralNode*>(v->array_sizes[idx]))
+        dim = (int)il->value;
+    ArrayType* at = new ArrayType(t, dim);
+    typeCache.push_back(at);
+    t = at;
+}
+
+v->resolvedType = t;  // Guardar Type* en el nodo
+v->memSize = t->size();
+```
+
+### Implementación en GenCodeVisitor
+
+**Gencode.cpp - Uso de resolvedType (sin casteo de TypeNode):**
+```cpp
+// Cargar variable: usa resolvedType para determinar instrucción
+void GenCodeVisitor::loadBinding(VarDecl* vd) {
+    int size = vd->memSize > 0 ? vd->memSize : 8;
+    Type* type = vd->resolvedType;  // Type*, no TypeNode
+
+    if (isFloatSemanticType(type)) {
+        if (type->ttype == Type::DOUBLE) {
+            out << "  movsd " << bindingMem(vd) << ", %xmm7\n";
+            out << "  movq %xmm7, %rax\n";
+        } else {  // FLOAT
+            out << "  movss " << bindingMem(vd) << ", %xmm7\n";
+            out << "  movd %xmm7, %eax\n";
+            out << "  movslq %eax, %rax\n";
+        }
+        return;
+    }
+    out << "  " << loadInstr(size) << " " << bindingMem(vd) << ", %rax\n";
+}
+
+// Discriminar tipo usando ttype (no dynamic_cast de TypeNode)
+if (type->ttype == Type::ARRAY) {
+    ArrayType* at = (ArrayType*)type;  // Casteo de Type* a ArrayType*
+    // ...
+} else if (type->ttype == Type::POINTER) {
+    PointerType* pt = (PointerType*)type;  // Casteo de Type* a PointerType*
+    // ...
+}
+```
+
+### Ventajas de esta arquitectura
+
+1. **Separación de responsabilidades:**
+   - `TypeNode`: Representación sintáctica (lo que escribe el usuario)
+   - `Type*`: Representación semántica (lo que entiende el compilador)
+
+2. **Evita casteo repetitivo:**
+   - TypeChecker convierte una vez: `TypeNode → Type*`
+   - GenCode usa directamente `Type*` sin necesidad de `dynamic_cast<TypeNode*>`
+
+3. **Singletons para primitivos:**
+   - `intType`, `charType`, etc. se crean una vez en el constructor
+   - Ahorra memoria y simplifica comparaciones
+
+4. **Cache de tipos compuestos:**
+   - `typeCache` almacena PointerType, ArrayType, StructType creados dinámicamente
+   - El destructor de TypeChecker los libera automáticamente
+
+5. **Información de tamaño en Type*:**
+   - `Type::size()` calcula el tamaño en bytes
+   - GenCode usa esto para elegir `movb`/`movl`/`movq`
+
+### Ciclo de vida de los tipos
+
+```
+1. Constructor TypeChecker:
+   - Crea singletons (intType, charType, floatType, etc.)
+
+2. type_from_ast(TypeNode*):
+   - Primitivos → retorna singleton (o clon con modificadores)
+   - Compuestos → new PointerType/ArrayType/StructType → typeCache
+
+3. Durante typecheck:
+   - resolvedType se asigna a Exp, VarDecl, etc.
+   - Se usa para verificación de tipos (match(), check_assign())
+
+4. Destructor TypeChecker:
+   - delete todos los elementos de typeCache
+   - delete todos los struct_types
+   - delete singletons
+```
+
+### Ejemplo completo
+
+```cpp
+// Código fuente:
+int x = 5;
+int* p = &x;
+int arr[3][2];
+
+// AST (Parser):
+VarDecl { type: PrimitiveTypeNode(INT), name: "x", initializer: IntegerLiteralNode(5) }
+VarDecl { type: PointerTypeNode(PrimitiveTypeNode(INT)), name: "p", initializer: UnaryOpNode(ADDR, IdentifierNode("x")) }
+VarDecl { type: PrimitiveTypeNode(INT), name: "arr", array_sizes: [3, 2] }
+
+// TypeChecker (type_from_ast):
+x.resolvedType = intType (singleton)
+p.resolvedType = PointerType(intType) (nuevo en typeCache)
+arr.resolvedType = ArrayType(ArrayType(intType, 2), 3) (nuevos en typeCache)
+
+// GenCode (usa resolvedType):
+loadBinding(x) → type->ttype == INT → movslq
+loadBinding(p) → type->ttype == POINTER → movq
+loadBinding(arr[1][0]) → type->ttype == ARRAY → cálculo de índice lineal
+```
+
+### Justificación de diseño
+
+- **Clean separation:** Sintaxis vs semántica claramente separadas
+- **Performance:** Una conversión TypeNode→Type*, luego solo uso de Type*
+- **Type safety:** Casteo solo entre subclases de Type* (ArrayType*, PointerType*, etc.)
+- **Memory management:** typeCache centraliza la gestión de memoria de tipos dinámicos
+- **Extensibilidad:** Fácil agregar nuevos tipos semánticos (ej. FunctionType)
+
+---
+
+## 2. Punteros explícitos (*, &, ->)
 
 ### Descripción general
 
@@ -687,9 +1052,9 @@ int main() {
 Todas estas características se integran en el pipeline del compilador:
 
 1. **Scanner** → Tokeniza const, void, *, &, ->, literales de punto flotante
-2. **Parser** → Construye AST (PointerTypeNode, UnaryOpNode, ArrowAccessNode, FloatLiteralNode, etc.)
-3. **TypeChecker** → Verifica tipos, resuelve PointerType/ArrayType, verifica const, realiza promoción
-4. **GenCodeVisitor** → Emite código x86-64 usando registros XMM para float/double, operaciones de punteros, accesos a arreglos
+2. **Parser** → Construye AST con TypeNode (PointerTypeNode, UnaryOpNode, ArrowAccessNode, FloatLiteralNode, etc.)
+3. **TypeChecker** → Convierte TypeNode → Type* (type_from_ast), verifica tipos, resuelve PointerType/ArrayType, verifica const, realiza promoción
+4. **GenCodeVisitor** → Emite código x86-64 usando Type* (resolvedType), registros XMM para float/double, operaciones de punteros, accesos a arreglos
 
 ---
 

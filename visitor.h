@@ -145,7 +145,7 @@ private:
     void add_function(FunDecl* fd);
 
     // Traduce nodos de tipo del AST (int, char*, struct X, Box<int>) a Type*.
-    ::Type* type_from_ast(Exp* t);
+    ::Type* type_from_ast(TypeNode* t);
 
     // Reglas de compatibilidad en asignaciones e inicializadores
     // (promoción int→float, truncamiento int→char, etc.).
