@@ -7,7 +7,7 @@ static void indent(ostream& out, int level) {
     for (int i = 0; i < level; i++) out << "  ";
 }
 
-static const char* typeNodeName(Exp* t) {
+static const char* typeNodeName(TypeNode* t) {
     if (auto* p = dynamic_cast<PrimitiveTypeNode*>(t)) {
         switch (p->prim) {
             case PrimitiveTypeNode::VOID: return "void";
@@ -133,7 +133,12 @@ static void printExp(ostream& out, Exp* e, int level) {
     if (auto* sz = dynamic_cast<SizeOfNode*>(e)) {
         indent(out, level);
         out << "SizeOf\n";
-        printExp(out, sz->target_type, level + 1);
+        if (sz->kind == SizeOfNode::TYPE_ARG) {
+            indent(out, level + 1);
+            out << "Type: " << typeNodeName(sz->type_arg) << "\n";
+        } else {
+            printExp(out, sz->expr_arg, level + 1);
+        }
         return;
     }
 
@@ -182,32 +187,13 @@ static void printExp(ostream& out, Exp* e, int level) {
         return;
     }
 
-    if (auto* tn = dynamic_cast<PrimitiveTypeNode*>(e)) {
-        indent(out, level);
-        out << "Type: " << typeNodeName(tn) << "\n";
-        return;
-    }
-
-    if (auto* pt = dynamic_cast<PointerTypeNode*>(e)) {
-        indent(out, level);
-        out << "PointerType\n";
-        printExp(out, pt->base, level + 1);
-        return;
-    }
-
-    if (auto* st = dynamic_cast<StructTypeNode*>(e)) {
-        indent(out, level);
-        out << "StructType: " << st->name << "\n";
-        return;
-    }
-
     indent(out, level);
     out << "UnknownExp\n";
 }
 
 static void printVarDecl(ostream& out, VarDecl* vd, int level) {
     indent(out, level);
-    out << "VarDecl: " << typeNodeName(vd->type) << " " << vd->name;
+    out << "VarDecl: " << (vd->type ? typeNodeName(vd->type) : "auto") << " " << vd->name;
     for ([[maybe_unused]] auto sz : vd->array_sizes) {
         out << "[]";
     }

@@ -382,6 +382,11 @@ void GenCodeVisitor::storeBinding(VarDecl* vd) {
         }
         return;
     }
+    if (type && type->ttype == Type::BOOL) {
+        out << "  testq %rax, %rax\n";
+        out << "  setne %al\n";
+        out << "  movzbq %al, %rax\n";
+    }
     string reg = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
     out << "  " << storeInstr(size) << " " << reg << ", " << bindingMem(vd) << "\n";
 }
@@ -504,6 +509,17 @@ void GenCodeVisitor::emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices) {
 void GenCodeVisitor::emitIndexedStore(VarDecl* vd, const vector<Exp*>& indices,
                                       const string& valueReg) {
     if (!vd || indices.empty()) return;
+    // Normalizar a 0/1 si el elemento es bool
+    Type* elemType = vd->resolvedType;
+    while (elemType && elemType->ttype == Type::ARRAY)
+        elemType = ((ArrayType*)elemType)->base;
+    bool isBoolStore = elemType && elemType->ttype == Type::BOOL;
+    if (isBoolStore) {
+        out << "  testq %rax, %rax\n";
+        out << "  setne %al\n";
+        out << "  movzbq %al, %rax\n";
+    }
+
     auto dims = arrayDimsFor(vd);
     int elemSize = array_elem_size(vd);
     string reg = valueReg;
@@ -755,12 +771,25 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
             if (!lv.members.empty()) {
                 storeSize = structMemberSizes[baseStructName(
                     lv.structName.empty() ? structName : lv.structName)][lv.members.back()];
+                Type* mt = structMemberTypes[baseStructName(
+                    lv.structName.empty() ? structName : lv.structName)][lv.members.back()];
+                if (mt && mt->ttype == Type::BOOL) {
+                    out << "  testq %rcx, %rcx\n";
+                    out << "  setne %cl\n";
+                    out << "  movzbq %cl, %rcx\n";
+                }
             }
             string reg = (storeSize == 1) ? "%cl" : (storeSize == 4) ? "%ecx" : "%rcx";
             out << "  " << storeInstr(storeSize) << " " << reg << ", (%rax)\n";
         } else {
             // No indices: store at the final member address (%rax = &member)
             int size = structMemberSizes[baseStructName(structName)][lv.members.back()];
+            Type* mt = structMemberTypes[baseStructName(structName)][lv.members.back()];
+            if (mt && mt->ttype == Type::BOOL) {
+                out << "  testq %rcx, %rcx\n";
+                out << "  setne %cl\n";
+                out << "  movzbq %cl, %rcx\n";
+            }
             string reg = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
             out << "  " << storeInstr(size) << " " << reg << ", (%rax)\n";
         }
@@ -1255,9 +1284,15 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
             break;
         case BinaryOp::LOG_AND:
             out << "  and" << suffix << " " << reg2 << ", " << reg1 << "\n";
+            out << "  movq $0, %rax\n";
+            out << "  setne %al\n";
+            out << "  movzbq %al, %rax\n";
             break;
         case BinaryOp::LOG_OR:
             out << "  or" << suffix << " " << reg2 << ", " << reg1 << "\n";
+            out << "  movq $0, %rax\n";
+            out << "  setne %al\n";
+            out << "  movzbq %al, %rax\n";
             break;
         }
     }
@@ -1830,37 +1865,10 @@ void GenCodeVisitor::visit(MallocNode *e) {
 // -----------------------------------------------------------
 // visit(SizeOfNode) — sizeof
 // -----------------------------------------------------------
-// Genera el tamaño en bytes de un tipo como constante en %rax.
-//   void/char/bool → 1
-//   int/float      → 4
-//   double         → 8
-//   puntero        → 8
-//   struct         → n (calculado como campos * 8)
+// Genera el tamaño en bytes de un tipo o expresión como constante en %rax.
+// TypeChecker ya calculó este valor en constantValue.
 void GenCodeVisitor::visit(SizeOfNode *e) {
-    if (auto *pt = dynamic_cast<PrimitiveTypeNode *>(e->target_type)) {
-        switch (pt->prim) {
-        case PrimitiveTypeNode::VOID:
-        case PrimitiveTypeNode::CHAR:
-        case PrimitiveTypeNode::BOOL: out << "  movq $1, %rax\n"; return;
-        case PrimitiveTypeNode::INT:
-        case PrimitiveTypeNode::FLOAT: out << "  movq $4, %rax\n"; return;
-        case PrimitiveTypeNode::DOUBLE:
-        case PrimitiveTypeNode::LONG: out << "  movq $8, %rax\n"; return;
-        }
-    }
-    if (dynamic_cast<PointerTypeNode *>(e->target_type))
-        out << "  movq $8, %rax\n";
-    else if (auto *st = dynamic_cast<StructTypeNode *>(e->target_type)) {
-        // Aproximación: nº de campos × 8. No usa memberSizes reales del struct.
-        auto it = structFieldCount.find(st->name);
-        if (it != structFieldCount.end()) {
-            out << "  movq $" << (it->second * 8) << ", %rax\n";
-        } else {
-            out << "  movq $0, %rax\n";
-        }
-    }
-    else
-        out << "  movq $0, %rax\n";
+    out << "  movq $" << (long long)e->constantValue << ", %rax\n";
 }
 
 // -----------------------------------------------------------

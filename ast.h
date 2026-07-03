@@ -32,6 +32,48 @@ enum class AssignOp {
     ASSIGN
 };
 
+// --- Nodos de tipo ---
+
+// Clase base para nodos de tipo
+class TypeNode {
+public:
+    Location loc;
+    bool isConst = false;
+    TypeNode() {}
+    virtual ~TypeNode() {}
+    virtual void accept(Visitor* visitor) = 0;
+};
+
+// Tipo primitivo: void, int, char, float, double, bool, long
+class PrimitiveTypeNode : public TypeNode {
+public:
+    enum Prim { VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, LONG };
+    Prim prim;
+    bool isUnsigned = false; // Modificador unsigned
+    PrimitiveTypeNode(Prim p);
+    void accept(Visitor* visitor);
+
+};
+
+// Tipo puntero: T*
+class PointerTypeNode : public TypeNode {
+public:
+    TypeNode* base;
+    PointerTypeNode(TypeNode* b);
+    ~PointerTypeNode();
+    void accept(Visitor* visitor);
+
+};
+
+// Tipo struct por nombre, instanciar un struct: struct Point p;
+class StructTypeNode : public TypeNode {
+public:
+    string name;
+    StructTypeNode(const string& n);
+    void accept(Visitor* visitor);
+
+};
+
 // Clase base para todos los nodos de expresión
 class Exp {
 public:
@@ -145,11 +187,15 @@ public:
 
 
 
-// sizeof(tipo)
+// sizeof(tipo) o sizeof(expresion)
 class SizeOfNode : public Exp {
 public:
-    Exp* target_type;
-    SizeOfNode(Exp* t);
+    enum Kind { TYPE_ARG, EXPR_ARG };
+    Kind kind;
+    TypeNode* type_arg;
+    Exp* expr_arg;
+    SizeOfNode(TypeNode* t);
+    SizeOfNode(Exp* e);
     ~SizeOfNode();
     void accept(Visitor* visitor);
 
@@ -364,7 +410,7 @@ public:
 // Declaración de variable (hereda de Stm para ir directo en Body::stmts)
 class VarDecl : public Stm {
 public:
-    Exp* type;
+    TypeNode* type;
     string name;
     vector<Exp*> array_sizes; // para tamaños en arreglos [size1][size2]...
     Exp* initializer; // expresion inicial x = init;
@@ -376,7 +422,7 @@ public:
     int offset = 0;      // offset desde %rbp
     int memSize = 0;     // tamaño en bytes
 
-    VarDecl(Exp* t, const string& n);
+    VarDecl(TypeNode* t, const string& n);
     ~VarDecl();
     void accept(Visitor* visitor);
 
@@ -386,7 +432,7 @@ public:
 class FunDecl {
 public:
     Location loc;
-    Exp* return_type;
+    TypeNode* return_type;
     string name;
     vector<VarDecl*> params;
     Body* body;
@@ -394,7 +440,7 @@ public:
     // Calculados por TypeChecker
     int frameSize = 0;   // tamaño total del frame
 
-    FunDecl(Exp* rt, const string& n, Body* b);
+    FunDecl(TypeNode* rt, const string& n, Body* b);
     ~FunDecl();
     void accept(Visitor* visitor);
 
@@ -428,45 +474,6 @@ public:
 
     Program();
     ~Program();
-    void accept(Visitor* visitor);
-
-};
-
-// --- Nodos de tipo ---
-
-// Clase base para nodos de tipo
-class TypeNode : public Exp {
-public:
-    bool isConst = false;
-    TypeNode() : Exp() {}
-};
-
-// Tipo primitivo: void, int, char, float, double, bool, long
-class PrimitiveTypeNode : public TypeNode {
-public:
-    enum Prim { VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, LONG };
-    Prim prim;
-    bool isUnsigned = false; // Modificador unsigned
-    PrimitiveTypeNode(Prim p);
-    void accept(Visitor* visitor);
-
-};
-
-// Tipo puntero: T*
-class PointerTypeNode : public TypeNode {
-public:
-    TypeNode* base;
-    PointerTypeNode(TypeNode* b);
-    ~PointerTypeNode();
-    void accept(Visitor* visitor);
-
-};
-
-// Tipo struct por nombre, instanciar un struct: struct Point p;
-class StructTypeNode : public TypeNode {
-public:
-    string name;
-    StructTypeNode(const string& n);
     void accept(Visitor* visitor);
 
 };

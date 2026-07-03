@@ -53,7 +53,8 @@ namespace {
 //       float → false double → false
 //       bool → false   void → false
 bool is_integral_type(Type* t) {
-    return t->ttype == Type::INT || t->ttype == Type::CHAR || t->ttype == Type::LONG;
+    return t->ttype == Type::INT || t->ttype == Type::CHAR || t->ttype == Type::LONG
+           || t->ttype == Type::BOOL;
 }
 
 // is_arithmetic_type: true si el tipo es aritmético
@@ -75,7 +76,7 @@ bool is_arithmetic_type(Type* t) {
 //   Ej: int → true   char → true
 //       float → false  double → false
 bool is_switch_index_type(Type* t) {
-    return t->ttype == Type::INT || t->ttype == Type::CHAR;
+    return t->ttype == Type::INT || t->ttype == Type::CHAR || t->ttype == Type::BOOL;
 }
 
 } // namespace
@@ -131,7 +132,7 @@ TypeChecker::~TypeChecker() {
 //
 //   Ej: type_from_ast(PrimitiveTypeNode(INT)) → intType
 //       type_from_ast(PointerTypeNode(IntTypeNode)) → PointerType(IntType)
-Type* TypeChecker::type_from_ast(Exp* t) {
+Type* TypeChecker::type_from_ast(TypeNode* t) {
     Type* res = nullptr;
     // --- Tipos primitivos: void, int, char, float, double, bool, long ---
     if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(t)) {
@@ -903,22 +904,20 @@ void TypeChecker::visit(BinaryOpNode* e) {
         case BinaryOp::EQ: case BinaryOp::NE:
         case BinaryOp::LT: case BinaryOp::GT:
         case BinaryOp::LE: case BinaryOp::GE:
-            if (is_arithmetic_type(left) && is_arithmetic_type(right))
-                resultType = boolType;
-            else {
-                error("comparación requiere int, char, float o double.");
-                resultType = boolType;
+            if (is_arithmetic_type(left) && is_arithmetic_type(right)) {
+                resultType = intType;
+            } else {
+                error("comparación requiere tipo aritmético.");
+                resultType = intType;
             }
             break;
 
         // Lógicos: operandos bool, resultado bool
         case BinaryOp::LOG_AND: case BinaryOp::LOG_OR:
-            if (left->match(boolType) && right->match(boolType))
-                resultType = boolType;
-            else {
-                error("operación lógica requiere bool.");
-                resultType = boolType;
+            if (left->ttype == Type::VOID || right->ttype == Type::VOID) {
+                error("operación lógica no puede ser void.");
             }
+            resultType = intType;
             break;
 
         default:
@@ -966,12 +965,10 @@ void TypeChecker::visit(UnaryOpNode* e) {
             }
             break;
         case UnaryOp::LOG_NOT:
-            if (t->match(boolType)) {
-                resultType = boolType;
-            } else {
-                error("! requiere bool.");
-                resultType = boolType;
+            if (t->ttype == Type::VOID) {
+                error("! no puede aplicarse a void.");
             }
+            resultType = intType;
             break;
         case UnaryOp::ADDR:
             // &x devuelve puntero al tipo de x
@@ -1245,22 +1242,27 @@ void TypeChecker::visit(StringLiteralNode* e) {
 }
 
 // Nodos de tipo en expresiones/contextos: delegan la resolución a type_from_ast.
-void TypeChecker::visit(PrimitiveTypeNode* e) { e->resolvedType = type_from_ast(e); }
-void TypeChecker::visit(PointerTypeNode* e) { e->resolvedType = type_from_ast(e); }
-void TypeChecker::visit(StructTypeNode* e) { e->resolvedType = type_from_ast(e); }
+void TypeChecker::visit(PrimitiveTypeNode*) { }
+void TypeChecker::visit(PointerTypeNode*) { }
+void TypeChecker::visit(StructTypeNode*) { }
 // NamedTypeNode fuera de template → error dentro de type_from_ast.
 // -----------------------------------------------------------
 // visit(SizeOfNode) — typecheck de sizeof
 // -----------------------------------------------------------
-// sizeof siempre retorna int (el tamaño en bytes).
-// El operando es un tipo, se verifica que exista.
-//
-//   Ej: sizeof(int) → 4
-//       sizeof(char) → 1
-//       sizeof(struct Persona) → tamaño de la struct
+// Retorna el tamaño en bytes del tipo o de la expresión.
+//   Ej: sizeof(int) -> 4
+//       sizeof(x) -> tamaño de x
 void TypeChecker::visit(SizeOfNode* e) {
-    e->target_type->accept(this);
+    Type* t;
+    if (e->kind == SizeOfNode::TYPE_ARG) {
+        t = type_from_ast(e->type_arg);
+    } else {
+        e->expr_arg->accept(this);
+        t = e->expr_arg->resolvedType;
+    }
     e->resolvedType = intType;
+    e->isConstant = true;
+    e->constantValue = (double)t->size();
 }
 
 

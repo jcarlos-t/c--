@@ -24,8 +24,8 @@ private:
     // Declarations
     Program* parse_program();
     void parse_declaration(Program* p);
-    FunDecl* parse_function_decl(Exp* ret_type, const string& name);
-    VarDecl* parse_variable_decl(Exp* type, const string& name, bool consume_semicolon = true);
+    FunDecl* parse_function_decl(TypeNode* ret_type, const string& name);
+    VarDecl* parse_variable_decl(TypeNode* type, const string& name, bool consume_semicolon = true);
     StructDecl* parse_struct_decl();
 
     // Parameters
