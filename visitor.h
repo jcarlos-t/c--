@@ -92,6 +92,8 @@ private:
     ::Type* doubleType;
     ::Type* charType;
     ::Type* longType;
+    ::Type* uintType;   // unsigned int
+    ::Type* ulongType;  // unsigned long long
 
     vector<::Type*> typeCache;             // tipos dinámicos (punteros, arreglos)
 

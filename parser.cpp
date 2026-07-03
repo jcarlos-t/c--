@@ -763,10 +763,14 @@ Exp* Parser::parse_primary() {
         return new IdNode(previous->text);
     }
     if (match(Token::NUM)) {
-        return new NumberLiteralNode(stoll(previous->text));
+        auto* n = new NumberLiteralNode(stoll(previous->text));
+        n->literalSuffix = previous->suffix;
+        return n;
     }
     if (match(Token::FNUM)) {
-        return new FloatLiteralNode(stod(previous->text));
+        auto* n = new FloatLiteralNode(stod(previous->text));
+        n->literalSuffix = previous->suffix;
+        return n;
     }
     if (match(Token::CHAR_LIT)) {
         string t = previous->text;

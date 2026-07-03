@@ -99,6 +99,10 @@ TypeChecker::TypeChecker() {
     doubleType = new Type(Type::DOUBLE); // representa double
     charType = new Type(Type::CHAR);     // representa char
     longType = new Type(Type::LONG);     // representa long long
+    uintType = new Type(Type::INT);      // unsigned int
+    uintType->isUnsigned = true;
+    ulongType = new Type(Type::LONG);    // unsigned long long
+    ulongType->isUnsigned = true;
     retornodefuncion = nullptr;          // se setea al entrar a cada función
     loopDepth = 0;                       // sin loops activos
     switchDepth = 0;                     // sin switches activos
@@ -1291,10 +1295,31 @@ void TypeChecker::visit(IdNode* e) {
 // Visits de literales — cada literal fija resolvedType en el nodo
 // -----------------------------------------------------------
 void TypeChecker::visit(NumberLiteralNode* e) {
-    e->resolvedType = intType;
+    using LS = Token::LiteralSuffix;
+    switch (e->literalSuffix) {
+    case LS::SUF_U:
+        e->resolvedType = uintType;
+        break;
+    case LS::SUF_L:
+        e->resolvedType = longType;
+        break;
+    case LS::SUF_LL:
+        e->resolvedType = longType;
+        break;
+    case LS::SUF_UL:
+        e->resolvedType = ulongType;
+        break;
+    case LS::SUF_ULL:
+        e->resolvedType = ulongType;
+        break;
+    default:
+        e->resolvedType = intType;
+        break;
+    }
 }
 void TypeChecker::visit(FloatLiteralNode* e) {
-    e->resolvedType = doubleType;
+    e->resolvedType = (e->literalSuffix == Token::LiteralSuffix::SUF_F)
+                      ? floatType : doubleType;
 }
 void TypeChecker::visit(BoolLiteralNode* e) {
     e->resolvedType = boolType;

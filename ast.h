@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "semantic_types.h"
+#include "token.h"
 
 using namespace std;
 
@@ -221,6 +222,7 @@ public:
 class NumberLiteralNode : public Exp {
 public:
     long long value;
+    Token::LiteralSuffix literalSuffix = Token::LiteralSuffix::SUF_NONE;
     NumberLiteralNode(long long v);
     void accept(Visitor* visitor);
 
@@ -230,6 +232,7 @@ public:
 class FloatLiteralNode : public Exp {
 public:
     double value;
+    Token::LiteralSuffix literalSuffix = Token::LiteralSuffix::SUF_NONE;
     FloatLiteralNode(double v);
     void accept(Visitor* visitor);
 

@@ -50,10 +50,21 @@ public:
         ID, END, ERR
     };
 
+    enum class LiteralSuffix {
+        SUF_NONE,
+        SUF_F,
+        SUF_L,
+        SUF_LL,
+        SUF_U,
+        SUF_UL,
+        SUF_ULL
+    };
+
     Type type;
     string text;
     int line;
     int col;
+    LiteralSuffix suffix = LiteralSuffix::SUF_NONE;
 
     Token(Type type);
     Token(Type type, char c);
