@@ -11,45 +11,30 @@ using namespace std;
 // ============================================================
 // Environment<T> — Tabla de símbolos con ámbitos anidados
 // ============================================================
-// Implementa el patrón de "ribs" (costillas): cada nivel de scope
-// es un unordered_map nombre → valor. La búsqueda va del scope más
-// interno al más externo (shadowing: el nombre interno oculta al externo).
+// Implementa scopes como una pila de "ribs" (mapas nombre→valor).
+// La búsqueda va del scope más interno al más externo, permitiendo
+// shadowing. Se usa en TypeChecker para env (nombre→tipo) y
+// varEnv (nombre→VarDecl).
 //
-// Uso principal en TypeChecker (visitor.h):
-//   Environment<Type*>   env    — nombre de variable → tipo semántico
-//   Environment<VarDecl*> varEnv — nombre → nodo VarDecl del AST (binding)
-//
-// Patrón típico al entrar/salir de un bloque o función:
-//   env.add_level();
-//   varEnv.add_level();
-//   ... declarar variables con add_var ...
-//   varEnv.remove_level();
-//   env.remove_level();
-//
-// API resumida:
-//   add_level()      — abre scope (push de mapa vacío)
-//   add_var(n, v)    — define en el scope actual
-//   remove_level()   — cierra scope (pop; variables locales desaparecen)
-//   check_current(n) — ¿existe en el scope actual? (evitar redeclaración)
-//   check(n)         — ¿existe en cualquier scope visible?
-//   lookup(n)        — valor o T() si no existe (cuidado con punteros)
-//   lookup(n, out)   — bool + valor por referencia (preferido en TypeChecker)
-//   update(n, v)     — modifica en el rib donde fue declarada
-//
-// Limitaciones:
-//   - add_var sin add_level previo → exit(EXIT_FAILURE) (error fatal)
-//   - lookup() sin overload de ref devuelve T() si no hay símbolo;
-//     con punteros eso puede parecer “encontrado” (nullptr válido)
+// API:
+//   add_level()      — abre un nuevo scope
+//   add_var(n, v)    — define una variable en el scope actual
+//   remove_level()   — cierra el scope actual
+//   check_current(n) — ¿existe en el scope actual?
+//   check(n)         — ¿existe en algún scope visible?
+//   lookup(n)        — devuelve el valor o T()
+//   lookup(n, out)   — devuelve true y asigna en out si existe
+//   update(n, v)     — actualiza el valor en el scope donde se declaró
 
+// Tabla de símbolos con scopes anidados (ribs).
 template <typename T>
 class Environment {
 private:
-    // ribs[0] = scope más externo (global o primer nivel abierto)
-    // ribs.back() = scope actual (más interno)
+    // ribs[0] = scope más externo; ribs.back() = scope actual
     vector<unordered_map<string, T>> ribs;
 
     // Busca desde el rib más interno hacia afuera.
-    // Retorna índice del rib o -1 si no existe.
+    // Retorna el índice del rib o -1 si no existe.
     int search_rib(const string& var) const {
         for (int idx = static_cast<int>(ribs.size()) - 1; idx >= 0; --idx) {
             auto it = ribs[idx].find(var);
@@ -62,17 +47,17 @@ private:
 public:
     Environment() = default;
 
-    // Elimina todos los scopes; reinicio completo del entorno.
+    // Elimina todos los scopes.
     void clear() {
         ribs.clear();
     }
 
-    // Abre un nuevo ámbito. Las siguientes add_var van a ribs.back().
+    // Abre un nuevo ámbito.
     void add_level() {
         ribs.emplace_back();
     }
 
-    // Define una variable en el scope actual con valor inicial.
+    // Define una variable en el scope actual.
     // Requiere al menos un add_level() previo.
     void add_var(const string& var, const T& value) {
         if (ribs.empty()) {
@@ -82,7 +67,7 @@ public:
         ribs.back()[var] = value;
     }
 
-    // Sobrecarga: valor por defecto T() (útil si T es puntero o numérico).
+    // Define una variable con valor por defecto T().
     void add_var(const string& var) {
         if (ribs.empty()) {
             cerr << "[Error] Environment sin niveles: no se pueden agregar variables.\n";
@@ -91,7 +76,7 @@ public:
         ribs.back()[var] = T();
     }
 
-    // Cierra el scope más interno; las variables de ese nivel dejan de existir.
+    // Cierra el scope más interno.
     bool remove_level() {
         if (!ribs.empty()) {
             ribs.pop_back();
@@ -100,8 +85,7 @@ public:
         return false;
     }
 
-    // Actualiza el valor en el rib donde se declaró originalmente
-    // (puede ser un scope externo si hay shadowing en niveles internos).
+    // Actualiza el valor en el rib donde fue declarado.
     bool update(const string& x, const T& v) {
         int idx = search_rib(x);
         if (idx < 0) return false;
@@ -109,20 +93,19 @@ public:
         return true;
     }
 
-    // ¿Existe en algún scope visible (búsqueda completa)?
+    // ¿Existe en algún scope visible?
     bool check(const string& x) const {
         return (search_rib(x) >= 0);
     }
 
-    // ¿Existe solo en el scope actual? Usado para detectar redeclaración
-    // en el mismo bloque sin confundir con variables del scope padre.
+    // ¿Existe solo en el scope actual? Útil para detectar redeclaraciones.
     bool check_current(const string& x) const {
         if (ribs.empty()) return false;
         return ribs.back().count(x) > 0;
     }
 
     // Busca y devuelve el valor, o T() si no existe.
-    // Para Type*/VarDecl* preferir lookup(x, v) que distingue “no encontrado”.
+    // Para punteros preferir lookup(x, v) que distingue "no encontrado".
     T lookup(const string& x) const {
         int idx = search_rib(x);
         if (idx < 0) {
@@ -132,7 +115,6 @@ public:
     }
 
     // Busca y asigna en v. Retorna true si el símbolo existe.
-    // TypeChecker usa esto en visit(IdNode) y capturas de lambda.
     bool lookup(const string& x, T& v) const {
         int idx = search_rib(x);
         if (idx < 0) return false;

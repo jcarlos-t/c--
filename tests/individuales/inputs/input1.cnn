@@ -1,128 +1,133 @@
-// Edge case test: Matrices (multidimensional arrays)
-// Tests complex indexing, memory layout, and edge cases
+// Edge case test: void type
+// Tests void function return, void pointers, and edge cases
+
+void void_func_no_params() {
+    printf("%d\n", 999);
+}
+
+void void_func_with_params(int x, float y) {
+    printf("%d\n", x);
+    // Note: can't print float directly in this language
+}
+
+int int_func() {
+    return 42;
+}
+
+void void_calls_void() {
+    void_func_no_params(); // nested void call
+}
+
+void* return_void_ptr() {
+    int x = 100;
+    return &x; // return int* as void*
+}
+
+void void_with_if(bool flag) {
+    if (flag) {
+        printf("%d\n", 1);
+    } else {
+        printf("%d\n", 0);
+    }
+}
+
+void void_with_loop() {
+    int i;
+    for (i = 0; i < 3; i = i + 1) {
+        printf("%d\n", i);
+    }
+}
+
+void vf1() { printf("%d\n", 10); }
+void vf2() { printf("%d\n", 20); }
+void vf3() { printf("%d\n", 30); }
+
+void void_with_locals() {
+    int local = 777;
+    printf("%d\n", local);
+}
+
+void void_complex() {
+    int a = 5;
+    int b = 10;
+    if (a < b) {
+        printf("%d\n", 1);
+    } else {
+        printf("%d\n", 0);
+    }
+}
 
 int main() {
     bool ok;
     
-    // Test 1: 3D array indexing
-    int cube[2][3][4];
-    int i, j, k;
-    for (i = 0; i < 2; i = i + 1) {
-        for (j = 0; j < 3; j = j + 1) {
-            for (k = 0; k < 4; k = k + 1) {
-                cube[i][j][k] = i * 100 + j * 10 + k;
-            }
-        }
-    }
-    ok = cube[1][2][3] == 123;
+    // Test 1: Void function with no parameters
+    void_func_no_params(); // esperado: 999
+    
+    // Test 2: Void function with parameters
+    void_func_with_params(123, 4.5); // esperado: 123
+    
+    // Test 3: Nested void function calls
+    void_calls_void(); // esperado: 999
+    
+    // Test 4: Void function in expression context (should not compile in strict C)
+    // void_func_no_params(); // This should be a statement, not expression
+    
+    // Test 5: Void pointer from malloc
+    void* vp = malloc(100);
+    ok = vp != 0; // should be non-null
+    printf("%d\n", ok); // esperado: 1
+    free(vp);
+    
+    // Test 6: Void pointer to int pointer conversion
+    int* ip = malloc(sizeof(int));
+    *ip = 55;
+    void* vptr = ip;
+    int* ip2 = vptr;
+    ok = *ip2 == 55;
+    printf("%d\n", ok); // esperado: 1
+    free(ip);
+    
+    // Test 7: Void pointer to char pointer conversion
+    char* cp = malloc(sizeof(char));
+    *cp = 'A';
+    void* vcptr = cp;
+    char* cp2 = vcptr;
+    ok = *cp2 == 'A';
+    printf("%d\n", ok); // esperado: 1
+    free(cp);
+    
+    // Test 8: Void pointer from function
+    void* func_ptr = return_void_ptr();
+    ok = func_ptr != 0;
     printf("%d\n", ok); // esperado: 1
     
-    // Test 2: Matrix transposition simulation
-    int mat[3][3];
-    mat[0][0] = 1; mat[0][1] = 2; mat[0][2] = 3;
-    mat[1][0] = 4; mat[1][1] = 5; mat[1][2] = 6;
-    mat[2][0] = 7; mat[2][1] = 8; mat[2][2] = 9;
+    // Test 9: Void function with control flow
+    void_with_if(true); // esperado: 1
+    void_with_if(false); // esperado: 0
     
-    int transposed[3][3];
-    for (i = 0; i < 3; i = i + 1) {
-        for (j = 0; j < 3; j = j + 1) {
-            transposed[j][i] = mat[i][j];
-        }
-    }
-    ok = transposed[0][2] == 7 && transposed[2][0] == 3;
-    printf("%d\n", ok); // esperado: 1
+    // Test 10: Void function with loop
+    void_with_loop(); // esperado: 0 1 2
     
-    // Test 3: Ragged-like behavior with different dimensions
-    int ragged[2][4];
-    ragged[0][0] = 1; ragged[0][1] = 2; ragged[0][2] = 3; ragged[0][3] = 4;
-    ragged[1][0] = 5; ragged[1][1] = 6; ragged[1][2] = 7; ragged[1][3] = 8;
+    // Test 11: Void function as parameter type (function pointer not supported)
+    // This tests that void can be used in parameter lists
     
-    ok = ragged[1][3] == 8;
-    printf("%d\n", ok); // esperado: 1
+    // Test 12: Multiple void functions in sequence
+    vf1(); // esperado: 10
+    vf2(); // esperado: 20
+    vf3(); // esperado: 30
     
-    // Test 4: Matrix multiplication (2x2)
-    int a[2][2];
-    int b[2][2];
-    int c[2][2];
+    // Test 13: Void function with local variables
+    void_with_locals(); // esperado: 777
     
-    a[0][0] = 1; a[0][1] = 2;
-    a[1][0] = 3; a[1][1] = 4;
+    // Test 14: Void function with complex logic
+    void_complex(); // esperado: 1
     
-    b[0][0] = 5; b[0][1] = 6;
-    b[1][0] = 7; b[1][1] = 8;
+    // Test 15: Void pointer arithmetic (should not be allowed in strict C)
+    // void* vpa = malloc(10);
+    // vpa = vpa + 1; // This should fail
     
-    c[0][0] = a[0][0] * b[0][0] + a[0][1] * b[1][0];
-    c[0][1] = a[0][0] * b[0][1] + a[0][1] * b[1][1];
-    c[1][0] = a[1][0] * b[0][0] + a[1][1] * b[1][0];
-    c[1][1] = a[1][0] * b[0][1] + a[1][1] * b[1][1];
-    
-    ok = c[0][0] == 19 && c[1][1] == 50;
-    printf("%d\n", ok); // esperado: 1
-    
-    // Test 5: Array of arrays with char
-    char grid[3][3];
-    grid[0][0] = 'A'; grid[0][1] = 'B'; grid[0][2] = 'C';
-    grid[1][0] = 'D'; grid[1][1] = 'E'; grid[1][2] = 'F';
-    grid[2][0] = 'G'; grid[2][1] = 'H'; grid[2][2] = 'I';
-    
-    ok = grid[1][1] == 'E';
-    printf("%d\n", ok); // esperado: 1
-    
-    // Test 6: Float matrix
-    float fmat[2][3];
-    fmat[0][0] = 1.5; fmat[0][1] = 2.5; fmat[0][2] = 3.5;
-    fmat[1][0] = 4.5; fmat[1][1] = 5.5; fmat[1][2] = 6.5;
-    
-    float fsum = fmat[0][0] + fmat[1][2];
-    ok = fsum > 7.9 && fsum < 8.1;
-    printf("%d\n", ok); // esperado: 1
-    
-    // Test 7: Large matrix initialization
-    int large[10][10];
-    for (i = 0; i < 10; i = i + 1) {
-        for (j = 0; j < 10; j = j + 1) {
-            large[i][j] = i * 10 + j;
-        }
-    }
-    ok = large[9][9] == 99;
-    printf("%d\n", ok); // esperado: 1
-    
-    // Test 8: Diagonal access
-    int diag[5][5];
-    for (i = 0; i < 5; i = i + 1) {
-        for (j = 0; j < 5; j = j + 1) {
-            diag[i][j] = 0;
-        }
-        diag[i][i] = 1;
-    }
-    
-    int diag_sum = 0;
-    for (i = 0; i < 5; i = i + 1) {
-        diag_sum = diag_sum + diag[i][i];
-    }
-    ok = diag_sum == 5;
-    printf("%d\n", ok); // esperado: 1
-    
-    // Test 9: Matrix row sum
-    int matrix[3][4];
-    matrix[0][0] = 1; matrix[0][1] = 2; matrix[0][2] = 3; matrix[0][3] = 4;
-    matrix[1][0] = 5; matrix[1][1] = 6; matrix[1][2] = 7; matrix[1][3] = 8;
-    matrix[2][0] = 9; matrix[2][1] = 10; matrix[2][2] = 11; matrix[2][3] = 12;
-    
-    int row_sum = 0;
-    for (j = 0; j < 4; j = j + 1) {
-        row_sum = row_sum + matrix[1][j];
-    }
-    ok = row_sum == 26;
-    printf("%d\n", ok); // esperado: 1
-    
-    // Test 10: Matrix column sum
-    int col_sum = 0;
-    for (i = 0; i < 3; i = i + 1) {
-        col_sum = col_sum + matrix[i][2];
-    }
-    ok = col_sum == 21;
-    printf("%d\n", ok); // esperado: 1
+    // Test 16: Void in sizeof (should fail in strict C)
+    // int size = sizeof(void); // This should fail
     
     return 0;
 }

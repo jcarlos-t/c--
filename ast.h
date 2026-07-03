@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "semantic_types.h"
+#include "token.h"
 
 using namespace std;
 
@@ -221,6 +222,7 @@ public:
 class NumberLiteralNode : public Exp {
 public:
     long long value;
+    Token::LiteralSuffix literalSuffix = Token::LiteralSuffix::SUF_NONE;
     NumberLiteralNode(long long v);
     void accept(Visitor* visitor);
 
@@ -230,6 +232,7 @@ public:
 class FloatLiteralNode : public Exp {
 public:
     double value;
+    Token::LiteralSuffix literalSuffix = Token::LiteralSuffix::SUF_NONE;
     FloatLiteralNode(double v);
     void accept(Visitor* visitor);
 
@@ -265,7 +268,7 @@ public:
 // Impresión: printf(args...), es exp porque se puede usar en cualquier lugar, en c es valido x = printf("xd");
 class PrintfNode : public Exp {
 public:
-    string format;  // string de formato (opcional, "%ld" por defecto)
+    string format;
     vector<Exp*> args;
     PrintfNode();
     PrintfNode(const string& fmt, const vector<Exp*>& a);

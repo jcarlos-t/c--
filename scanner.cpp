@@ -157,13 +157,45 @@ Token* Scanner::number() {
             advance();
     }
 
-    // Sufijo ll/LL para long long
-    if (!is_float && (peek() == 'l' || peek() == 'L')) {
-        if (current + 1 < (int)input.length() && input[current + 1] == (peek() == 'l' ? 'l' : 'L'))
-            current += 2;
+    // Sufijos de tipo: ll/LL, u/U, ul/UL, ull/ULL para enteros; f/F para flotantes
+    Token::LiteralSuffix suf = Token::LiteralSuffix::SUF_NONE;
+    if (!is_float) {
+        if (peek() == 'u' || peek() == 'U') {
+            suf = Token::LiteralSuffix::SUF_U;
+            advance();
+            if (peek() == 'l' || peek() == 'L') {
+                suf = Token::LiteralSuffix::SUF_UL;
+                advance();
+                if (peek() == 'l' || peek() == 'L') {
+                    suf = Token::LiteralSuffix::SUF_ULL;
+                    advance();
+                }
+            }
+        } else if (peek() == 'l' || peek() == 'L') {
+            suf = Token::LiteralSuffix::SUF_L;
+            advance();
+            if (peek() == 'l' || peek() == 'L') {
+                suf = Token::LiteralSuffix::SUF_LL;
+                advance();
+                if (peek() == 'u' || peek() == 'U') {
+                    suf = Token::LiteralSuffix::SUF_ULL;
+                    advance();
+                }
+            } else if (peek() == 'u' || peek() == 'U') {
+                suf = Token::LiteralSuffix::SUF_UL;
+                advance();
+            }
+        }
+    } else {
+        if (peek() == 'f' || peek() == 'F') {
+            suf = Token::LiteralSuffix::SUF_F;
+            advance();
+        }
     }
 
-    return make_token(is_float ? Token::FNUM : Token::NUM);
+    Token* t = make_token(is_float ? Token::FNUM : Token::NUM);
+    t->suffix = suf;
+    return t;
 }
 
 // Reconoce literales de caracter: 'a', '\n'
