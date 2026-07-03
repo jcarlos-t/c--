@@ -8,10 +8,21 @@
 
 using namespace std;
 
-// =============================
-// Constructor y helpers
-// =============================
+// ============================================================
+// Parser — Análisis sintáctico (construcción del AST)
+// ============================================================
+// Recorre tokens desde el scanner y construye el AST siguiendo
+// una gramática recursiva descendente con lookahead.
+//
+// Convenciones:
+//   - parse_* : funciones que parsean no terminales
+//   - match() : consume token si coincide
+//   - check() : lookahead sin consumir
+//   - consume() : exige un token específico o lanza error
+//   - sync_error() : reporta error sintáctico con línea/columna
+// ============================================================
 
+// Constructor: inicializa current con el primer token.
 Parser::Parser(Scanner* sc) : scanner(sc) {
     previous = nullptr;
     current = scanner->nextToken();
@@ -20,7 +31,7 @@ Parser::Parser(Scanner* sc) : scanner(sc) {
     }
 }
 
-// match: si el token actual es ttype, avanza y retorna true
+// match — consume el token actual si es de tipo ttype.
 bool Parser::match(Token::Type ttype) {
     if (check(ttype)) {
         advance();
@@ -29,13 +40,13 @@ bool Parser::match(Token::Type ttype) {
     return false;
 }
 
-// check: true si el token actual es ttype (sin consumir)
+// check — true si el token actual es ttype sin consumir.
 bool Parser::check(Token::Type ttype) const {
     if (isAtEnd()) return false;
     return current->type == ttype;
 }
 
-// advance: avanza al siguiente token, libera el anterior
+// advance — avanza al siguiente token, liberando el anterior.
 bool Parser::advance() {
     if (!isAtEnd()) {
         Token* temp = current;
@@ -50,12 +61,12 @@ bool Parser::advance() {
     return false;
 }
 
-// isAtEnd: true si el token actual es END
+// isAtEnd — true si el token actual es END.
 bool Parser::isAtEnd() const {
     return current->type == Token::END;
 }
 
-// consume: si coincide, avanza; si no, lanza error con msg
+// consume — exige ttype; si no coincide, lanza error con msg.
 Token* Parser::consume(Token::Type ttype, const string& msg) {
     if (check(ttype)) {
         Token* t = current;
@@ -68,23 +79,21 @@ Token* Parser::consume(Token::Type ttype, const string& msg) {
     throw runtime_error(oss.str());
 }
 
-// sync_error: lanza error sintáctico con línea/columna
+// sync_error — lanza error sintáctico con línea/columna.
 void Parser::sync_error(const string& msg) {
     ostringstream oss;
     oss << "line " << current->line << ":" << current->col << " - Error sintáctico: " << msg;
     throw runtime_error(oss.str());
 }
 
-// Helper: is_type_start
-
-// is_type_keyword: true si el token es un tipo primitivo (sin struct)
+// is_type_keyword — true si t es un tipo primitivo (sin struct).
 static bool is_type_keyword(Token::Type t) {
     return t == Token::VOID || t == Token::INT || t == Token::CHAR ||
            t == Token::FLOAT || t == Token::DOUBLE || t == Token::BOOL ||
            t == Token::LONG || t == Token::UNSIGNED || t == Token::CONST;
 }
 
-// kind_from_token: convierte Token::Type a PrimitiveTypeNode::Prim
+// kind_from_token — convierte Token::Type a PrimitiveTypeNode::Prim.
 static PrimitiveTypeNode::Prim kind_from_token(Token::Type t) {
     switch (t) {
         case Token::VOID:   return PrimitiveTypeNode::VOID;
@@ -98,18 +107,18 @@ static PrimitiveTypeNode::Prim kind_from_token(Token::Type t) {
     }
 }
 
-// is_type_start: true si el token actual puede iniciar un tipo
+// is_type_start — true si el token actual puede iniciar un tipo.
 bool Parser::is_type_start() const {
     if (isAtEnd()) return false;
     return is_type_keyword(current->type) || check(Token::STRUCT);
 }
 
-// can_start_type: true si el siguiente token puede ser tipo
+// can_start_type — true si el siguiente token puede ser tipo.
 bool Parser::can_start_type() {
     return is_type_start();
 }
 
-// rollback: restaura scanner y reconstruye estado current/previous
+// rollback — restaura scanner y reconstruye current/previous.
 void Parser::rollback(Scanner::Pos saved) {
     scanner->setPos(saved);
     delete current;
@@ -118,7 +127,7 @@ void Parser::rollback(Scanner::Pos saved) {
     current = scanner->nextToken();
 }
 
-// parse_array_suffix: parsea [expr] opcional en variables/parámetros
+// parse_array_suffix — parsea [expr] opcional en variables/parámetros.
 void Parser::parse_array_suffix(VarDecl* vd) {
     while (match(Token::LBRACKET)) {
         if (!check(Token::RBRACKET))
@@ -127,24 +136,24 @@ void Parser::parse_array_suffix(VarDecl* vd) {
     }
 }
 
-// =============================
+// ============================================================
 // Types
-// =============================
+// ============================================================
 
-// parse_type: parsea tipo básico + cero o más '*' (punteros) + opcional const
+// parse_type — parsea tipo básico + cero o más '*' + const opcional.
 TypeNode* Parser::parse_type() {
     TypeNode* base = parse_basic_type();
     while (match(Token::STAR)) {
         base = new PointerTypeNode(base);
     }
-    // Allow const after pointer (e.g., int* const)
     if (match(Token::CONST)) {
         base->isConst = true;
     }
     return base;
 }
 
-// parse_basic_type: parsea void/int/char/float/double/bool/long/struct
+// parse_basic_type — parsea void/int/char/float/double/bool/long/struct.
+// Soporta modificadores unsigned, long y const en cualquier orden.
 TypeNode* Parser::parse_basic_type() {
     bool sawLong = false;
     bool sawUnsigned = false;
@@ -164,21 +173,21 @@ TypeNode* Parser::parse_basic_type() {
         node->isConst = sawConst;
         return node;
     }
-    // long (long) without following type keyword
+    // long sin tipo siguiente → long long
     if (sawLong) {
         PrimitiveTypeNode* node = new PrimitiveTypeNode(PrimitiveTypeNode::LONG);
         node->isUnsigned = sawUnsigned;
         node->isConst = sawConst;
         return node;
     }
-    // unsigned without following type -> unsigned int
+    // unsigned sin tipo siguiente → unsigned int
     if (sawUnsigned) {
         PrimitiveTypeNode* node = new PrimitiveTypeNode(PrimitiveTypeNode::INT);
         node->isUnsigned = true;
         node->isConst = sawConst;
         return node;
     }
-    // struct person <- esto es un tipo
+    // struct Name
     if (match(Token::STRUCT)) {
         Token* name = consume(Token::ID, "Se esperaba nombre de struct");
         StructTypeNode* node = new StructTypeNode(name->text);
@@ -189,10 +198,11 @@ TypeNode* Parser::parse_basic_type() {
     return nullptr;
 }
 
-// =============================
+// ============================================================
 // Program y Declarations
-// =============================
+// ============================================================
 
+// parse_program — parsea declaraciones hasta EOF.
 Program* Parser::parse_program() {
     Program* p = new Program();
     while (!isAtEnd()) {
@@ -206,9 +216,9 @@ Program* Parser::parseProgram() {
     return p;
 }
 
-// parse_declaration: parsea struct, función o variable global
+// parse_declaration — parsea struct, función o variable global.
+// Para struct hace lookahead: struct Name { ... }; vs struct Name x;
 void Parser::parse_declaration(Program* p) {
-    // Struct declaration: "struct" ID "{" { variable_declaration } "}" ";"
     if (check(Token::STRUCT)) {
         Scanner::Pos saved = scanner->getPos();
         advance(); // consume STRUCT
@@ -216,7 +226,7 @@ void Parser::parse_declaration(Program* p) {
             string sname = current->text;
             advance(); // consume ID
             if (check(Token::LBRACE)) {
-                // Struct declaration
+                // Declaración de struct
                 StructDecl* sd = new StructDecl(sname);
                 consume(Token::LBRACE, "Se esperaba '{'");
                 while (!check(Token::RBRACE) && !isAtEnd()) {
@@ -231,11 +241,11 @@ void Parser::parse_declaration(Program* p) {
                 return;
             }
         }
-        // rollback: no era declaracion de struct, puede ser instanciación: struct name x;
+        // No era declaración de struct: rollback para parsear como variable.
         rollback(saved);
     }
 
-    // funct | vardec
+    // Función o variable global
     TypeNode* type = parse_type();
 
     if (check(Token::ID)) {
@@ -244,11 +254,9 @@ void Parser::parse_declaration(Program* p) {
         advance();
 
         if (check(Token::LPAREN)) {
-            // Function declaration: type IDENTIFIER "(" parameter_list ")" compound_statement
             FunDecl* fd = parse_function_decl(type, id_name);
             p->functions.push_back(fd);
         } else {
-            // Variable declaration: type IDENTIFIER array_suffix [ "=" expression ] ";"
             VarDecl* vd = parse_variable_decl(type, id_name);
             p->globals.push_back(vd);
         }
@@ -257,11 +265,11 @@ void Parser::parse_declaration(Program* p) {
     }
 }
 
-// =============================
+// ============================================================
 // Function declaration
-// =============================
+// ============================================================
 
-// parse_function_decl: parsea params y cuerpo de función
+// parse_function_decl — parsea parámetros y cuerpo de función.
 FunDecl* Parser::parse_function_decl(TypeNode* ret_type, const string& name) {
     FunDecl* fd = new FunDecl(ret_type, name, nullptr);
     fd->loc.line = current->line; fd->loc.column = current->col;
@@ -281,18 +289,15 @@ FunDecl* Parser::parse_function_decl(TypeNode* ret_type, const string& name) {
     return fd;
 }
 
-// parse_variable_decl: parsea arreglos opcionales e inicializador
+// parse_variable_decl — parsea arreglos opcionales e inicializador.
 VarDecl* Parser::parse_variable_decl(TypeNode* type, const string& name, bool consume_semicolon) {
     VarDecl* vd = new VarDecl(type, name);
     vd->loc.line = current->line; vd->loc.column = current->col;
 
-    // Copy const flag from type to VarDecl
     vd->isConst = type->isConst;
 
-    // array_suffix
     parse_array_suffix(vd);
 
-    // optional initializer
     if (match(Token::ASSIGN)) {
         if (match(Token::LBRACE)) {
             if (!match(Token::RBRACE)) {
@@ -313,11 +318,11 @@ VarDecl* Parser::parse_variable_decl(TypeNode* type, const string& name, bool co
     return vd;
 }
 
-// =============================
+// ============================================================
 // Struct declaration
-// =============================
+// ============================================================
 
-// parse_struct_decl: parsea struct ID { miembros }
+// parse_struct_decl — parsea struct ID { miembros }.
 StructDecl* Parser::parse_struct_decl() {
     consume(Token::STRUCT, "Se esperaba 'struct'");
     Token* name = consume(Token::ID, "Se esperaba nombre del struct");
@@ -335,11 +340,11 @@ StructDecl* Parser::parse_struct_decl() {
     return sd;
 }
 
-// =============================
+// ============================================================
 // Parameters
-// =============================
+// ============================================================
 
-// parse_parameter: parsea type id [array_suffix] para parámetros
+// parse_parameter — parsea type id [array_suffix] para parámetros.
 VarDecl* Parser::parse_parameter() {
     TypeNode* type = parse_type();
     Token* name = consume(Token::ID, "Se esperaba nombre del parámetro");
@@ -349,16 +354,16 @@ VarDecl* Parser::parse_parameter() {
 }
 
 
-// =============================
+// ============================================================
 // Statements
-// =============================
+// ============================================================
 
-// parse_statement: parsea cualquier sentencia (if, while, for, switch, break, continue, return, free, expr, decl local)
+// parse_statement — parsea cualquier sentencia.
+// Delega según el token inicial: tipo (decl local), {, if, while, etc.
 Stm* Parser::parse_statement() {
     if (can_start_type()) {
         return parse_local_var_decl();
     }
-    // body {....}
     if (check(Token::LBRACE))
         return parse_compound_statement();
     if (check(Token::IF))
@@ -398,10 +403,10 @@ Stm* Parser::parse_statement() {
         return new FreeStmt(fexpr);
     }
 
-    // expression_statement: [ expression ] ";"
+    // statement vacío
     if (check(Token::SEMICOL)) {
         advance();
-        return new ExprStmtNode(nullptr); // empty statement
+        return new ExprStmtNode(nullptr);
     }
 
     Exp* expr = parse_expression();
@@ -409,21 +414,19 @@ Stm* Parser::parse_statement() {
     return new ExprStmtNode(expr);
 }
 
-// parse_local_var_decl: parsea declaración de variable local (soporta múltiples separadas por coma)
+// parse_local_var_decl — parsea declaración local, soporta múltiples variables
+// separadas por coma. Retorna un body sintético si hay más de una.
 Stm* Parser::parse_local_var_decl() {
     TypeNode* type = parse_type();
     Token* name = consume(Token::ID, "Se esperaba identificador");
     
-    // Create first variable
     VarDecl* first_vd = parse_variable_decl(type, name->text, false);
     
-    // Check for comma-separated declarations
     vector<VarDecl*> decls;
     decls.push_back(first_vd);
     
     while (match(Token::COMA)) {
         Token* next_name = consume(Token::ID, "Se esperaba identificador después de ','");
-        // Clone the type for each variable (same type, different variable)
         TypeNode* next_type = type->clone();
         VarDecl* next_vd = parse_variable_decl(next_type, next_name->text, false);
         decls.push_back(next_vd);
@@ -431,14 +434,10 @@ Stm* Parser::parse_local_var_decl() {
     
     consume(Token::SEMICOL, "Se esperaba ';' al final de la declaración");
     
-    // Return as individual statements (simpler for now)
-    // For proper implementation, we'd need a multi-declaration node
-    // For now, just return the first one and handle the rest separately
     if (decls.size() == 1) {
         return first_vd;
     }
     
-    // Create a synthetic body (no new scope) with all declarations
     Body* body = new Body();
     body->synthetic = true;
     for (auto vd : decls) {
@@ -447,7 +446,7 @@ Stm* Parser::parse_local_var_decl() {
     return body;
 }
 
-// parse_compound_statement: parsea { stmts }
+// parse_compound_statement — parsea { stmts }.
 Stm* Parser::parse_compound_statement() {
     Body* cs = new Body();
     consume(Token::LBRACE, "Se esperaba '{'");
@@ -458,7 +457,7 @@ Stm* Parser::parse_compound_statement() {
     return cs;
 }
 
-// parse_if_statement: parsea if (cond) stmt [else stmt]
+// parse_if_statement — parsea if (cond) stmt [else stmt].
 Stm* Parser::parse_if_statement() {
     consume(Token::IF, "Se esperaba 'if'");
     consume(Token::LPAREN, "Se esperaba '(' después de if");
@@ -472,7 +471,7 @@ Stm* Parser::parse_if_statement() {
     return new IfStmt(cond, then_branch, else_branch);
 }
 
-// parse_while_statement: parsea while (cond) stmt
+// parse_while_statement — parsea while (cond) stmt.
 Stm* Parser::parse_while_statement() {
     consume(Token::WHILE, "Se esperaba 'while'");
     consume(Token::LPAREN, "Se esperaba '(' después de while");
@@ -482,7 +481,7 @@ Stm* Parser::parse_while_statement() {
     return new WhileStmt(cond, body);
 }
 
-// parse_do_while_statement: parsea do stmt while (cond);
+// parse_do_while_statement — parsea do stmt while (cond);
 Stm* Parser::parse_do_while_statement() {
     consume(Token::DO, "Se esperaba 'do'");
     Stm* body = parse_statement();
@@ -494,7 +493,7 @@ Stm* Parser::parse_do_while_statement() {
     return new DoWhileStmt(body, cond);
 }
 
-// parse_for_statement: parsea for (init; cond; inc) stmt
+// parse_for_statement — parsea for (init; cond; inc) stmt.
 Stm* Parser::parse_for_statement() {
     consume(Token::FOR, "Se esperaba 'for'");
     consume(Token::LPAREN, "Se esperaba '(' después de for");
@@ -528,7 +527,7 @@ Stm* Parser::parse_for_statement() {
     return new ForStmt(init, condition, increment, body);
 }
 
-// parse_switch_statement: parsea switch (expr) { case/default: ... }
+// parse_switch_statement — parsea switch (expr) { case/default: ... }.
 Stm* Parser::parse_switch_statement() {
     consume(Token::SWITCH, "Se esperaba 'switch'");
     consume(Token::LPAREN, "Se esperaba '(' después de switch");
@@ -542,7 +541,6 @@ Stm* Parser::parse_switch_statement() {
             Exp* val = parse_expression();
             consume(Token::COLON, "Se esperaba ':' después de case");
             CaseClause* cc = new CaseClause(val);
-            // Parse statements until next case/default or }
             while (!check(Token::CASE) && !check(Token::DEFAULT) && !check(Token::RBRACE) && !isAtEnd())
                 cc->body.push_back(parse_statement());
             ss->cases.push_back(cc);
@@ -556,7 +554,7 @@ Stm* Parser::parse_switch_statement() {
     return ss;
 }
 
-// parse_return_statement: parsea return [expr];
+// parse_return_statement — parsea return [expr];
 Stm* Parser::parse_return_statement() {
     consume(Token::RETURN, "Se esperaba 'return'");
     int rl = previous->line, rc = previous->col;
@@ -570,16 +568,16 @@ Stm* Parser::parse_return_statement() {
     return rs;
 }
 
-// =============================
+// ============================================================
 // Expressions
-// =============================
+// ============================================================
 
-// parse_expression: punto de entrada para expresiones
+// parse_expression — punto de entrada para expresiones.
 Exp* Parser::parse_expression() {
     return parse_assignment();
 }
 
-// parse_assignment: parsea = (asociativo a derecha)
+// parse_assignment — parsea = (asociativo a derecha).
 Exp* Parser::parse_assignment() {
     Exp* l = parse_logical_or();
     if (match(Token::ASSIGN)) {
@@ -589,7 +587,7 @@ Exp* Parser::parse_assignment() {
     return l;
 }
 
-// parse_logical_or: parsea ||
+// parse_logical_or — parsea ||.
 Exp* Parser::parse_logical_or() {
     Exp* l = parse_logical_and();
     while (match(Token::OR)) {
@@ -599,7 +597,7 @@ Exp* Parser::parse_logical_or() {
     return l;
 }
 
-// parse_logical_and: parsea &&
+// parse_logical_and — parsea &&.
 Exp* Parser::parse_logical_and() {
     Exp* l = parse_equality();
     while (match(Token::AND)) {
@@ -609,7 +607,7 @@ Exp* Parser::parse_logical_and() {
     return l;
 }
 
-// parse_equality: parsea == !=
+// parse_equality — parsea == !=.
 Exp* Parser::parse_equality() {
     Exp* l = parse_relational();
     while (true) {
@@ -624,7 +622,7 @@ Exp* Parser::parse_equality() {
     return l;
 }
 
-// parse_relational: parsea < > <= >=
+// parse_relational — parsea < > <= >=.
 Exp* Parser::parse_relational() {
     Exp* l = parse_additive();
     while (true) {
@@ -645,7 +643,7 @@ Exp* Parser::parse_relational() {
     return l;
 }
 
-// parse_additive: parsea + -
+// parse_additive — parsea + -.
 Exp* Parser::parse_additive() {
     Exp* l = parse_multiplicative();
     while (true) {
@@ -660,7 +658,7 @@ Exp* Parser::parse_additive() {
     return l;
 }
 
-// parse_multiplicative: parsea * / %
+// parse_multiplicative — parsea * / %.
 Exp* Parser::parse_multiplicative() {
     Exp* l = parse_pow();
     while (true) {
@@ -678,7 +676,7 @@ Exp* Parser::parse_multiplicative() {
     return l;
 }
 
-// parse_pow: parsea ^ (potencia, asociativo a derecha)
+// parse_pow — parsea ^ (asociativo a derecha).
 Exp* Parser::parse_pow() {
     Exp* l = parse_unary();
     if (match(Token::POW)) {
@@ -688,7 +686,7 @@ Exp* Parser::parse_pow() {
     return l;
 }
 
-// parse_unary: parsea ++x --x & * - ! (prefijo)
+// parse_unary — parsea ++x --x & * - ! (prefijo).
 Exp* Parser::parse_unary() {
     if (match(Token::INC)) {
         Exp* operand = parse_unary();
@@ -717,7 +715,7 @@ Exp* Parser::parse_unary() {
     return parse_postfix();
 }
 
-// parse_postfix: parsea [] () . -> x++ x-- (postfijo)
+// parse_postfix — parsea [] () . -> x++ x-- (postfijo).
 Exp* Parser::parse_postfix() {
     Exp* l = parse_primary();
 
@@ -751,7 +749,7 @@ Exp* Parser::parse_postfix() {
     return l;
 }
 
-// parse_primary: parsea literales, id, lambdas, (expr), malloc, sizeof, printf
+// parse_primary — parsea literales, id, (expr), malloc, sizeof, printf.
 Exp* Parser::parse_primary() {
     if (match(Token::TRUE)) {
         return new BoolLiteralNode(true);
@@ -817,29 +815,29 @@ Exp* Parser::parse_primary() {
             return new SizeOfNode(target);
         }
     }
-        if (match(Token::PRINTF)) {
-            consume(Token::LPAREN, "Se esperaba '(' después de printf");
-            PrintfNode* pn = new PrintfNode();
-            if (!check(Token::RPAREN)) {
-                // El primer argumento debe ser un string literal (formato)
-                if (check(Token::STRING_LIT)) {
-                    StringLiteralNode* fmt = dynamic_cast<StringLiteralNode*>(parse_assignment());
-                    if (fmt) {
-                        pn->format = fmt->value;
-                        delete fmt;
-                    }
-                } else {
-                    sync_error("printf requiere un string literal como formato.");
-                    // Consumir hasta el ) para continuar parseando
-                    parse_assignment();
+    if (match(Token::PRINTF)) {
+        consume(Token::LPAREN, "Se esperaba '(' después de printf");
+        PrintfNode* pn = new PrintfNode();
+        if (!check(Token::RPAREN)) {
+            // El primer argumento debe ser un string literal (formato)
+            if (check(Token::STRING_LIT)) {
+                StringLiteralNode* fmt = dynamic_cast<StringLiteralNode*>(parse_assignment());
+                if (fmt) {
+                    pn->format = fmt->value;
+                    delete fmt;
                 }
-                // Argumentos adicionales separados por coma
-                while (match(Token::COMA))
-                    pn->args.push_back(parse_assignment());
+            } else {
+                sync_error("printf requiere un string literal como formato.");
+                // Consumir hasta el ) para continuar parseando
+                parse_assignment();
             }
-            consume(Token::RPAREN, "Se esperaba ')'");
-            return pn;
+            // Argumentos adicionales separados por coma
+            while (match(Token::COMA))
+                pn->args.push_back(parse_assignment());
         }
+        consume(Token::RPAREN, "Se esperaba ')'");
+        return pn;
+    }
     sync_error("Se esperaba una expresión");
     return nullptr;
 }

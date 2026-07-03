@@ -268,7 +268,7 @@ public:
 // Impresión: printf(args...), es exp porque se puede usar en cualquier lugar, en c es valido x = printf("xd");
 class PrintfNode : public Exp {
 public:
-    string format;  // string de formato (opcional, "%ld" por defecto)
+    string format;
     vector<Exp*> args;
     PrintfNode();
     PrintfNode(const string& fmt, const vector<Exp*>& a);
