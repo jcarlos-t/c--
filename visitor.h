@@ -14,9 +14,7 @@
 using namespace std;
 
 
-// ============================================================
-// Visitor
-// ============================================================
+// Visitor — base abstracta para recorrer el AST
 
 class Visitor {
 public:
@@ -28,9 +26,9 @@ public:
     virtual void visit(AssignmentNode* e) = 0;
     virtual void visit(FcallNode* e) = 0;
     virtual void visit(MallocNode* e) = 0;
-    virtual void visit(IndexNode* e) = 0;          // arr[i] o ptr[i]
-    virtual void visit(MemberAccessNode* e) = 0;   // obj.miembro
-    virtual void visit(ArrowAccessNode* e) = 0;    // ptr->miembro
+    virtual void visit(IndexNode* e) = 0;
+    virtual void visit(MemberAccessNode* e) = 0;
+    virtual void visit(ArrowAccessNode* e) = 0;
     virtual void visit(SizeOfNode* e) = 0;
     virtual void visit(IdentifierNode* e) = 0;
     virtual void visit(IntegerLiteralNode* e) = 0;
@@ -39,20 +37,20 @@ public:
     virtual void visit(CharLiteralNode* e) = 0;
     virtual void visit(StringLiteralNode* e) = 0;
     virtual void visit(PrintfNode* e) = 0;
-    // Nodos de *tipo* en el AST 
-    virtual void visit(PrimitiveTypeNode* e) = 0;  // int, char, void, ...
-    virtual void visit(PointerTypeNode* e) = 0;    // T*
-    virtual void visit(StructTypeNode* e) = 0;     // struct Nombre
+    // Nodos de tipo
+    virtual void visit(PrimitiveTypeNode* e) = 0;
+    virtual void visit(PointerTypeNode* e) = 0;
+    virtual void visit(StructTypeNode* e) = 0;
 
     // --- Statements ---
-    virtual void visit(Body* s) = 0;              // bloque { ... }
-    virtual void visit(ExprStmtNode* s) = 0;       // expresión como statement
+    virtual void visit(Body* s) = 0;
+    virtual void visit(ExprStmtNode* s) = 0;
     virtual void visit(IfStmt* s) = 0;
     virtual void visit(WhileStmt* s) = 0;
     virtual void visit(DoWhileStmt* s) = 0;
     virtual void visit(ForStmt* s) = 0;
     virtual void visit(SwitchStmt* s) = 0;
-    virtual void visit(CaseClause* s) = 0;         // case N: ...
+    virtual void visit(CaseClause* s) = 0;
     virtual void visit(BreakStmt* s) = 0;
     virtual void visit(ContinueStmt* s) = 0;
     virtual void visit(ReturnStmt* s) = 0;
@@ -62,12 +60,9 @@ public:
     virtual void visit(VarDecl* d) = 0;
     virtual void visit(FunDecl* d) = 0;
     virtual void visit(StructDecl* d) = 0;
-    virtual void visit(Program* p) = 0;          // raíz: globals, structs, funciones
+    virtual void visit(Program* p) = 0;
 
-    // --- Cálculo de dirección de l-values ---
-    // Solo GenCodeVisitor los sobreescribe. Se usan para asignaciones y &:
-    // en vez de cargar el valor de una variable, se calcula su dirección en memoria.
-    // La implementación por defecto vacía permite que otros visitantes ignoren esto.
+    // Para & y asignaciones: calcula dirección en vez de cargar valor
     virtual void computeAddress(UnaryOpNode* ) {}
     virtual void computeAddress(IdentifierNode* ) {}
     virtual void computeAddress(IndexNode* ) {}
@@ -75,44 +70,22 @@ public:
     virtual void computeAddress(ArrowAccessNode* ) {}
 };
 
-// ============================================================
-// FuncInfo — Firma de función para el type checker
-// ============================================================
-// Resumen semántico de una función: no guarda el AST completo,
-// solo los tipos necesarios para validar llamadas (FcallNode).
+// FuncInfo — firma de función para validar llamadas
 struct FuncInfo {
     ::Type* returnType;
     vector<::Type*> paramTypes;
 };
 
-// ============================================================
-// TypeChecker — Análisis semántico
-// ============================================================
-// Recorre el AST, construye tablas de símbolos, valida reglas del lenguaje
-// Esa información la consume GenCodeVisitor después.
+// TypeChecker — análisis semántico, construye tablas de símbolos
 class TypeChecker : public Visitor {
 private:
-    // env: nombre de variable → tipo semántico (Type*).
-    // Soporta ámbitos anidados (función, bloque, for, lambda).
-    Environment<::Type*> env;
+    Environment<::Type*> env;              // variable → tipo
+    Environment<VarDecl*> varEnv;          // variable → declaración
+    unordered_map<string, FuncInfo> functions;     // firmas de funciones
+    unordered_map<string, StructType*> struct_types; // structs resueltos
+    ::Type* retornodefuncion;              // tipo de retorno actual
 
-    // varEnv: nombre → puntero al VarDecl original en el AST.
-    // Permite enlazar IdentifierNode con su declaración (binding)
-    // y leer offset/memSize calculados en visit(FunDecl).
-    Environment<VarDecl*> varEnv;
-
-    // Firmas de funciones normales registradas en visit(Program).
-    unordered_map<string, FuncInfo> functions;
-
-    // Structs ya resueltos: "Point" o instancias "Box<int>".
-    unordered_map<string, StructType*> struct_types;
-
-    // Tipo de retorno de la función que se está analizando ahora.
-    // Se consulta en visit(ReturnStmt).
-    ::Type* retornodefuncion;
-
-    // Singletons de tipos primitivos (un solo objeto por tipo en todo el checker).
-    ::Type* intType;
+    ::Type* intType;    // singletons de tipos primitivos
     ::Type* boolType;
     ::Type* voidType;
     ::Type* floatType;
@@ -120,59 +93,31 @@ private:
     ::Type* charType;
     ::Type* longType;
 
-    // Tipos creados dinámicamente durante el análisis (punteros, arreglos, errores).
-    // El destructor de TypeChecker hace delete de todos.
-    vector<::Type*> typeCache;
+    vector<::Type*> typeCache;             // tipos dinámicos (punteros, arreglos)
 
-    // Profundidad de bucles/switch para validar break y continue.
-    int loopDepth;
-    int switchDepth;
+    int loopDepth;                         // profundidad de bucles
+    int switchDepth;                       // profundidad de switch
+    unordered_set<VarDecl*> initialized_vars; // variables inicializadas
+    int functionDepth = 0;                 // profundidad de funciones
+    bool isLvalContext = false;            // omitir chequeo de inicialización en l-value
 
-    // Conjunto de variables que ya han sido inicializadas o asignadas.
-    unordered_set<VarDecl*> initialized_vars;
-
-    // Profundidad de funciones (0 = global, >=1 = dentro de función).
-    int functionDepth = 0;
-
-    // Flag para omitir chequeo de inicialización en contexto l-value.
-    bool isLvalContext = false;
-
-    // Acumulación de errores semánticos (no aborta en el primero).
-    vector<string> errors;
+    vector<string> errors;                 // acumulación de errores
     bool hasError;
 
-    // Registra la firma de una función normal en el mapa functions.
-    void add_function(FunDecl* fd);
-
-    // Traduce nodos de tipo del AST (int, char*, struct X, Box<int>) a Type*.
-    ::Type* type_from_ast(TypeNode* t);
-
-    // Reglas de compatibilidad en asignaciones e inicializadores
-    // (promoción int→float, truncamiento int→char, etc.).
-    bool check_assign(::Type* target, ::Type* value);
-
+    void add_function(FunDecl* fd);        // registra firma de función
+    ::Type* type_from_ast(TypeNode* t);    // TypeNode del AST → Type*
+    bool check_assign(::Type* target, ::Type* value); // compatibilidad de tipos
     void error(const string& msg);
     void error(const string& msg, const Location& loc);
-
-    // Registra una variable en env (tipo) y varEnv (nodo VarDecl).
-    void bind_var_decl(VarDecl* v);
-
-    // Valida cantidad y tipos de argumentos en una llamada; reutilizado en FcallNode.
+    void bind_var_decl(VarDecl* v);        // registra variable en envs
     bool checkFuncCall(const string& fname, FuncInfo& info, FcallNode* e);
-
-    // Recorre el cuerpo de una función y junta todas las VarDecl locales
-    // (incluso dentro de if/while/for) para calcular offsets antes de usarlas.
-    void collectVars(Stm* stmt, vector<VarDecl*>& vars);
-
-    // Asigna offset y memSize en el stack frame (bin packing en slots de 8 bytes).
-    // Devuelve el tamaño total ocupado desde startOffset.
-    int assignOffsets(vector<VarDecl*>& vars, int startOffset);
+    void collectVars(Stm* stmt, vector<VarDecl*>& vars); // junta todas las VarDecl locales
+    int assignOffsets(vector<VarDecl*>& vars, int startOffset); // bin packing en stack
 
 public:
     TypeChecker();
     ~TypeChecker();
-    // Ejecuta el análisis; si hay errores imprime y termina el proceso (exit).
-    void typecheck(Program* program);
+    void typecheck(Program* program);      // entry point, exit(1) si hay errores
     void visit(Program* p) override;
     void visit(FunDecl* f) override;
     void visit(VarDecl* v) override;
@@ -211,12 +156,7 @@ public:
     void visit(StructTypeNode* e) override;
 };
 
-// ============================================================
-// ConstantFolding — Evaluación de expresiones constantes en compile-time
-// ============================================================
-// Recorre el AST y, cuando una expresión solo depende de literales,
-// la reemplaza por un único literal (marca isConstant / constantValue).
-// Reduce trabajo en codegen e interpretación.
+// ConstantFolding — evalúa expresiones constantes en compile-time
 class ConstantFolding : public Visitor {
 public:
     void visit(BinaryOpNode* e) override;
@@ -258,103 +198,70 @@ public:
     void visit(Program* p) override;
 };
 
-// ============================================================
-// GenCodeVisitor — Generador de código ensamblador x86-64 (sintaxis AT&T)
-// ============================================================
-// Emite instrucciones al ostream out. Usa resolvedType, offset, memSize
-// y binding que dejó TypeChecker en los nodos del AST.
+// GenCodeVisitor — genera ensamblador x86-64 (AT&T)
 class GenCodeVisitor : public Visitor {
 public:
-    // Clasificación de expresiones que pueden aparecer a la izquierda de '=' o tras '&'.
     enum class LValKind { Invalid, Id, Index, Member, Deref };
 
-    // Descripción de un l-value capturado durante el recorrido.
-    // binding apunta al VarDecl cuando kind == Id o Index sobre variable.
     struct LVal {
         LValKind kind = LValKind::Invalid;
-        string name;                    // nombre de variable (si aplica)
-        VarDecl* binding = nullptr;     // enlace al VarDecl del TypeChecker
-        Exp* index = nullptr;           // índice simple (legacy / 1D)
+        string name;                    // nombre de variable
+        VarDecl* binding = nullptr;     // enlace al VarDecl
+        Exp* index = nullptr;           // índice simple 1D
         vector<Exp*> indices;           // índices multidimensionales
-        vector<string> members;         // lista de miembros para nested structs
-        vector<bool> memberArrow;       // true si el miembro correspondiente se accedió vía ->
-        string structName;              // tipo del struct inicial para buscar offsets
-        bool isArrow = false;           // true si fue ptr->miembro (vs obj.miembro)
+        vector<string> members;         // lista de miembros anidados
+        vector<bool> memberArrow;       // true si el miembro se accedió vía ->
+        string structName;              // tipo del struct contenedor
+        bool isArrow = false;           // ptr->miembro vs obj.miembro
     };
 
 private:
-    ostream &out;                       // destino del ensamblador (.s)
+    ostream &out;                       // salida del .s
 
-    // Si no es nullptr, visit() de expresiones l-value escribe aquí en vez de cargar valor.
-    LVal *lvalTarget = nullptr;
+    LVal *lvalTarget = nullptr;         // captura l-values para asignaciones
+    LVal captureLVal(Exp *e);           // evalúa expresión como l-value
+    void storeTarget(const LVal &lv);   // guarda %rax en el l-value
+    bool directStoreForConstant(Exp* value, VarDecl* vd); // store directo si const
+    void bind_var_decl(VarDecl* v);     // registra offset de variable
 
-    // Evalúa una expresión como l-value y devuelve su descripción (para asignaciones).
-    LVal captureLVal(Exp *e);
-
-    // Guarda el valor actual de %rax en el l-value descrito por lv.
-    void storeTarget(const LVal &lv);
-
-    // Intenta emitir un store directo a variable si el valor es una constante.
-    // Retorna true si emitió; false para usar el camino normal via %rax.
-    bool directStoreForConstant(Exp* value, VarDecl* vd);
-
-    // Registra offset/memoria de una VarDecl en el mapa interno memoria.
-    void bind_var_decl(VarDecl* v);
-
-    // Tamaño en bytes de un elemento del arreglo (base del ArrayType o memSize).
     int array_elem_size(VarDecl* vd) const;
 
-    // Carga / guarda / dirección de una variable usando su binding (offset en %rbp).
-    void loadBinding(VarDecl* vd);
-    void storeBinding(VarDecl* vd);
-    void leaBinding(VarDecl* vd);
+    void loadBinding(VarDecl* vd);      // carga valor de variable a %rax
+    void storeBinding(VarDecl* vd);     // guarda %rax en variable
+    void leaBinding(VarDecl* vd);       // dirección de variable a %rax
+    string bindingMem(VarDecl* vd) const; // ej. "-12(%rbp)"
 
-    // Expresión de memoria AT&T: "-12(%rbp)" o "global(%rip)".
-    string bindingMem(VarDecl* vd) const;
-
-    // Arreglos: calcula dirección, carga o guarda con índices multidimensionales.
     void emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices);
     void emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices);
     void emitIndexedStore(VarDecl* vd, const vector<Exp*>& indices, const string& valueReg);
 
-    // Helpers según tamaño del operando: 1→b, 4→l, 8→q (convención x86-64).
-    string instrSuffix(int size);
-    string loadInstr(int size);   // ej. movzbq para char, movslq para int
-    string storeInstr(int size);  // ej. movb, movl, movq
+    string instrSuffix(int size);       // 1→b, 4→l, 8→q
+    string loadInstr(int size);         // movzbq, movslq, movq
+    string storeInstr(int size);        // movb, movl, movq
 
-    // Offset negativo en stack frame por nombre de variable local/parámetro.
-    unordered_map<string, int> memoria;
+    unordered_map<string, int> memoria;            // variable → offset en stack
+    unordered_map<string, bool> memoriaGlobal;      // variables globales
 
-    // Variables globales: solo se marca presencia; la dirección es nombre(%rip).
-    unordered_map<string, bool> memoriaGlobal;
-
-    // Metadatos de structs para acceso a miembros y sizeof en codegen.
-    unordered_map<string, int> structFieldCount;
+    unordered_map<string, int> structFieldCount;   // metadatos de structs
     unordered_map<string, unordered_map<string, int>> structFieldOffset;
     unordered_map<string, unordered_map<string, int>> structMemberSizes;
     unordered_map<string, unordered_map<string, Type*>> structMemberTypes;
 
-    // Literales string → índice de etiqueta .LstrN en .rodata
-    unordered_map<string, int> stringLabels;
+    unordered_map<string, int> stringLabels;       // string literal → .LstrN
+    int offset = -8;                               // próximo offset en stack
+    int labelcont = 0;                             // contador de etiquetas
 
-    // Próximo offset libre en el stack (negativo respecto a %rbp); avanza al declarar vars.
-    int offset = -8;
-
-    // Contador global para etiquetas únicas (.L0, .L1, ...) en saltos condicionales.
-    int labelcont = 0;
-
-    bool inFunction = false;          // true mientras se emite el cuerpo de una función
-    string currentBreakLabel;         // etiqueta destino del break más interno
-    string currentContinueLabel;      // etiqueta destino del continue más interno
-    string funcName;                  // nombre de la función que se está generando
-    string returnLabel;               // etiquapa común de salida de la función
-    bool usedPow = false;             // true si el código fuente usa el operador **
+    bool inFunction = false;
+    string currentBreakLabel;
+    string currentContinueLabel;
+    string funcName;                    // nombre de la función actual
+    string returnLabel;                 // etiqueta de retorno
+    bool usedPow = false;               // true si se usa **
 
 public:
     explicit GenCodeVisitor(ostream &out) : out(out) {}
 
-    // Punto de entrada: recorre el programa y escribe el .s completo.
-    void generate(Program *p);
+    void generate(Program *p);          // entry point
 
     void visit(BinaryOpNode *e) override;
     void visit(UnaryOpNode *e) override;
@@ -394,8 +301,7 @@ public:
     void visit(StructDecl *d) override;
     void visit(Program *p) override;
 
-    // Sobreescritura de la base Visitor: calculan dirección del l-value en %rax
-    // activando lvalTarget antes de visitar el hijo correspondiente.
+    // calculan dirección del l-value en %rax
     void computeAddress(UnaryOpNode *e) override;
     void computeAddress(IdentifierNode *e) override;
     void computeAddress(IndexNode *e) override;

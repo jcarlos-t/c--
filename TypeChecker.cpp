@@ -981,7 +981,8 @@ void TypeChecker::visit(BinaryOpNode* e) {
 //       *p → int (base del puntero)
 //       !true → bool
 void TypeChecker::visit(UnaryOpNode* e) {
-    e->operand->accept(this); Type* t = e->operand->resolvedType;
+    e->operand->accept(this); 
+    Type* t = e->operand->resolvedType;
     Type* resultType;
     switch (e->op) {
         case UnaryOp::MINUS:
