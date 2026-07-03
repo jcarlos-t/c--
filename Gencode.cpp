@@ -1336,6 +1336,15 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
                 out << "  cvtsd2si %xmm7, %eax\n";
                 out << "  movslq %eax, %rax\n";
             }
+        } else if (tgtType->ttype == Type::LONG && valType && valType->size() < 8) {
+            // El valor se calculó a un ancho menor (ej. int de 32 bits); las
+            // instrucciones de 32 bits en x86-64 solo ponen a cero la mitad
+            // alta de %rax, así que hay que extenderlo explícitamente según
+            // su signo antes de guardarlo en un slot de 64 bits (long long).
+            if (valType->isUnsigned)
+                out << "  movl %eax, %eax\n";
+            else
+                out << "  movslq %eax, %rax\n";
         }
     }
 

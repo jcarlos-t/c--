@@ -784,6 +784,12 @@ void TypeChecker::visit(BinaryOpNode* e) {
                     resultType = doubleType;
                 else if (left->ttype == Type::FLOAT || right->ttype == Type::FLOAT)
                     resultType = floatType;
+                else if (left->ttype == Type::LONG || right->ttype == Type::LONG) {
+                    bool uns = (left->ttype == Type::LONG && left->isUnsigned) ||
+                               (right->ttype == Type::LONG && right->isUnsigned);
+                    resultType = uns ? ulongType : longType;
+                } else if (left->isUnsigned || right->isUnsigned)
+                    resultType = uintType;
                 else
                     resultType = intType;
             } else {
@@ -1089,7 +1095,12 @@ void TypeChecker::visit(NumberLiteralNode* e) {
         e->resolvedType = ulongType;
         break;
     default:
-        e->resolvedType = intType;
+        // Un literal decimal sin sufijo que no cabe en un int de 32 bits
+        // se promueve a long long, igual que hace C (candidatos: int, long, long long).
+        if (e->value > 2147483647LL || e->value < -2147483648LL)
+            e->resolvedType = longType;
+        else
+            e->resolvedType = intType;
         break;
     }
 }
