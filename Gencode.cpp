@@ -95,7 +95,8 @@ void GenCodeVisitor::generate(Program *p) {
 
     // --- Sección .data ---
     out << ".data\n";
-    out << "print_fmt: .string \"%ld\\n\"\n";    // formato por defecto para printf
+    out << "print_fmt: .string \"%ld\\n\"\n";    // formato por defecto para printf (int/bool/ptr)
+    out << "print_fmt_float: .string \"%f\\n\"\n"; // formato por defecto para float/double
     out << "println_fmt: .string \"\\n\"\n";     // salto de línea
 
     // Variables globales (inicializadas a 0)
@@ -381,6 +382,11 @@ void GenCodeVisitor::storeBinding(VarDecl* vd) {
         }
         return;
     }
+    if (type && type->ttype == Type::BOOL) {
+        out << "  testq %rax, %rax\n";
+        out << "  setne %al\n";
+        out << "  movzbq %al, %rax\n";
+    }
     string reg = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
     out << "  " << storeInstr(size) << " " << reg << ", " << bindingMem(vd) << "\n";
 }
@@ -436,7 +442,11 @@ void GenCodeVisitor::emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices
         if (elemSize == 1) out << "  addq %r10, %rax\n";
         else if (elemSize == 2) out << "  leaq (%rax,%r10,2), %rax\n";
         else if (elemSize == 4) out << "  leaq (%rax,%r10,4), %rax\n";
-        else out << "  leaq (%rax,%r10,8), %rax\n";
+        else {
+            out << "  movq $" << elemSize << ", %r11\n";
+            out << "  imulq %r11, %r10\n";
+            out << "  addq %r10, %rax\n";
+        }
         return;
     }
 
@@ -448,12 +458,17 @@ void GenCodeVisitor::emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices
     else
         loadBinding(vd);
 
-    string scale;
-    if (elemSize == 1) scale = "";
-    else if (elemSize == 2) scale = ",2";
-    else if (elemSize == 4) scale = ",4";
-    else scale = ",8";
-    out << "  leaq (%rax,%rdi" << scale << "), %rax\n";
+    if (elemSize == 1) {
+        out << "  addq %rdi, %rax\n";
+    } else if (elemSize == 2) {
+        out << "  leaq (%rax,%rdi,2), %rax\n";
+    } else if (elemSize == 4) {
+        out << "  leaq (%rax,%rdi,4), %rax\n";
+    } else {
+        out << "  movq $" << elemSize << ", %rcx\n";
+        out << "  imulq %rcx, %rdi\n";
+        out << "  addq %rdi, %rax\n";
+    }
 }
 
 // ============================================================
@@ -485,12 +500,18 @@ void GenCodeVisitor::emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices) {
     else
         loadBinding(vd);
 
-    string scale;
-    if (elemSize == 1) scale = "";
-    else if (elemSize == 2) scale = ",2";
-    else if (elemSize == 4) scale = ",4";
-    else scale = ",8";
-    out << "  " << loadInstr(elemSize) << " (%rax,%rdi" << scale << "), %rax\n";
+    if (elemSize == 1) {
+        out << "  movzbq (%rax,%rdi), %rax\n";
+    } else if (elemSize == 2) {
+        out << "  movslq (%rax,%rdi,2), %rax\n";
+    } else if (elemSize == 4) {
+        out << "  movslq (%rax,%rdi,4), %rax\n";
+    } else {
+        out << "  movq $" << elemSize << ", %rcx\n";
+        out << "  imulq %rcx, %rdi\n";
+        out << "  addq %rdi, %rax\n";
+        out << "  " << loadInstr(elemSize) << " (%rax), %rax\n";
+    }
 }
 
 // ============================================================
@@ -503,6 +524,17 @@ void GenCodeVisitor::emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices) {
 void GenCodeVisitor::emitIndexedStore(VarDecl* vd, const vector<Exp*>& indices,
                                       const string& valueReg) {
     if (!vd || indices.empty()) return;
+    // Normalizar a 0/1 si el elemento es bool
+    Type* elemType = vd->resolvedType;
+    while (elemType && elemType->ttype == Type::ARRAY)
+        elemType = ((ArrayType*)elemType)->base;
+    bool isBoolStore = elemType && elemType->ttype == Type::BOOL;
+    if (isBoolStore) {
+        out << "  testq %rax, %rax\n";
+        out << "  setne %al\n";
+        out << "  movzbq %al, %rax\n";
+    }
+
     auto dims = arrayDimsFor(vd);
     int elemSize = array_elem_size(vd);
     string reg = valueReg;
@@ -532,12 +564,20 @@ void GenCodeVisitor::emitIndexedStore(VarDecl* vd, const vector<Exp*>& indices,
     if (elemSize == 1) valReg = "%cl";
     else if (elemSize == 4) valReg = "%ecx";
 
-    string scale;
-    if (elemSize == 1) scale = "";
-    else if (elemSize == 2) scale = ",2";
-    else if (elemSize == 4) scale = ",4";
-    else scale = ",8";
-    out << "  " << storeInstr(elemSize) << " " << valReg << ", (%rax,%rdi" << scale << ")\n";
+    if (elemSize == 1) {
+        out << "  movb %cl, (%rax,%rdi)\n";
+    } else if (elemSize == 2) {
+        out << "  movw %cx, (%rax,%rdi,2)\n";
+    } else if (elemSize == 4) {
+        out << "  movl %ecx, (%rax,%rdi,4)\n";
+    } else {
+        out << "  pushq %rcx\n";
+        out << "  movq $" << elemSize << ", %rcx\n";
+        out << "  imulq %rcx, %rdi\n";
+        out << "  addq %rdi, %rax\n";
+        out << "  popq %rcx\n";
+        out << "  " << storeInstr(elemSize) << " " << valReg << ", (%rax)\n";
+    }
 }
 
 // ============================================================
@@ -717,16 +757,21 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
 
         // If there are indices (member is an array), apply the index offset
         if (!lv.indices.empty()) {
+            out << "  pushq %rcx\n"; // save value
             out << "  pushq %rax\n"; // save base address of the array member
-            // Get elemSize from the resolved type of the final member
-            int elemSize = 4;
-            if (!lv.members.empty() &&
+            // strideElemSize: stride for index computation
+            // If binding is an array, indices index into it (e.g. arreglo[i].id)
+            int strideElemSize = 4;
+            if (lv.binding && lv.binding->resolvedType &&
+                lv.binding->resolvedType->ttype == Type::ARRAY) {
+                strideElemSize = array_elem_size(lv.binding);
+            } else if (!lv.members.empty() &&
                 structMemberTypes.count(baseStructName(structName)) &&
                 structMemberTypes[baseStructName(structName)].count(lv.members.back())) {
                 Type* mt = structMemberTypes[baseStructName(structName)][lv.members.back()];
                 if (mt && mt->ttype == Type::ARRAY) {
                     ArrayType* at = static_cast<ArrayType*>(mt);
-                    if (at->base) elemSize = at->base->size();
+                    if (at->base) strideElemSize = at->base->size();
                 }
             }
 
@@ -734,34 +779,121 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
             out << "  movq $0, %r10\n";
             for (size_t d = 0; d < lv.indices.size(); d++) {
                 lv.indices[d]->accept(this);
-                if (elemSize != 1) {
-                    out << "  movq $" << elemSize << ", %rcx\n";
+                if (strideElemSize != 1) {
+                    out << "  movq $" << strideElemSize << ", %rcx\n";
                     out << "  imulq %rcx, %rax\n";
                 }
                 out << "  addq %rax, %r10\n";
             }
             out << "  popq %rax\n";
             out << "  addq %r10, %rax\n";
+            out << "  popq %rcx\n"; // restore value
 
-            // Store value (%rcx) at final address
-            string reg = (elemSize == 1) ? "%cl" : (elemSize == 4) ? "%ecx" : "%rcx";
-            out << "  " << storeInstr(elemSize) << " " << reg << ", (%rax)\n";
+            // Store value (%rcx) at final address — use member size, not stride
+            int storeSize = 4;
+            if (!lv.members.empty()) {
+                storeSize = structMemberSizes[baseStructName(
+                    lv.structName.empty() ? structName : lv.structName)][lv.members.back()];
+                Type* mt = structMemberTypes[baseStructName(
+                    lv.structName.empty() ? structName : lv.structName)][lv.members.back()];
+                if (mt && mt->ttype == Type::BOOL) {
+                    out << "  testq %rcx, %rcx\n";
+                    out << "  setne %cl\n";
+                    out << "  movzbq %cl, %rcx\n";
+                }
+            }
+            string reg = (storeSize == 1) ? "%cl" : (storeSize == 4) ? "%ecx" : "%rcx";
+            out << "  " << storeInstr(storeSize) << " " << reg << ", (%rax)\n";
         } else {
             // No indices: store at the final member address (%rax = &member)
             int size = structMemberSizes[baseStructName(structName)][lv.members.back()];
+            Type* mt = structMemberTypes[baseStructName(structName)][lv.members.back()];
+            if (mt && mt->ttype == Type::BOOL) {
+                out << "  testq %rcx, %rcx\n";
+                out << "  setne %cl\n";
+                out << "  movzbq %cl, %rcx\n";
+            }
             string reg = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
             out << "  " << storeInstr(size) << " " << reg << ", (%rax)\n";
         }
         break;
     }
-    case LValKind::Deref:
+    case LValKind::Deref: {
         // *p = val: pop dirección previamente pusheada en visit(UnaryOp)
+        int size = lv.storeSize;
+        string valReg = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
         out << "  popq %rbx\n";
-        out << "  movq %rax, (%rbx)\n";
+        out << "  " << storeInstr(size) << " " << valReg << ", (%rbx)\n";
         break;
+    }
     default:
         throw runtime_error("Asignación a expresión que no es lvalue");
     }
+}
+
+// ============================================================
+// directStoreForConstant — store directo a variable con valor constante
+// ============================================================
+// Si `value` es un literal o una expresión ya evaluada por ConstantFolding
+// (isConstant == true), emite el store directo a memoria usando la constante
+// como inmediato, sin pasar por %rax. Retorna true si emitió, false en caso
+// contrario (y se usa el camino normal: eval -> %rax -> store).
+//
+// Casos cubiertos:
+//   IntegerLiteral, BoolLiteral, CharLiteral, FloatLiteral, isConstant
+// Destinos cubiertos:
+//   int (4B), char/bool (1B), long (8B), float (4B)
+//   double no aplica: imm64 no puede ir directo a memoria en x86-64.
+//
+//   Ej: x = 5;       -> movl $5, -8(%rbp)
+//       int x = 5;   -> movl $5, -8(%rbp)
+//       float f = 3.14; -> movl $0x4048f5c3, -4(%rbp)
+bool GenCodeVisitor::directStoreForConstant(Exp* value, VarDecl* vd) {
+    if (!value || !vd || !vd->resolvedType) return false;
+
+    long long intVal = 0;
+    unsigned int floatBits = 0;
+    bool hasFloatBits = false;
+
+    if (auto* p = dynamic_cast<IntegerLiteralNode*>(value)) {
+        intVal = (long long)p->value;
+    } else if (auto* p = dynamic_cast<BoolLiteralNode*>(value)) {
+        intVal = p->value ? 1 : 0;
+    } else if (auto* p = dynamic_cast<CharLiteralNode*>(value)) {
+        intVal = (int)p->value;
+    } else if (auto* p = dynamic_cast<FloatLiteralNode*>(value)) {
+        union { float f; unsigned int i; } fc;
+        fc.f = (float)p->value;
+        floatBits = fc.i;
+        hasFloatBits = true;
+        intVal = (long long)fc.i;
+    } else if (value->isConstant) {
+        intVal = (long long)value->constantValue;
+    } else {
+        return false;
+    }
+
+    Type* tt = vd->resolvedType;
+    int size = vd->memSize > 0 ? vd->memSize : tt->size();
+    string mem = bindingMem(vd);
+
+    if (tt->ttype == Type::FLOAT) {
+        if (!hasFloatBits) {
+            union { float f; unsigned int i; } fc;
+            fc.f = (float)intVal;
+            floatBits = fc.i;
+        }
+        out << "  movl $0x" << hex << floatBits << dec << ", " << mem << "\n";
+        return true;
+    }
+
+    if (tt->ttype == Type::DOUBLE) {
+        return false;
+    }
+
+    string instr = (size == 1) ? "movb" : (size == 4) ? "movl" : "movq";
+    out << "  " << instr << " $" << intVal << ", " << mem << "\n";
+    return true;
 }
 
 // ============================================================
@@ -780,11 +912,16 @@ void GenCodeVisitor::visit(IntegerLiteralNode *e) {
 // Float: se empaqueta como bits IEEE-754 en %eax y se extiende a %rax.
 // No usa %xmm aquí para mantener la convención “resultado en %rax”.
 void GenCodeVisitor::visit(FloatLiteralNode *e) {
-    // Empaqueta float como entero de 32 bits y lo carga
-    union { float f; unsigned int i; } fc;
-    fc.f = (float)e->value;
-    out << "  movl $0x" << hex << fc.i << dec << ", %eax\n";
-    out << "  movslq %eax, %rax\n";
+    if (e->resolvedType && e->resolvedType->ttype == Type::DOUBLE) {
+        union { double d; unsigned long long i; } dc;
+        dc.d = e->value;
+        out << "  movq $0x" << hex << dc.i << dec << ", %rax\n";
+    } else {
+        union { float f; unsigned int i; } fc;
+        fc.f = (float)e->value;
+        out << "  movl $0x" << hex << fc.i << dec << ", %eax\n";
+        out << "  movslq %eax, %rax\n";
+    }
 }
 
 void GenCodeVisitor::visit(BoolLiteralNode *e) {
@@ -829,6 +966,12 @@ void GenCodeVisitor::visit(IdentifierNode *e) {
         lvalTarget->binding = e->binding;
         return;
     }
+    // Array-to-pointer decay: si la variable es arreglo, cargamos su dirección
+    // en lugar de su valor (el typechecker cambió resolvedType a PointerType).
+    if (e->binding && e->binding->resolvedType->ttype == Type::ARRAY) {
+        leaBinding(e->binding);
+        return;
+    }
     loadBinding(e->binding);
 }
 
@@ -850,7 +993,21 @@ void GenCodeVisitor::visit(IdentifierNode *e) {
 void GenCodeVisitor::visit(BinaryOpNode *e) {
     // Si constante (después de constant folding), emitir directamente
     if (e->isConstant) {
-        out << "  movq $" << (long long)e->constantValue << ", %rax\n";
+        double val = e->constantValue;
+        if (e->resolvedType && isFloatSemanticType(e->resolvedType)) {
+            if (e->resolvedType->ttype == Type::DOUBLE) {
+                union { double d; unsigned long long i; } dc;
+                dc.d = val;
+                out << "  movq $0x" << hex << dc.i << dec << ", %rax\n";
+            } else {
+                union { float f; unsigned int i; } fc;
+                fc.f = (float)val;
+                out << "  movl $0x" << hex << fc.i << dec << ", %eax\n";
+                out << "  movslq %eax, %rax\n";
+            }
+        } else {
+            out << "  movq $" << (long long)val << ", %rax\n";
+        }
         return;
     }
 
@@ -1076,17 +1233,43 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
         string reg1 = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
         string reg2 = (size == 1) ? "%cl" : (size == 4) ? "%ecx" : "%rcx";
 
+        bool isUnsigned = (leftType && leftType->isUnsigned) || (rightType && rightType->isUnsigned);
+
         switch (e->op) {
         case BinaryOp::ADD: out << "  add" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
         case BinaryOp::SUB: out << "  sub" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
-        case BinaryOp::MUL: out << "  imul" << suffix << " " << reg2 << ", " << reg1 << "\n"; break;
+        case BinaryOp::MUL: 
+            if (isUnsigned) {
+                // Unsigned multiply: single-operand form (uses %rdx:%rax)
+                // For 64-bit, we need to handle it differently
+                if (size == 8) {
+                    // For 64-bit unsigned, we use mulq, which takes one operand
+                    out << "  mulq " << reg2 << "\n";
+                } else {
+                    // For smaller sizes, we can use the single-operand form too
+                    out << "  mul" << suffix << " " << reg2 << "\n";
+                }
+            } else {
+                out << "  imul" << suffix << " " << reg2 << ", " << reg1 << "\n";
+            }
+            break;
         case BinaryOp::DIV:
-            out << "  cqto\n";          // sign-extend %rax → %rdx:%rax
-            out << "  idiv" << suffix << " " << reg2 << "\n";
+            if (isUnsigned) {
+                out << "  xorq %rdx, %rdx\n";  // zero-extend %rax → %rdx:%rax
+                out << "  div" << suffix << " " << reg2 << "\n";
+            } else {
+                out << "  cqto\n";          // sign-extend %rax → %rdx:%rax
+                out << "  idiv" << suffix << " " << reg2 << "\n";
+            }
             break;
         case BinaryOp::MOD:
-            out << "  cqto\n";
-            out << "  idiv" << suffix << " " << reg2 << "\n";
+            if (isUnsigned) {
+                out << "  xorq %rdx, %rdx\n";
+                out << "  div" << suffix << " " << reg2 << "\n";
+            } else {
+                out << "  cqto\n";
+                out << "  idiv" << suffix << " " << reg2 << "\n";
+            }
             out << "  movq %rdx, %rax\n";  // módulo queda en %rdx
             break;
         case BinaryOp::POW:
@@ -1110,32 +1293,38 @@ void GenCodeVisitor::visit(BinaryOpNode *e) {
         case BinaryOp::LT:
             out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
             out << "  movq $0, %rax\n";
-            out << "  setl %al\n";
+            out << "  set" << (isUnsigned ? "b" : "l") << " %al\n";
             out << "  movzbq %al, %rax\n";
             break;
         case BinaryOp::GT:
             out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
             out << "  movq $0, %rax\n";
-            out << "  setg %al\n";
+            out << "  set" << (isUnsigned ? "a" : "g") << " %al\n";
             out << "  movzbq %al, %rax\n";
             break;
         case BinaryOp::LE:
             out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
             out << "  movq $0, %rax\n";
-            out << "  setle %al\n";
+            out << "  set" << (isUnsigned ? "be" : "le") << " %al\n";
             out << "  movzbq %al, %rax\n";
             break;
         case BinaryOp::GE:
             out << "  cmp" << suffix << " " << reg2 << ", " << reg1 << "\n";
             out << "  movq $0, %rax\n";
-            out << "  setge %al\n";
+            out << "  set" << (isUnsigned ? "ae" : "ge") << " %al\n";
             out << "  movzbq %al, %rax\n";
             break;
         case BinaryOp::LOG_AND:
             out << "  and" << suffix << " " << reg2 << ", " << reg1 << "\n";
+            out << "  movq $0, %rax\n";
+            out << "  setne %al\n";
+            out << "  movzbq %al, %rax\n";
             break;
         case BinaryOp::LOG_OR:
             out << "  or" << suffix << " " << reg2 << ", " << reg1 << "\n";
+            out << "  movq $0, %rax\n";
+            out << "  setne %al\n";
+            out << "  movzbq %al, %rax\n";
             break;
         }
     }
@@ -1156,6 +1345,7 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
     // para que storeTarget haga pop y escriba ahí.
     if (lvalTarget && e->op == UnaryOp::DEREF) {
         lvalTarget->kind = LValKind::Deref;
+        lvalTarget->storeSize = e->resolvedType ? e->resolvedType->size() : 8;
         lvalTarget = nullptr;
         e->operand->accept(this);
         out << "  pushq %rax\n";  // dirección será popeada por storeTarget
@@ -1164,7 +1354,27 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
 
     // Constante (después de constant folding)
     if (e->isConstant) {
-        out << "  movq $" << (long long)e->constantValue << ", %rax\n";
+        double val = e->constantValue;
+        if (e->resolvedType && isFloatSemanticType(e->resolvedType)) {
+            if (e->resolvedType->ttype == Type::DOUBLE) {
+                union { double d; unsigned long long i; } dc;
+                dc.d = val;
+                out << "  movq $0x" << hex << dc.i << dec << ", %rax\n";
+            } else {
+                union { float f; unsigned int i; } fc;
+                fc.f = (float)val;
+                out << "  movl $0x" << hex << fc.i << dec << ", %eax\n";
+                out << "  movslq %eax, %rax\n";
+            }
+        } else {
+            out << "  movq $" << (long long)val << ", %rax\n";
+        }
+        return;
+    }
+
+    // ADDR: calcular dirección del operando (no evaluar como r-value)
+    if (e->op == UnaryOp::ADDR) {
+        e->operand->computeAddress(this);
         return;
     }
 
@@ -1179,7 +1389,25 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
 
     switch (e->op) {
     case UnaryOp::MINUS:
-        out << "  neg" << suffix << " " << reg << "\n";
+        // Para float/double: negación SSE (flip sign bit via xorps/xorpd)
+        if (e->resolvedType && isFloatSemanticType(e->resolvedType)) {
+            if (e->resolvedType->ttype == Type::DOUBLE) {
+                out << "  movq %rax, %xmm0\n";
+                out << "  movabsq $0x8000000000000000, %rcx\n";
+                out << "  movq %rcx, %xmm7\n";
+                out << "  xorpd %xmm7, %xmm0\n";
+                out << "  movq %xmm0, %rax\n";
+            } else {
+                out << "  movd %eax, %xmm0\n";
+                out << "  movl $0x80000000, %ecx\n";
+                out << "  movd %ecx, %xmm7\n";
+                out << "  xorps %xmm7, %xmm0\n";
+                out << "  movd %xmm0, %eax\n";
+                out << "  movslq %eax, %rax\n";
+            }
+        } else {
+            out << "  neg" << suffix << " " << reg << "\n";
+        }
         break;
     case UnaryOp::LOG_NOT:
         out << "  cmpq $0, %rax\n";
@@ -1222,14 +1450,13 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
         out << "  popq %rax\n";
         break;
     }
-    case UnaryOp::ADDR:
-        // &x: dirección de variable
-        if (auto *id = dynamic_cast<IdentifierNode *>(e->operand))
-            leaBinding(id->binding);
+    case UnaryOp::DEREF: {
+        // *p: cargar valor apuntado, tamaño según tipo base del puntero
+        int derefSize = e->resolvedType ? e->resolvedType->size() : 8;
+        out << "  " << loadInstr(derefSize) << " (%rax), %rax\n";
         break;
-    case UnaryOp::DEREF:
-        // *p: cargar valor apuntado
-        out << "  movq (%rax), %rax\n";
+    }
+    default:
         break;
     }
 }
@@ -1248,6 +1475,13 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
 void GenCodeVisitor::visit(AssignmentNode *e) {
     LVal target = captureLVal(e->target);
 
+    // Atajo: si el destino es una variable simple y el valor es constante,
+    // emitir el store directo (sin pasar por %rax).
+    if (target.kind == LValKind::Id && target.binding) {
+        if (directStoreForConstant(e->value, target.binding))
+            return;
+    }
+
     e->value->accept(this); // value in %rax
 
     // Promociones automáticas según el tipo del destino
@@ -1255,14 +1489,21 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
         Type* tgtType = target.binding->resolvedType;
         Type* valType = e->value->resolvedType;
         if (tgtType && tgtType->ttype == Type::DOUBLE) {
-            if (!valType || valType->ttype == Type::FLOAT || valType->ttype == Type::INT ||
-                valType->ttype == Type::CHAR) {
+            if (valType && valType->ttype == Type::FLOAT) {
                 out << "  movd %eax, %xmm7\n";
                 out << "  cvtss2sd %xmm7, %xmm7\n";  // float → double
                 out << "  movq %xmm7, %rax\n";
+            } else if (!valType || valType->ttype == Type::INT || valType->ttype == Type::CHAR) {
+                out << "  cvtsi2sd %rax, %xmm7\n";   // int → double
+                out << "  movq %xmm7, %rax\n";
             }
         } else if (tgtType && tgtType->ttype == Type::FLOAT) {
-            if (!valType || valType->ttype == Type::INT || valType->ttype == Type::CHAR) {
+            if (valType && valType->ttype == Type::DOUBLE) {
+                out << "  movq %rax, %xmm7\n";
+                out << "  cvtsd2ss %xmm7, %xmm7\n";  // double → float
+                out << "  movd %xmm7, %eax\n";
+                out << "  movslq %eax, %rax\n";
+            } else if (!valType || valType->ttype == Type::INT || valType->ttype == Type::CHAR) {
                 out << "  cvtsi2ss %eax, %xmm7\n";   // int → float
                 out << "  movd %xmm7, %eax\n";
                 out << "  movslq %eax, %rax\n";
@@ -1291,9 +1532,18 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
 //   Ej: printf("%d %f", x, y)
 //       → formato en %rdi, x en %rsi, y en %xmm0, %rax = 1
 void GenCodeVisitor::visit(PrintfNode *e) {
-    // Generar label para el formato
+    // Seleccionar formato por defecto según el tipo del primer argumento
     string fmtLabel = "print_fmt";
-    if (e->format != "%ld") {
+    if (e->format == "%ld" && !e->args.empty()) {
+        // Sin formato explícito: elegir según el tipo del primer argumento
+        if (e->args[0]->resolvedType) {
+            Type* t = e->args[0]->resolvedType;
+            if (t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE)
+                fmtLabel = "print_fmt_float";
+            else
+                fmtLabel = "print_fmt";
+        }
+    } else if (e->format != "%ld") {
         auto it = stringLabels.find(e->format);
         int lbl;
         if (it == stringLabels.end()) {
@@ -1317,13 +1567,20 @@ void GenCodeVisitor::visit(PrintfNode *e) {
 
         // Detectar si el argumento es float/double
         bool isFloat = false;
+        Type* argType = nullptr;
         if (e->args[i]->resolvedType) {
-            Type* t = e->args[i]->resolvedType;
-            isFloat = (t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE);
+            argType = e->args[i]->resolvedType;
+            isFloat = (argType->ttype == Type::FLOAT || argType->ttype == Type::DOUBLE);
         }
 
         if (isFloat && i < xmmRegs.size()) {
-            out << "  movq %rax, " << xmmRegs[i] << "\n";
+            // printf %f espera double; convertir float→double si es necesario
+            if (argType && argType->ttype == Type::FLOAT) {
+                out << "  movd %eax, " << xmmRegs[i] << "\n";
+                out << "  cvtss2sd " << xmmRegs[i] << ", " << xmmRegs[i] << "\n";
+            } else {
+                out << "  movq %rax, " << xmmRegs[i] << "\n";
+            }
         } else if (i < intRegs.size()) {
             out << "  movq %rax, " << intRegs[i] << "\n";
         } else {
@@ -1643,37 +1900,10 @@ void GenCodeVisitor::visit(MallocNode *e) {
 // -----------------------------------------------------------
 // visit(SizeOfNode) — sizeof
 // -----------------------------------------------------------
-// Genera el tamaño en bytes de un tipo como constante en %rax.
-//   void/char/bool → 1
-//   int/float      → 4
-//   double         → 8
-//   puntero        → 8
-//   struct         → n (calculado como campos * 8)
+// Genera el tamaño en bytes de un tipo o expresión como constante en %rax.
+// TypeChecker ya calculó este valor en constantValue.
 void GenCodeVisitor::visit(SizeOfNode *e) {
-    if (auto *pt = dynamic_cast<PrimitiveTypeNode *>(e->target_type)) {
-        switch (pt->prim) {
-        case PrimitiveTypeNode::VOID:
-        case PrimitiveTypeNode::CHAR:
-        case PrimitiveTypeNode::BOOL: out << "  movq $1, %rax\n"; return;
-        case PrimitiveTypeNode::INT:
-        case PrimitiveTypeNode::FLOAT: out << "  movq $4, %rax\n"; return;
-        case PrimitiveTypeNode::DOUBLE:
-        case PrimitiveTypeNode::LONG: out << "  movq $8, %rax\n"; return;
-        }
-    }
-    if (dynamic_cast<PointerTypeNode *>(e->target_type))
-        out << "  movq $8, %rax\n";
-    else if (auto *st = dynamic_cast<StructTypeNode *>(e->target_type)) {
-        // Aproximación: nº de campos × 8. No usa memberSizes reales del struct.
-        auto it = structFieldCount.find(st->name);
-        if (it != structFieldCount.end()) {
-            out << "  movq $" << (it->second * 8) << ", %rax\n";
-        } else {
-            out << "  movq $0, %rax\n";
-        }
-    }
-    else
-        out << "  movq $0, %rax\n";
+    out << "  movq $" << (long long)e->constantValue << ", %rax\n";
 }
 
 // -----------------------------------------------------------
@@ -1971,15 +2201,28 @@ void GenCodeVisitor::visit(VarDecl *d) {
     bind_var_decl(d);
 
     if (d->initializer) {
+        if (directStoreForConstant(d->initializer, d))
+            return;
+        
         d->initializer->accept(this);
-        // Promover a double si es necesario
+        // Promover/convertir según el tipo del destino
         if (d->resolvedType && d->resolvedType->ttype == Type::DOUBLE) {
             Type* initType = d->initializer->resolvedType;
-            if (!initType || initType->ttype == Type::FLOAT || initType->ttype == Type::INT ||
-                initType->ttype == Type::CHAR) {
+            if (initType && initType->ttype == Type::FLOAT) {
                 out << "  movd %eax, %xmm7\n";
-                out << "  cvtss2sd %xmm7, %xmm7\n";
+                out << "  cvtss2sd %xmm7, %xmm7\n";  // float → double
                 out << "  movq %xmm7, %rax\n";
+            } else if (!initType || initType->ttype == Type::INT || initType->ttype == Type::CHAR) {
+                out << "  cvtsi2sd %rax, %xmm7\n";   // int → double
+                out << "  movq %xmm7, %rax\n";
+            }
+        } else if (d->resolvedType && d->resolvedType->ttype == Type::FLOAT) {
+            Type* initType = d->initializer->resolvedType;
+            if (initType && initType->ttype == Type::DOUBLE) {
+                out << "  movq %rax, %xmm7\n";
+                out << "  cvtsd2ss %xmm7, %xmm7\n";  // double → float
+                out << "  movd %xmm7, %eax\n";
+                out << "  movslq %eax, %rax\n";
             }
         }
         storeBinding(d);

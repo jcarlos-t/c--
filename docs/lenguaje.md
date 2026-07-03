@@ -5,7 +5,27 @@ Compilado a x86-64 (AT&T/GAS) vía recursive descent + triple dispatch.
 
 ---
 
-## 1. Gramática
+## 1. Características
+
+### 1.1 Soportadas (Esencia de C)
+- **Tipos de datos básicos**: `int`, `char`, `float`, `double`, `long long`, `void`, `unsigned`.
+- **Tipos definidos por el usuario**: `struct`.
+- **Modificadores**: `const`.
+- **Variables y manejo de alcance (scope)**: Locales y globales.
+- **Funciones y Estructuras de control**: `if`, `for`, `while`, `switch`, `do while`.
+- **Arreglos y Cadenas**: Arreglos de tipos básicos, strings basados en arreglos de `char`.
+- **Arreglos multidimensionales**: Matrices contiguas en memoria.
+- **Punteros y memoria dinámica**: `malloc`, `free`, aritmética de punteros.
+- **Conversión y promoción automática**: Conversiones implícitas (ej. `int` a `float`).
+
+### 1.2 NO soportadas (Lo que C NO tiene)
+- **Tipos genéricos y plantillas (templates)**: No existe metaprogramación.
+- **Inferencia de tipos**: No existe `auto` o `var` para deducción de tipos.
+- **Funciones lambda**: No hay funciones anónimas nativas.
+
+---
+
+## 2. Gramática
 
 ```
 // ============================================================
@@ -130,7 +150,8 @@ digit           = "0".."9"
 | float     | `float`      | 4      | Punto flotante precisión simple (SSE)             |
 | double    | `double`     | 8      | Punto flotante precisión doble (SSE)              |
 | bool      | `bool`       | 1      | `true` = 1, `false` = 0                           |
-| unsigned  | `unsigned`   | 4      | Modificador sin signo (mapea a `int`)             |
+| unsigned  | `unsigned`   | 4      | Entero sin signo                                  |
+| const     | `const`      | —      | Calificador de solo lectura                       |
 | puntero   | `T*`         | 8      | `&x`, `*p`, `p->m`, `arr[i]` sobre puntero       |
 | arreglo   | `T[n]`       | n×|T|  | Multidimensional: `int m[2][3]`                   |
 | struct    | `struct`     | ∑      | Declaración: `struct Nombre { ... };`             |

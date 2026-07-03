@@ -1,0 +1,37 @@
+struct Elemento {
+    int id;
+    int valor;
+};
+
+int main() {
+    struct Elemento arreglo[3];
+    struct Elemento* ptr_base;
+    struct Elemento* ptr_aux;
+    int i;
+
+    // 1. Inicializar el bloque de memoria contiguo
+    arreglo[0].id = 10;
+    arreglo[0].valor = 100;
+    
+    arreglo[1].id = 20;
+    arreglo[1].valor = 200;
+    
+    arreglo[2].id = 30;
+    arreglo[2].valor = 300;
+
+    // 2. Apuntar el puntero a la base del arreglo
+    ptr_base = &arreglo[0];
+
+    // 3. Simular "aritmética de punteros" usando indexación sobre el puntero base
+    // Esto obliga al compilador a calcular: dirección_base + (índice * sizeof(struct Elemento))
+    for (i = 0; i < 3; i = i + 1) {
+        // Asignamos la dirección de la celda calculada a otro puntero (Coerción de puntero)
+        ptr_aux = &ptr_base[i]; 
+        
+        // Accedemos a los datos mediante el operador flecha
+        printf(ptr_aux->id);    // Esperado secuencial: 10, 20, 30
+        printf(ptr_aux->valor); // Esperado secuencial: 100, 200, 300
+    }
+
+    return 0;
+}

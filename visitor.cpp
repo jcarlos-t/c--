@@ -22,9 +22,6 @@ void BoolLiteralNode::accept(Visitor* v) { v->visit(this); }
 void CharLiteralNode::accept(Visitor* v) { v->visit(this); }
 void StringLiteralNode::accept(Visitor* v) { v->visit(this); }
 void PrintfNode::accept(Visitor* v) { v->visit(this); }
-void PrimitiveTypeNode::accept(Visitor* v) { v->visit(this); }
-void PointerTypeNode::accept(Visitor* v) { v->visit(this); }
-void StructTypeNode::accept(Visitor* v) { v->visit(this); }
 void Body::accept(Visitor* v) { v->visit(this); }
 void ExprStmtNode::accept(Visitor* v) { v->visit(this); }
 void IfStmt::accept(Visitor* v) { v->visit(this); }

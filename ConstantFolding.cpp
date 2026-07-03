@@ -170,11 +170,9 @@ void ConstantFolding::visit(ArrowAccessNode* e) {
 }
 
 void ConstantFolding::visit(SizeOfNode* e) {
-    e->isConstant = true;
-    if (e->target_type && e->target_type->resolvedType)
-        e->constantValue = e->target_type->resolvedType->size();
-    else
-        e->constantValue = 0.0;
+    if (e->kind == SizeOfNode::EXPR_ARG) {
+        e->expr_arg->accept(this);
+    }
 }
 
 void ConstantFolding::visit(PrintfNode* e) {
@@ -184,16 +182,13 @@ void ConstantFolding::visit(PrintfNode* e) {
     e->isConstant = false;
 }
 
-void ConstantFolding::visit(PrimitiveTypeNode* e) {
-    e->isConstant = false;
+void ConstantFolding::visit(PrimitiveTypeNode*) {
 }
 
-void ConstantFolding::visit(PointerTypeNode* e) {
-    e->isConstant = false;
+void ConstantFolding::visit(PointerTypeNode*) {
 }
 
-void ConstantFolding::visit(StructTypeNode* e) {
-    e->isConstant = false;
+void ConstantFolding::visit(StructTypeNode*) {
 }
 
 void ConstantFolding::visit(Body* s) {
@@ -267,8 +262,14 @@ void ConstantFolding::visit(FreeStmt* s) {
 }
 
 void ConstantFolding::visit(VarDecl* d) {
+    for (auto sz : d->array_sizes) {
+        sz->accept(this);
+    }
     if (d->initializer) {
         d->initializer->accept(this);
+    }
+    for (auto init : d->init_list) {
+        init->accept(this);
     }
 }
 

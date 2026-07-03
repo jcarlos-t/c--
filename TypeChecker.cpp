@@ -53,7 +53,8 @@ namespace {
 //       float → false double → false
 //       bool → false   void → false
 bool is_integral_type(Type* t) {
-    return t->ttype == Type::INT || t->ttype == Type::CHAR || t->ttype == Type::LONG;
+    return t->ttype == Type::INT || t->ttype == Type::CHAR || t->ttype == Type::LONG
+           || t->ttype == Type::BOOL;
 }
 
 // is_arithmetic_type: true si el tipo es aritmético
@@ -75,7 +76,7 @@ bool is_arithmetic_type(Type* t) {
 //   Ej: int → true   char → true
 //       float → false  double → false
 bool is_switch_index_type(Type* t) {
-    return t->ttype == Type::INT || t->ttype == Type::CHAR;
+    return t->ttype == Type::INT || t->ttype == Type::CHAR || t->ttype == Type::BOOL;
 }
 
 } // namespace
@@ -128,35 +129,54 @@ TypeChecker::~TypeChecker() {
 //   int, char, float, double, bool, void → tipo primitivo singleton
 //   int*, char**, etc. → PointerType(base)
 //   struct Persona → StructType("Persona") buscado en struct_types
-//   Nombre<T1, T2> → TemplateTypeNode → instantiate_template()
-//   typename T (NamedTypeNode) → error (debe ser resuelto por template)
 //
 //   Ej: type_from_ast(PrimitiveTypeNode(INT)) → intType
 //       type_from_ast(PointerTypeNode(IntTypeNode)) → PointerType(IntType)
-Type* TypeChecker::type_from_ast(Exp* t) {
+Type* TypeChecker::type_from_ast(TypeNode* t) {
+    Type* res = nullptr;
     // --- Tipos primitivos: void, int, char, float, double, bool, long ---
     if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(t)) {
         switch (pt->prim) {
-            case PrimitiveTypeNode::VOID:   return voidType;
-            case PrimitiveTypeNode::INT:    return intType;
-            case PrimitiveTypeNode::CHAR:   return charType;
-            case PrimitiveTypeNode::FLOAT:  return floatType;
-            case PrimitiveTypeNode::DOUBLE: return doubleType;
-            case PrimitiveTypeNode::BOOL:   return boolType;
-            case PrimitiveTypeNode::LONG:   return longType;
+            case PrimitiveTypeNode::VOID:   res = voidType; break;
+            case PrimitiveTypeNode::INT:    res = intType; break;
+            case PrimitiveTypeNode::CHAR:   res = charType; break;
+            case PrimitiveTypeNode::FLOAT:  res = floatType; break;
+            case PrimitiveTypeNode::DOUBLE: res = doubleType; break;
+            case PrimitiveTypeNode::BOOL:   res = boolType; break;
+            case PrimitiveTypeNode::LONG:   res = longType; break;
         }
+        if (res && (pt->isUnsigned || pt->isConst)) {
+            // Clonar tipo para aplicar modificadores (evitar modificar singletons)
+            Type* clone = new Type(res->ttype);
+            clone->isUnsigned = pt->isUnsigned;
+            clone->isConst = pt->isConst;
+            typeCache.push_back(clone);
+            res = clone;
+        }
+        return res;
     }
     // --- Punteros: T* busca el tipo base recursivamente ---
     if (auto* pt = dynamic_cast<PointerTypeNode*>(t)) {
         Type* base = type_from_ast(pt->base);
         PointerType* ptr = new PointerType(base);
+        ptr->isConst = pt->isConst;
         typeCache.push_back(ptr);
         return ptr;
     }
     // --- Structs: busca el StructType por nombre ---
     if (auto* st = dynamic_cast<StructTypeNode*>(t)) {
         auto it = struct_types.find(st->name);
-        if (it != struct_types.end()) return it->second;
+        if (it != struct_types.end()) {
+            res = it->second;
+            if (st->isConst) {
+                StructType* clone = new StructType(st->name);
+                clone->members = ((StructType*)res)->members;
+                clone->isConst = true;
+                typeCache.push_back(clone);
+                res = clone;
+            }
+            return res;
+        }
         error("struct '" + st->name + "' no declarado.");
         return intType;
     }
@@ -196,17 +216,22 @@ void TypeChecker::bind_var_decl(VarDecl* v) {
 //       check_assign(double, int) → true (promoción)
 //       check_assign(char, int) → true
 bool TypeChecker::check_assign(Type* target, Type* value) {
-    if (target->match(value)) return true;
+    // Check for exact match (ignoring isConst for assignability, since const is checked elsewhere)
+    if (target->ttype == value->ttype && target->isUnsigned == value->isUnsigned) return true;
     // Cualquier puntero a cualquier puntero (coerción laxa; no compara base).
     if (target->ttype == Type::POINTER && value->ttype == Type::POINTER) return true;
-    // Truncamiento / promoción entre char, int, long
+    // Truncamiento / promoción entre char, int, long (ignoring unsigned for implicit conversions like C)
     if (target->ttype == Type::CHAR && (value->ttype == Type::INT || value->ttype == Type::LONG)) return true;
     if (target->ttype == Type::INT && (value->ttype == Type::CHAR || value->ttype == Type::LONG)) return true;
     if (target->ttype == Type::LONG && is_integral_type(value)) return true;
+    // Allow assigning between same type even if unsigned differs (like C does implicitly)
+    if (target->ttype == value->ttype && is_integral_type(target)) return true;
     // Promoción: int/char/long → float o double
     if ((target->ttype == Type::FLOAT || target->ttype == Type::DOUBLE) && is_integral_type(value)) return true;
     // Promoción: float → double
     if (target->ttype == Type::DOUBLE && value->ttype == Type::FLOAT) return true;
+    // Narrowing: double → float (C compatible)
+    if (target->ttype == Type::FLOAT && value->ttype == Type::DOUBLE) return true;
     // Conversión implícita: int/char/long → bool
     if (target->ttype == Type::BOOL && is_integral_type(value)) return true;
     // Conversión implícita: bool → int/char/long
@@ -353,11 +378,11 @@ void TypeChecker::visit(FunDecl* f) {
                 error("no se puede declarar variable de tipo void.");
                 t = intType;
             }
-            // Wrap en ArrayType si tiene dimensiones de arreglo
+            // Wrap en ArrayType si tiene dimensiones de arreglo (orden inverso)
             // Ej: int a[5][3] → ArrayType(ArrayType(IntType, 3), 5)
-            for (auto s : v->array_sizes) {
+            for (int idx = (int)v->array_sizes.size() - 1; idx >= 0; idx--) {
                 int dim = -1;
-                if (auto* il = dynamic_cast<IntegerLiteralNode*>(s))
+                if (auto* il = dynamic_cast<IntegerLiteralNode*>(v->array_sizes[idx]))
                     dim = (int)il->value;
                 ArrayType* at = new ArrayType(t, dim);
                 typeCache.push_back(at);
@@ -469,21 +494,60 @@ void TypeChecker::collectVars(Stm* stmt, vector<VarDecl*>& vars) {
 }
 
 // -----------------------------------------------------------
-// assignOffsets — asignar offsets en el stack frame
+// assignOffsets — asignar offsets en el stack frame (bin packing)
 // -----------------------------------------------------------
-// Asigna un slot de 8 bytes a cada variable <= 8 bytes, y el
-// tamaño real a variables grandes (arrays, structs > 8 bytes).
-// Esto evita la complejidad del bin packing sin penalización
-// práctica en x86-64.
+// Empaqueta variables en bloques de 8 bytes según su tamaño:
+//   - Variables >8B: tamaño real (arrays, structs grandes)
+//   - Variables de 8B: 1 por bloque (double, long, punteros)
+//   - Variables de 4B: 2 por bloque (int, float)
+//   - Variables de 1B: 4 por bloque (char, bool) en slots de 2B
+//
+// Orden de llenado: más pesados primero para optimizar alineamiento.
 //
 // Retorna el offset final (startOffset + bytes ocupados).
 int TypeChecker::assignOffsets(vector<VarDecl*>& vars, int startOffset) {
-    int nextOffset = startOffset;
+    vector<VarDecl*> large, size8, size4, size1;
+    
     for (auto v : vars) {
-        int slotSize = v->memSize > 8 ? v->memSize : 8;
-        v->offset = nextOffset;
-        nextOffset += slotSize;
+        if (v->memSize > 8) {
+            large.push_back(v);
+        } else if (v->memSize == 8) {
+            size8.push_back(v);
+        } else if (v->memSize == 4) {
+            size4.push_back(v);
+        } else if (v->memSize == 1) {
+            size1.push_back(v);
+        }
     }
+    
+    int nextOffset = startOffset;
+    
+    for (auto v : large) {
+        v->offset = nextOffset;
+        nextOffset += v->memSize;
+    }
+    
+    for (auto v : size8) {
+        v->offset = nextOffset;
+        nextOffset += 8;
+    }
+    
+    for (size_t i = 0; i < size4.size(); i += 2) {
+        size4[i]->offset = nextOffset;
+        if (i + 1 < size4.size()) {
+            size4[i + 1]->offset = nextOffset + 4;
+        }
+        nextOffset += 8;
+    }
+    
+    for (size_t i = 0; i < size1.size(); i += 4) {
+        int blockStart = nextOffset;
+        for (size_t j = 0; j < 4 && i + j < size1.size(); j++) {
+            size1[i + j]->offset = blockStart + (j * 2);
+        }
+        nextOffset += 8;
+    }
+    
     return nextOffset;
 }
 
@@ -546,10 +610,10 @@ void TypeChecker::visit(VarDecl* v) {
         return;
     }
 
-    // Wrap en ArrayType si tiene dimensiones
-    for (auto s : v->array_sizes) {
+    // Wrap en ArrayType si tiene dimensiones (orden inverso: primera dimensión = outermost)
+    for (int idx = (int)v->array_sizes.size() - 1; idx >= 0; idx--) {
         int dim = -1;
-        if (auto* il = dynamic_cast<IntegerLiteralNode*>(s))
+        if (auto* il = dynamic_cast<IntegerLiteralNode*>(v->array_sizes[idx]))
             dim = (int)il->value;
         ArrayType* at = new ArrayType(t, dim);
         typeCache.push_back(at);
@@ -612,15 +676,16 @@ void TypeChecker::visit(VarDecl* v) {
 //         totalSize: 8
 void TypeChecker::visit(StructDecl* s) {
     StructType* st = new StructType(s->name);
+    struct_types[s->name] = st;   // Registrar antes de procesar miembros (soporta auto-referencia)
     int offset = 0;
 
     for (auto m : s->members) {
         Type* mt = type_from_ast(m->type);
 
-        // Wrap en ArrayType si tiene dimensiones (ej: int data[2][3])
-        for (auto arrSize : m->array_sizes) {
+        // Wrap en ArrayType si tiene dimensiones (orden inverso: primera dimensión = outermost)
+        for (int idx = (int)m->array_sizes.size() - 1; idx >= 0; idx--) {
             int dim = -1;
-            if (auto* il = dynamic_cast<IntegerLiteralNode*>(arrSize))
+            if (auto* il = dynamic_cast<IntegerLiteralNode*>(m->array_sizes[idx]))
                 dim = (int)il->value;
             ArrayType* at = new ArrayType(mt, dim);
             typeCache.push_back(at);
@@ -635,7 +700,6 @@ void TypeChecker::visit(StructDecl* s) {
     }
 
     s->totalSize = offset;
-    struct_types[s->name] = st;
 }
 
 // -----------------------------------------------------------
@@ -879,22 +943,20 @@ void TypeChecker::visit(BinaryOpNode* e) {
         case BinaryOp::EQ: case BinaryOp::NE:
         case BinaryOp::LT: case BinaryOp::GT:
         case BinaryOp::LE: case BinaryOp::GE:
-            if (is_arithmetic_type(left) && is_arithmetic_type(right))
-                resultType = boolType;
-            else {
-                error("comparación requiere int, char, float o double.");
-                resultType = boolType;
+            if (is_arithmetic_type(left) && is_arithmetic_type(right)) {
+                resultType = intType;
+            } else {
+                error("comparación requiere tipo aritmético.");
+                resultType = intType;
             }
             break;
 
         // Lógicos: operandos bool, resultado bool
         case BinaryOp::LOG_AND: case BinaryOp::LOG_OR:
-            if (left->match(boolType) && right->match(boolType))
-                resultType = boolType;
-            else {
-                error("operación lógica requiere bool.");
-                resultType = boolType;
+            if (left->ttype == Type::VOID || right->ttype == Type::VOID) {
+                error("operación lógica no puede ser void.");
             }
+            resultType = intType;
             break;
 
         default:
@@ -919,7 +981,8 @@ void TypeChecker::visit(BinaryOpNode* e) {
 //       *p → int (base del puntero)
 //       !true → bool
 void TypeChecker::visit(UnaryOpNode* e) {
-    e->operand->accept(this); Type* t = e->operand->resolvedType;
+    e->operand->accept(this); 
+    Type* t = e->operand->resolvedType;
     Type* resultType;
     switch (e->op) {
         case UnaryOp::MINUS:
@@ -942,12 +1005,10 @@ void TypeChecker::visit(UnaryOpNode* e) {
             }
             break;
         case UnaryOp::LOG_NOT:
-            if (t->match(boolType)) {
-                resultType = boolType;
-            } else {
-                error("! requiere bool.");
-                resultType = boolType;
+            if (t->ttype == Type::VOID) {
+                error("! no puede aplicarse a void.");
             }
+            resultType = intType;
             break;
         case UnaryOp::ADDR:
             // &x devuelve puntero al tipo de x
@@ -991,6 +1052,11 @@ void TypeChecker::visit(AssignmentNode* e) {
     isLvalContext = true;
     e->target->accept(this); Type* targetType = e->target->resolvedType;
     isLvalContext = false;
+
+    if (targetType->isConst) {
+        error("no se puede asignar a una variable declarada como const.");
+    }
+
     e->value->accept(this); Type* valueType = e->value->resolvedType;
     if (!check_assign(targetType, valueType)) {
         error("tipos incompatibles en asignación (se esperaba " +
@@ -1186,7 +1252,18 @@ void TypeChecker::visit(IdentifierNode* e) {
         return;
     }
     e->binding = vd;
-    e->resolvedType = vd->resolvedType;
+    
+    // Array-to-pointer decay: en contexto rvalue, el identificador de un arreglo
+    // se convierte en puntero a su primer elemento.
+    //   Ej: int a[4] → a (en rvalue) es int*
+    if (!isLvalContext && vd->resolvedType->ttype == Type::ARRAY) {
+        ArrayType* at = (ArrayType*)vd->resolvedType;
+        PointerType* ptrType = new PointerType(at->base);
+        typeCache.push_back(ptrType);
+        e->resolvedType = ptrType;
+    } else {
+        e->resolvedType = vd->resolvedType;
+    }
     
     if (!isLvalContext && functionDepth > 0 && initialized_vars.find(vd) == initialized_vars.end()) {
         error("variable '" + e->name + "' usada sin inicializar.", e->loc);
@@ -1200,7 +1277,7 @@ void TypeChecker::visit(IntegerLiteralNode* e) {
     e->resolvedType = intType;
 }
 void TypeChecker::visit(FloatLiteralNode* e) {
-    e->resolvedType = floatType;
+    e->resolvedType = doubleType;
 }
 void TypeChecker::visit(BoolLiteralNode* e) {
     e->resolvedType = boolType;
@@ -1216,22 +1293,27 @@ void TypeChecker::visit(StringLiteralNode* e) {
 }
 
 // Nodos de tipo en expresiones/contextos: delegan la resolución a type_from_ast.
-void TypeChecker::visit(PrimitiveTypeNode* e) { e->resolvedType = type_from_ast(e); }
-void TypeChecker::visit(PointerTypeNode* e) { e->resolvedType = type_from_ast(e); }
-void TypeChecker::visit(StructTypeNode* e) { e->resolvedType = type_from_ast(e); }
+void TypeChecker::visit(PrimitiveTypeNode*) { }
+void TypeChecker::visit(PointerTypeNode*) { }
+void TypeChecker::visit(StructTypeNode*) { }
 // NamedTypeNode fuera de template → error dentro de type_from_ast.
 // -----------------------------------------------------------
 // visit(SizeOfNode) — typecheck de sizeof
 // -----------------------------------------------------------
-// sizeof siempre retorna int (el tamaño en bytes).
-// El operando es un tipo, se verifica que exista.
-//
-//   Ej: sizeof(int) → 4
-//       sizeof(char) → 1
-//       sizeof(struct Persona) → tamaño de la struct
+// Retorna el tamaño en bytes del tipo o de la expresión.
+//   Ej: sizeof(int) -> 4
+//       sizeof(x) -> tamaño de x
 void TypeChecker::visit(SizeOfNode* e) {
-    e->target_type->accept(this);
+    Type* t;
+    if (e->kind == SizeOfNode::TYPE_ARG) {
+        t = type_from_ast(e->type_arg);
+    } else {
+        e->expr_arg->accept(this);
+        t = e->expr_arg->resolvedType;
+    }
     e->resolvedType = intType;
+    e->isConstant = true;
+    e->constantValue = (double)t->size();
 }
 
 

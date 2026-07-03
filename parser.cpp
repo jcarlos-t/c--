@@ -144,30 +144,42 @@ TypeNode* Parser::parse_type() {
 TypeNode* Parser::parse_basic_type() {
     bool sawLong = false;
     bool sawUnsigned = false;
+    bool sawConst = false;
     while (check(Token::LONG) || check(Token::CONST) || check(Token::UNSIGNED)) {
         if (check(Token::LONG)) sawLong = true;
         if (check(Token::UNSIGNED)) sawUnsigned = true;
+        if (check(Token::CONST)) sawConst = true;
         advance();
     }
-    if (is_type_keyword(current->type) && current->type != Token::LONG) {
+    if (is_type_keyword(current->type) && current->type != Token::LONG && current->type != Token::CONST && current->type != Token::UNSIGNED) {
         Token::Type t = current->type;
         advance();
         PrimitiveTypeNode::Prim p = kind_from_token(t);
-        if (sawLong && sawUnsigned) { /* long unsigned int -> long long */ }
-        return new PrimitiveTypeNode(p);
+        PrimitiveTypeNode* node = new PrimitiveTypeNode(p);
+        node->isUnsigned = sawUnsigned;
+        node->isConst = sawConst;
+        return node;
     }
     // long (long) without following type keyword
     if (sawLong) {
-        return new PrimitiveTypeNode(PrimitiveTypeNode::LONG);
+        PrimitiveTypeNode* node = new PrimitiveTypeNode(PrimitiveTypeNode::LONG);
+        node->isUnsigned = sawUnsigned;
+        node->isConst = sawConst;
+        return node;
     }
     // unsigned without following type -> unsigned int
     if (sawUnsigned) {
-        return new PrimitiveTypeNode(PrimitiveTypeNode::INT);
+        PrimitiveTypeNode* node = new PrimitiveTypeNode(PrimitiveTypeNode::INT);
+        node->isUnsigned = true;
+        node->isConst = sawConst;
+        return node;
     }
     // struct person <- esto es un tipo
     if (match(Token::STRUCT)) {
         Token* name = consume(Token::ID, "Se esperaba nombre de struct");
-        return new StructTypeNode(name->text);
+        StructTypeNode* node = new StructTypeNode(name->text);
+        node->isConst = sawConst;
+        return node;
     }
     sync_error("Se esperaba un tipo (int, float, void, char, double, bool, long, struct)");
     return nullptr;
@@ -246,7 +258,7 @@ void Parser::parse_declaration(Program* p) {
 // =============================
 
 // parse_function_decl: parsea params y cuerpo de función
-FunDecl* Parser::parse_function_decl(Exp* ret_type, const string& name) {
+FunDecl* Parser::parse_function_decl(TypeNode* ret_type, const string& name) {
     FunDecl* fd = new FunDecl(ret_type, name, nullptr);
     fd->loc.line = current->line; fd->loc.column = current->col;
     consume(Token::LPAREN, "Se esperaba '(' en declaración de función");
@@ -266,9 +278,12 @@ FunDecl* Parser::parse_function_decl(Exp* ret_type, const string& name) {
 }
 
 // parse_variable_decl: parsea arreglos opcionales e inicializador
-VarDecl* Parser::parse_variable_decl(Exp* type, const string& name, bool consume_semicolon) {
+VarDecl* Parser::parse_variable_decl(TypeNode* type, const string& name, bool consume_semicolon) {
     VarDecl* vd = new VarDecl(type, name);
     vd->loc.line = current->line; vd->loc.column = current->col;
+
+    // Copy const flag from type to VarDecl
+    vd->isConst = type->isConst;
 
     // array_suffix
     parse_array_suffix(vd);
@@ -753,9 +768,15 @@ Exp* Parser::parse_primary() {
     }
     if (match(Token::SIZEOF)) {
         consume(Token::LPAREN, "Se esperaba '(' después de sizeof");
-        Exp* target = parse_type();
-        consume(Token::RPAREN, "Se esperaba ')'");
-        return new SizeOfNode(target);
+        if (is_type_start()) {
+            TypeNode* target = parse_type();
+            consume(Token::RPAREN, "Se esperaba ')'");
+            return new SizeOfNode(target);
+        } else {
+            Exp* target = parse_expression();
+            consume(Token::RPAREN, "Se esperaba ')'");
+            return new SizeOfNode(target);
+        }
     }
     if (match(Token::PRINTF)) {
         consume(Token::LPAREN, "Se esperaba '(' después de print/printf");
