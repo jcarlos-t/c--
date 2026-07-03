@@ -71,6 +71,21 @@ void MemberAccessNode::computeAddress(Visitor* v) { v->computeAddress(this); }
 void ArrowAccessNode::computeAddress(Visitor* v) { v->computeAddress(this); }
 
 // ============================================================
+// Helpers: detección de tipos float/double
+// ============================================================
+
+// isFloatSemanticType: true si el tipo es float o double
+//   Se usa en operaciones aritméticas para decidir si usar
+//   instrucciones de punto flotante (addss/mulsd/etc.) o enteras.
+//
+//   Ej: isFloatSemanticType(IntType) → false
+//       isFloatSemanticType(FloatType) → true
+//       isFloatSemanticType(DoubleType) → true
+static bool isFloatSemanticType(Type* t) {
+    return t && (t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE);
+}
+
+// ============================================================
 // generate — entry point de generación de código
 // ============================================================
 // Genera el archivo ensamblador completo:
@@ -95,14 +110,37 @@ void GenCodeVisitor::generate(Program *p) {
 
     // --- Sección .data ---
     out << ".data\n";
-    out << "print_fmt: .string \"%ld\\n\"\n";    // formato por defecto para printf (int/bool/ptr)
-    out << "print_fmt_float: .string \"%f\\n\"\n"; // formato por defecto para float/double
-    out << "println_fmt: .string \"\\n\"\n";     // salto de línea
 
-    // Variables globales (inicializadas a 0)
-    //   Ej: int x; → x: .quad 0
-    for (auto &[name, _] : memoriaGlobal)
-        out << name << ": .quad 0\n";
+    // Variables globales con inicializadores
+    //   Ej: const int x = 42; → x: .quad 42
+    for (auto g : p->globals) {
+        if (g->initializer && g->initializer->isConstant) {
+            // Variable global con inicializador constante
+            if (g->resolvedType && isFloatSemanticType(g->resolvedType)) {
+                if (g->resolvedType->ttype == Type::DOUBLE) {
+                    union { double d; unsigned long long i; } dc;
+                    dc.d = g->initializer->constantValue;
+                    out << g->name << ": .quad 0x" << hex << dc.i << dec << "\n";
+                } else {
+                    union { float f; unsigned int i; } fc;
+                    fc.f = (float)g->initializer->constantValue;
+                    out << g->name << ": .long 0x" << hex << fc.i << dec << "\n";
+                }
+            } else {
+                long long val = (long long)g->initializer->constantValue;
+                if (g->resolvedType && g->resolvedType->ttype == Type::CHAR) {
+                    out << g->name << ": .byte " << val << "\n";
+                } else if (g->resolvedType && g->resolvedType->ttype == Type::INT) {
+                    out << g->name << ": .long " << val << "\n";
+                } else {
+                    out << g->name << ": .quad " << val << "\n";
+                }
+            }
+        } else {
+            // Variable global sin inicializador o no constante
+            out << g->name << ": .quad 0\n";
+        }
+    }
 
     // --- Sección .text ---
     out << "\n.text\n";
@@ -169,15 +207,12 @@ string GenCodeVisitor::instrSuffix(int size) {
 }
 
 // loadInstr: instrucción de carga con extensión según tamaño
-//   1 → "movzbq" (zero-extend byte a quad)
+//   1 → "movsbq" (sign-extend byte a quad) o "movzbq" (zero-extend) según signedness
 //   4 → "movslq" (sign-extend long a quad)
 //   8 → "movq"   (carga directa de quad)
-//
-//   Ej: loadInstr(1) → movzbq (%rax), %rax  (carga byte sin signo)
-//       loadInstr(4) → movslq (%rax), %rax  (carga int con signo)
-string GenCodeVisitor::loadInstr(int size) {
+string GenCodeVisitor::loadInstr(int size, bool isUnsigned) {
     switch (size) {
-        case 1: return "movzbq";  // zero-extend 1 byte -> 8 bytes
+        case 1: return isUnsigned ? "movzbq" : "movsbq";
         case 4: return "movslq";  // sign-extend 4 bytes -> 8 bytes
         case 8: return "movq";    // 8 bytes (punteros, double)
         default: return "movq";
@@ -197,21 +232,6 @@ string GenCodeVisitor::storeInstr(int size) {
         case 8: return "movq";
         default: return "movq";
     }
-}
-
-// ============================================================
-// Helpers: detección de tipos float/double
-// ============================================================
-
-// isFloatSemanticType: true si el tipo es float o double
-//   Se usa en operaciones aritméticas para decidir si usar
-//   instrucciones de punto flotante (addss/mulsd/etc.) o enteras.
-//
-//   Ej: isFloatSemanticType(IntType) → false
-//       isFloatSemanticType(FloatType) → true
-//       isFloatSemanticType(DoubleType) → true
-static bool isFloatSemanticType(Type* t) {
-    return t && (t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE);
 }
 
 // ============================================================
@@ -357,7 +377,7 @@ void GenCodeVisitor::loadBinding(VarDecl* vd) {
         }
         return;
     }
-    out << "  " << loadInstr(size) << " " << bindingMem(vd) << ", %rax\n";
+    out << "  " << loadInstr(size, type && type->isUnsigned) << " " << bindingMem(vd) << ", %rax\n";
 }
 
 // ============================================================
@@ -483,11 +503,15 @@ void GenCodeVisitor::emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices) {
     if (!vd || indices.empty()) return;
     auto dims = arrayDimsFor(vd);
     int elemSize = array_elem_size(vd);
+    Type* elemType = vd->resolvedType;
+    while (elemType && elemType->ttype == Type::ARRAY)
+        elemType = ((ArrayType*)elemType)->base;
+    bool elemUnsigned = elemType && elemType->isUnsigned;
 
     if (dims.size() > 1) {
         emitIndexedAddress(vd, indices);
         if (indices.size() < dims.size()) return; // result is array → leave address
-        if (elemSize == 1) out << "  movzbq (%rax), %rax\n";
+        if (elemSize == 1) out << "  " << loadInstr(1, elemUnsigned) << " (%rax), %rax\n";
         else if (elemSize == 4) out << "  movslq (%rax), %rax\n";
         else out << "  movq (%rax), %rax\n";
         return;
@@ -501,7 +525,7 @@ void GenCodeVisitor::emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices) {
         loadBinding(vd);
 
     if (elemSize == 1) {
-        out << "  movzbq (%rax,%rdi), %rax\n";
+        out << "  " << loadInstr(1, elemUnsigned) << " (%rax,%rdi), %rax\n";
     } else if (elemSize == 2) {
         out << "  movslq (%rax,%rdi,2), %rax\n";
     } else if (elemSize == 4) {
@@ -510,7 +534,7 @@ void GenCodeVisitor::emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices) {
         out << "  movq $" << elemSize << ", %rcx\n";
         out << "  imulq %rcx, %rdi\n";
         out << "  addq %rdi, %rax\n";
-        out << "  " << loadInstr(elemSize) << " (%rax), %rax\n";
+        out << "  " << loadInstr(elemSize, elemUnsigned) << " (%rax), %rax\n";
     }
 }
 
@@ -889,8 +913,14 @@ bool GenCodeVisitor::directStoreForConstant(Exp* value, VarDecl* vd) {
         return false;
     }
 
-    string instr = (size == 1) ? "movb" : (size == 4) ? "movl" : "movq";
-    out << "  " << instr << " $" << intVal << ", " << mem << "\n";
+    if (size == 8 && (intVal < -0x80000000LL || intVal > 0x7FFFFFFFLL)) {
+        // No cabe en immediate sign-extended de 32 bits
+        out << "  movabsq $" << intVal << ", %rax\n";
+        out << "  movq %rax, " << mem << "\n";
+    } else {
+        string instr = (size == 1) ? "movb" : (size == 4) ? "movl" : "movq";
+        out << "  " << instr << " $" << intVal << ", " << mem << "\n";
+    }
     return true;
 }
 
@@ -902,9 +932,18 @@ bool GenCodeVisitor::directStoreForConstant(Exp* value, VarDecl* vd) {
 // Literales — cargan constantes directamente en %rax
 // -----------------------------------------------------------
 
-// Entero: movq $N, %rax (siempre 64 bits en registro; el store trunca si hace falta).
+// Entero: carga el valor en %rax manejando immediatos grandes.
+// Usa movl $val, %eax (zero-extiende) para valores unsigned de 32 bits,
+// movabsq $val, %rax para valores > 2^32, y movq $val, %rax para los demás.
 void GenCodeVisitor::visit(NumberLiteralNode *e) {
-    out << "  movq $" << e->value << ", %rax\n";
+    long long v = e->value;
+    if (v >= -0x80000000LL && v <= 0x7FFFFFFFLL) {
+        out << "  movq $" << v << ", %rax\n";
+    } else if ((unsigned long long)v < 0x100000000ULL) {
+        out << "  movl $" << (unsigned)(v & 0xFFFFFFFFULL) << ", %eax\n";
+    } else {
+        out << "  movabsq $" << v << ", %rax\n";
+    }
 }
 
 // Float: se empaqueta como bits IEEE-754 en %eax y se extiende a %rax.
@@ -1451,7 +1490,8 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
     case UnaryOp::DEREF: {
         // *p: cargar valor apuntado, tamaño según tipo base del puntero
         int derefSize = e->resolvedType ? e->resolvedType->size() : 8;
-        out << "  " << loadInstr(derefSize) << " (%rax), %rax\n";
+        bool derefUnsigned = e->resolvedType && e->resolvedType->isUnsigned;
+        out << "  " << loadInstr(derefSize, derefUnsigned) << " (%rax), %rax\n";
         break;
     }
     default:
@@ -1483,38 +1523,51 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
     e->value->accept(this); // value in %rax
 
     // Promociones automáticas según el tipo del destino
+    Type* tgtType = nullptr;
+    Type* valType = e->value->resolvedType;
     if (target.kind == LValKind::Id && target.binding) {
-        Type* tgtType = target.binding->resolvedType;
-        Type* valType = e->value->resolvedType;
-        if (tgtType && tgtType->ttype == Type::DOUBLE) {
-            if (valType && valType->ttype == Type::FLOAT) {
-                out << "  movd %eax, %xmm7\n";
-                out << "  cvtss2sd %xmm7, %xmm7\n";  // float → double
-                out << "  movq %xmm7, %rax\n";
-            } else if (!valType || valType->ttype == Type::INT || valType->ttype == Type::CHAR) {
-                out << "  cvtsi2sd %rax, %xmm7\n";   // int → double
-                out << "  movq %xmm7, %rax\n";
+        tgtType = target.binding->resolvedType;
+    } else if (target.kind == LValKind::Index && target.binding) {
+        tgtType = target.binding->resolvedType;
+        while (tgtType && tgtType->ttype == Type::ARRAY)
+            tgtType = ((ArrayType*)tgtType)->base;
+    }
+    if (tgtType && tgtType->ttype == Type::DOUBLE) {
+        if (valType && valType->ttype == Type::FLOAT) {
+            out << "  movd %eax, %xmm7\n";
+            out << "  cvtss2sd %xmm7, %xmm7\n";  // float → double
+            out << "  movq %xmm7, %rax\n";
+        } else if (!valType || valType->ttype == Type::INT || valType->ttype == Type::CHAR) {
+            out << "  cvtsi2sd %rax, %xmm7\n";   // int → double
+            out << "  movq %xmm7, %rax\n";
+        }
+    } else if (tgtType && tgtType->ttype == Type::FLOAT) {
+        if (valType && valType->ttype == Type::DOUBLE) {
+            out << "  movq %rax, %xmm7\n";
+            out << "  cvtsd2ss %xmm7, %xmm7\n";  // double → float
+            out << "  movd %xmm7, %eax\n";
+            out << "  movslq %eax, %rax\n";
+        } else if (!valType || valType->ttype == Type::INT || valType->ttype == Type::CHAR) {
+            out << "  cvtsi2ss %eax, %xmm7\n";   // int → float
+            out << "  movd %xmm7, %eax\n";
+            out << "  movslq %eax, %rax\n";
+        }
+    } else if (tgtType && (tgtType->ttype == Type::INT || tgtType->ttype == Type::CHAR || tgtType->ttype == Type::LONG)) {
+        // Truncation: float/double → int/char/long
+        if (valType && valType->ttype == Type::FLOAT) {
+            out << "  movd %eax, %xmm7\n";
+            if (tgtType->ttype == Type::LONG) {
+                out << "  cvtss2siq %xmm7, %rax\n";   // float → long long (64-bit)
+            } else {
+                out << "  cvtss2si %xmm7, %eax\n";   // float → int (32-bit)
+                out << "  movslq %eax, %rax\n";
             }
-        } else if (tgtType && tgtType->ttype == Type::FLOAT) {
-            if (valType && valType->ttype == Type::DOUBLE) {
-                out << "  movq %rax, %xmm7\n";
-                out << "  cvtsd2ss %xmm7, %xmm7\n";  // double → float
-                out << "  movd %xmm7, %eax\n";
-                out << "  movslq %eax, %rax\n";
-            } else if (!valType || valType->ttype == Type::INT || valType->ttype == Type::CHAR) {
-                out << "  cvtsi2ss %eax, %xmm7\n";   // int → float
-                out << "  movd %xmm7, %eax\n";
-                out << "  movslq %eax, %rax\n";
-            }
-        } else if (tgtType && (tgtType->ttype == Type::INT || tgtType->ttype == Type::CHAR || tgtType->ttype == Type::LONG)) {
-            // Truncation: float/double → int/char/long
-            if (valType && valType->ttype == Type::FLOAT) {
-                out << "  movd %eax, %xmm7\n";
-                out << "  cvtss2si %xmm7, %eax\n";   // float → int
-                out << "  movslq %eax, %rax\n";
-            } else if (valType && valType->ttype == Type::DOUBLE) {
-                out << "  movq %rax, %xmm7\n";
-                out << "  cvtsd2si %xmm7, %eax\n";   // double → int
+        } else if (valType && valType->ttype == Type::DOUBLE) {
+            out << "  movq %rax, %xmm7\n";
+            if (tgtType->ttype == Type::LONG) {
+                out << "  cvtsd2siq %xmm7, %rax\n";   // double → long long (64-bit)
+            } else {
+                out << "  cvtsd2si %xmm7, %eax\n";   // double → int (32-bit)
                 out << "  movslq %eax, %rax\n";
             }
         }
@@ -1526,6 +1579,71 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
     }
 
     storeTarget(target);
+}
+
+// -----------------------------------------------------------
+// parsePrintfSpecs — analiza especificadores de formato en printf
+// -----------------------------------------------------------
+// Retorna un vector con "int" o "float" por cada argumento esperado.
+// Ej: "%d %f %ld" → {"int", "float", "int"}
+static vector<string> parsePrintfSpecs(const string& fmt) {
+    vector<string> specs;
+    for (size_t i = 0; i < fmt.size(); i++) {
+        if (fmt[i] != '%') continue;
+        i++; // saltar '%'
+        if (i >= fmt.size()) break;
+        if (fmt[i] == '%') continue; // %% → literal, no argumento
+
+        // Saltar flags: -, +, space, #, 0
+        while (i < fmt.size() && (fmt[i] == '-' || fmt[i] == '+' ||
+               fmt[i] == ' ' || fmt[i] == '#' || fmt[i] == '0'))
+            i++;
+
+        // Saltar width (número o *)
+        if (i < fmt.size() && fmt[i] == '*') { i++; }
+        else {
+            while (i < fmt.size() && fmt[i] >= '0' && fmt[i] <= '9') i++;
+        }
+
+        // Saltar .precision
+        if (i < fmt.size() && fmt[i] == '.') {
+            i++;
+            if (i < fmt.size() && fmt[i] == '*') { i++; }
+            else {
+                while (i < fmt.size() && fmt[i] >= '0' && fmt[i] <= '9') i++;
+            }
+        }
+
+        // Length modifier: hh, h, l, ll, L, z, j, t
+        string len;
+        if (i < fmt.size() && fmt[i] == 'l') {
+            len = "l";
+            i++;
+            if (i < fmt.size() && fmt[i] == 'l') { len = "ll"; i++; }
+        } else if (i < fmt.size() && fmt[i] == 'h') {
+            len = "h";
+            i++;
+            if (i < fmt.size() && fmt[i] == 'h') { len = "hh"; i++; }
+        } else if (i < fmt.size() && fmt[i] == 'L') {
+            len = "L"; i++;
+        } else if (i < fmt.size() && fmt[i] == 'z') {
+            len = "z"; i++;
+        } else if (i < fmt.size() && fmt[i] == 'j') {
+            len = "j"; i++;
+        } else if (i < fmt.size() && fmt[i] == 't') {
+            len = "t"; i++;
+        }
+
+        // Conversion specifier
+        if (i >= fmt.size()) break;
+        char conv = fmt[i];
+
+        // Determinar si va en registro XMM (float/double) o entero
+        bool isFloat = (conv == 'f' || conv == 'F' || conv == 'e' || conv == 'E' ||
+                       conv == 'g' || conv == 'G' || conv == 'a' || conv == 'A');
+        specs.push_back(isFloat ? "float" : "int");
+    }
+    return specs;
 }
 
 // -----------------------------------------------------------
@@ -1541,59 +1659,53 @@ void GenCodeVisitor::visit(AssignmentNode *e) {
 //   Ej: printf("%d %f", x, y)
 //       → formato en %rdi, x en %rsi, y en %xmm0, %rax = 1
 void GenCodeVisitor::visit(PrintfNode *e) {
-    // Seleccionar formato por defecto según el tipo del primer argumento
-    string fmtLabel = "print_fmt";
-    if (e->format == "%ld" && !e->args.empty()) {
-        // Sin formato explícito: elegir según el tipo del primer argumento
-        if (e->args[0]->resolvedType) {
-            Type* t = e->args[0]->resolvedType;
-            if (t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE)
-                fmtLabel = "print_fmt_float";
-            else
-                fmtLabel = "print_fmt";
-        }
-    } else if (e->format != "%ld") {
-        auto it = stringLabels.find(e->format);
-        int lbl;
-        if (it == stringLabels.end()) {
-            lbl = (int)stringLabels.size();
-            stringLabels[e->format] = lbl;
-            out << ".section .rodata\n";
-            out << ".Lfmt" << lbl << ": .string \"" << e->format << "\"\n";
-            out << ".text\n";
-            fmtLabel = ".Lfmt" + to_string(lbl);
-        } else {
-            fmtLabel = ".Lfmt" + to_string(it->second);
-        }
+    // Emitir formato en .rodata
+    auto it = stringLabels.find(e->format);
+    int lbl;
+    if (it == stringLabels.end()) {
+        lbl = (int)stringLabels.size();
+        stringLabels[e->format] = lbl;
+        out << ".section .rodata\n";
+        out << ".Lfmt" << lbl << ": .string \"" << e->format << "\"\n";
+        out << ".text\n";
+    } else {
+        lbl = it->second;
     }
+    string fmtLabel = ".Lfmt" + to_string(lbl);
 
-    // Cargar argumentos en registros según convención System V AMD64 ABI
+    // Parsear especificadores de formato
+    vector<string> specs = parsePrintfSpecs(e->format);
+
+    // Registros según ABI System V AMD64
     const vector<string> intRegs = {"%rsi", "%rdx", "%rcx", "%r8", "%r9"};
     const vector<string> xmmRegs = {"%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7"};
 
-    for (size_t i = 0; i < e->args.size(); i++) {
+    int intIdx = 0, xmmIdx = 0;
+    for (size_t i = 0; i < e->args.size() && i < specs.size(); i++) {
         e->args[i]->accept(this);
 
-        // Detectar si el argumento es float/double
-        bool isFloat = false;
-        Type* argType = nullptr;
-        if (e->args[i]->resolvedType) {
-            argType = e->args[i]->resolvedType;
-            isFloat = (argType->ttype == Type::FLOAT || argType->ttype == Type::DOUBLE);
-        }
-
-        if (isFloat && i < xmmRegs.size()) {
-            // printf %f espera double; convertir float→double si es necesario
-            if (argType && argType->ttype == Type::FLOAT) {
-                out << "  movd %eax, " << xmmRegs[i] << "\n";
-                out << "  cvtss2sd " << xmmRegs[i] << ", " << xmmRegs[i] << "\n";
+        if (specs[i] == "float") {
+            // Pasar como double en registro XMM
+            if (xmmIdx < (int)xmmRegs.size()) {
+                Type* argType = e->args[i]->resolvedType;
+                if (argType && argType->ttype == Type::FLOAT) {
+                    out << "  movd %eax, " << xmmRegs[xmmIdx] << "\n";
+                    out << "  cvtss2sd " << xmmRegs[xmmIdx] << ", " << xmmRegs[xmmIdx] << "\n";
+                } else {
+                    out << "  movq %rax, " << xmmRegs[xmmIdx] << "\n";
+                }
+                xmmIdx++;
             } else {
-                out << "  movq %rax, " << xmmRegs[i] << "\n";
+                out << "  pushq %rax\n"; // overflow al stack
             }
-        } else if (i < intRegs.size()) {
-            out << "  movq %rax, " << intRegs[i] << "\n";
         } else {
-            out << "  pushq %rax\n";  // argumentos extra van al stack
+            // Entero: pasar en registro entero
+            if (intIdx < (int)intRegs.size()) {
+                out << "  movq %rax, " << intRegs[intIdx] << "\n";
+                intIdx++;
+            } else {
+                out << "  pushq %rax\n"; // overflow al stack
+            }
         }
     }
 
@@ -1601,23 +1713,23 @@ void GenCodeVisitor::visit(PrintfNode *e) {
     out << "  leaq " << fmtLabel << "(%rip), %rdi\n";
 
     // %rax = número de registros xmm usados (para ABI variádica)
-    int xmmCount = 0;
-    for (size_t i = 0; i < e->args.size() && i < xmmRegs.size(); i++) {
-        if (e->args[i]->resolvedType) {
-            Type* t = e->args[i]->resolvedType;
-            if (t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE) {
-                xmmCount++;
-            }
-        }
-    }
-    out << "  movq $" << xmmCount << ", %rax\n";
+    out << "  movq $" << xmmIdx << ", %rax\n";
 
     out << "  call printf@PLT\n";
 
     // Limpiar argumentos extra del stack
-    int regsUsed = min((int)e->args.size(), (int)max(intRegs.size(), xmmRegs.size()));
-    if ((int)e->args.size() > regsUsed) {
-        out << "  addq $" << ((e->args.size() - regsUsed) * 8) << ", %rsp\n";
+    int stackArgs = 0;
+    for (size_t i = 0; i < e->args.size() && i < specs.size(); i++) {
+        bool isFlt = (specs[i] == "float");
+        if ((isFlt && xmmIdx > (int)xmmRegs.size()) ||
+            (!isFlt && intIdx > (int)intRegs.size())) {
+            stackArgs++;
+        }
+    }
+    // Más simple: contar los args que exceden registros
+    int totalRegs = min((int)e->args.size(), (int)(intRegs.size() + xmmRegs.size()));
+    if ((int)e->args.size() > totalRegs) {
+        out << "  addq $" << ((e->args.size() - totalRegs) * 8) << ", %rsp\n";
     }
 
     out << "  movq $0, %rax\n";
@@ -1726,7 +1838,8 @@ void GenCodeVisitor::visit(IndexNode *e) {
     if (!(e->resolvedType && e->resolvedType->ttype == Type::ARRAY)) {
         int loadSize = 4;
         if (e->resolvedType) loadSize = e->resolvedType->size();
-        if (loadSize == 1) out << "  movzbq (%rax), %rax\n";
+        bool idxUnsigned = e->resolvedType && e->resolvedType->isUnsigned;
+        if (loadSize == 1) out << "  " << loadInstr(1, idxUnsigned) << " (%rax), %rax\n";
         else if (loadSize == 4) out << "  movslq (%rax), %rax\n";
         else out << "  movq (%rax), %rax\n";
     }
@@ -1828,16 +1941,18 @@ void GenCodeVisitor::visit(MemberAccessNode *e) {
     // Add offset for final member
     int off = structFieldOffset[baseStructName(currentStructName)][e->member];
     // Si el miembro es un array, dejar dirección en %rax (no cargar valor)
+    Type* mt = nullptr;
     if (structMemberTypes.count(baseStructName(currentStructName)) &&
         structMemberTypes[baseStructName(currentStructName)].count(e->member)) {
-        Type* mt = structMemberTypes[baseStructName(currentStructName)][e->member];
+        mt = structMemberTypes[baseStructName(currentStructName)][e->member];
         if (mt && mt->ttype == Type::ARRAY) {
             out << "  addq $" << off << ", %rax\n";
             return;
         }
     }
     int size = structMemberSizes[baseStructName(currentStructName)][e->member];
-    out << "  " << loadInstr(size) << " " << off << "(%rax), %rax\n";
+    bool memberUnsigned = mt && mt->isUnsigned;
+    out << "  " << loadInstr(size, memberUnsigned) << " " << off << "(%rax), %rax\n";
 }
 
 // -----------------------------------------------------------
@@ -1889,7 +2004,8 @@ void GenCodeVisitor::visit(ArrowAccessNode *e) {
         out << "  addq $" << off << ", %rax\n";
     } else {
         int size = structMemberSizes[baseStructName(structName)][e->member];
-        out << "  " << loadInstr(size) << " " << off << "(%rax), %rax\n";
+        bool memberUnsigned = mt && mt->isUnsigned;
+        out << "  " << loadInstr(size, memberUnsigned) << " " << off << "(%rax), %rax\n";
     }
 }
 
@@ -2238,12 +2354,20 @@ void GenCodeVisitor::visit(VarDecl *d) {
             Type* initType = d->initializer->resolvedType;
             if (initType && initType->ttype == Type::FLOAT) {
                 out << "  movd %eax, %xmm7\n";
-                out << "  cvtss2si %xmm7, %eax\n";   // float → int
-                out << "  movslq %eax, %rax\n";
+                if (d->resolvedType->ttype == Type::LONG) {
+                    out << "  cvtss2siq %xmm7, %rax\n";   // float → long long (64-bit)
+                } else {
+                    out << "  cvtss2si %xmm7, %eax\n";   // float → int (32-bit)
+                    out << "  movslq %eax, %rax\n";
+                }
             } else if (initType && initType->ttype == Type::DOUBLE) {
                 out << "  movq %rax, %xmm7\n";
-                out << "  cvtsd2si %xmm7, %eax\n";   // double → int
-                out << "  movslq %eax, %rax\n";
+                if (d->resolvedType->ttype == Type::LONG) {
+                    out << "  cvtsd2siq %xmm7, %rax\n";   // double → long long (64-bit)
+                } else {
+                    out << "  cvtsd2si %xmm7, %eax\n";   // double → int (32-bit)
+                    out << "  movslq %eax, %rax\n";
+                }
             }
         }
         storeBinding(d);
@@ -2307,6 +2431,7 @@ void GenCodeVisitor::visit(FunDecl *d) {
     // Copiar parámetros de registros al stack
     const vector<string> argRegs32 = {"%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d"};
     const vector<string> argRegs64 = {"%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"};
+    const vector<string> argRegs8 = {"%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"};
     for (size_t i = 0; i < d->params.size() && i < 6; i++) {
         bind_var_decl(d->params[i]);
 
@@ -2314,7 +2439,7 @@ void GenCodeVisitor::visit(FunDecl *d) {
         if (size == 4)
             out << "  movl " << argRegs32[i] << ", " << d->params[i]->offset << "(%rbp)\n";
         else if (size == 1)
-            out << "  movb " << argRegs32[i] << ", " << d->params[i]->offset << "(%rbp)\n";
+            out << "  movb " << argRegs8[i] << ", " << d->params[i]->offset << "(%rbp)\n";
         else
             out << "  movq " << argRegs64[i] << ", " << d->params[i]->offset << "(%rbp)\n";
     }

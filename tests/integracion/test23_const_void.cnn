@@ -1,22 +1,22 @@
 
 // Test 23: const y void
 void print_three() {
-    printf(3);
+    printf("%d\n", 3);
 }
 
 int main() {
     const int a = 5;
     int b = a;      // ok: leer const
-    printf(b);      // esperado:5
+    printf("%d\n", b);      // esperado:5
 
     const long long ll = 1000000;
-    printf(ll);     // esperado:1000000
+    printf("%d\n", ll);     // esperado:1000000
 
     const char c = 'Z';
-    printf(c);      // esperado:90
+    printf("%d\n", c);      // esperado:90
 
     const unsigned u = 255;
-    printf(u);      // esperado:255
+    printf("%d\n", u);      // esperado:255
 
     print_three();  // llamada a void, esperado:3
 

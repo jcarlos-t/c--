@@ -2,7 +2,7 @@ outputs/
 c--
 semantic_types.h.gch
 assembly
-#inputs
+inputs
 comparativa/build
 omparativa/scripts/assembly
 tests/individuales/outputs

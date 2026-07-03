@@ -22,22 +22,22 @@ int main() {
     lista[2].ref = &v3;
 
     // Acceso a traves de array de structs (antes stride 8 en vez de 12)
-    printf(*(lista[0].ref)); // esperado: 10
-    printf(*(lista[1].ref)); // esperado: 20
-    printf(*(lista[2].ref)); // esperado: 30
-    printf(lista[0].id);     // esperado: 1
+    printf("%d\n", *(lista[0].ref)); // esperado: 10
+    printf("%d\n", *(lista[1].ref)); // esperado: 20
+    printf("%d\n", *(lista[2].ref)); // esperado: 30
+    printf("%d\n", lista[0].id);     // esperado: 1
 
     // Store a traves de puntero dentro de struct
     *(lista[1].ref) = 200;
-    printf(v2);              // esperado: 200
+    printf("%d\n", v2);              // esperado: 200
 
     // Aritmetica de punteros a struct (stride correcto)
     struct Data* dp;
     dp = &lista[0];
-    printf(dp->id);          // esperado: 1
+    printf("%d\n", dp->id);          // esperado: 1
     dp = dp + 1;
-    printf(dp->id);          // esperado: 2
-    printf(*(dp->ref));      // esperado: 200
+    printf("%d\n", dp->id);          // esperado: 2
+    printf("%d\n", *(dp->ref));      // esperado: 200
 
     return 0;
 }

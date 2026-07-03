@@ -236,7 +236,7 @@ private:
     void emitIndexedStore(VarDecl* vd, const vector<Exp*>& indices, const string& valueReg);
 
     string instrSuffix(int size);       // 1→b, 4→l, 8→q
-    string loadInstr(int size);         // movzbq, movslq, movq
+    string loadInstr(int size, bool isUnsigned = false); // movsbq/movzbq, movslq, movq
     string storeInstr(int size);        // movb, movl, movq
 
     unordered_map<string, int> memoria;            // variable → offset en stack

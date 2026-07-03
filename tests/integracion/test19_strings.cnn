@@ -2,14 +2,14 @@
 int main() {
     char c;
     c = 'H';
-    printf(c); // esperado: 72
+    printf("%d\n", c); // esperado: 72
 
     char* str = "Mundo"; 
-    printf(str[0]); // esperado:77 (M)
-    printf(str[1]); // esperado:117 (u)
-    printf(str[2]); // esperado:110 (n)
-    printf(str[3]); // esperado:100 (d)
-    printf(str[4]); // esperado:111 (o)
+    printf("%d\n", str[0]); // esperado:77 (M)
+    printf("%d\n", str[1]); // esperado:117 (u)
+    printf("%d\n", str[2]); // esperado:110 (n)
+    printf("%d\n", str[3]); // esperado:100 (d)
+    printf("%d\n", str[4]); // esperado:111 (o)
 
     return 0;
 }

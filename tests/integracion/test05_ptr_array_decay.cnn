@@ -15,23 +15,23 @@ int main() {
     r = arr;
     r = r + 2;
     *r = 777;              // store con tamaño correcto (4 bytes, no 8)
-    printf(arr[2]);        // esperado: 777
+    printf("%d\n", arr[2]);        // esperado: 777
 
     // Load via puntero con tamaño correcto (movslq, no movq)
     p = &arr[0];
-    printf(*p);            // esperado: 10
+    printf("%d\n", *p);            // esperado: 10
 
     // Store a elemento no-inicial via aritmetica, sin corromper p
     *(p + 3) = 99;
-    printf(arr[3]);        // esperado: 99
+    printf("%d\n", arr[3]);        // esperado: 99
 
     // Verificar que p no fue corrompido por store de 8 bytes
     q = p + 1;
-    printf(*q);            // esperado: 20
+    printf("%d\n", *q);            // esperado: 20
 
     // Ptr - ptr
     dif = (p + 3) - p;
-    printf(dif);           // esperado: 3
+    printf("%d\n", dif);           // esperado: 3
 
     // Puntero a char con carga correcta (movzbq)
     char msg[4];
@@ -41,9 +41,9 @@ int main() {
     msg[2] = 'C';
     msg[3] = 'D';
     cp = &msg[0];
-    printf(*cp);           // esperado: 65
+    printf("%d\n", *cp);           // esperado: 65
     cp = cp + 2;
-    printf(*cp);           // esperado: 67
+    printf("%d\n", *cp);           // esperado: 67
 
     return 0;
 }

@@ -813,33 +813,29 @@ Exp* Parser::parse_primary() {
             return new SizeOfNode(target);
         }
     }
-    if (match(Token::PRINTF)) {
-        consume(Token::LPAREN, "Se esperaba '(' después de print/printf");
-        PrintfNode* pn = new PrintfNode();
-        if (!check(Token::RPAREN)) {
-            // Verificar si el primer argumento es un string literal (formato)
-            if (check(Token::STRING_LIT)) {
-                StringLiteralNode* fmt = dynamic_cast<StringLiteralNode*>(parse_assignment());
-                if (fmt) {
-                    pn->format = fmt->value;
-                    delete fmt;  // No necesitamos el nodo, solo el string
+        if (match(Token::PRINTF)) {
+            consume(Token::LPAREN, "Se esperaba '(' después de printf");
+            PrintfNode* pn = new PrintfNode();
+            if (!check(Token::RPAREN)) {
+                // El primer argumento debe ser un string literal (formato)
+                if (check(Token::STRING_LIT)) {
+                    StringLiteralNode* fmt = dynamic_cast<StringLiteralNode*>(parse_assignment());
+                    if (fmt) {
+                        pn->format = fmt->value;
+                        delete fmt;
+                    }
+                } else {
+                    sync_error("printf requiere un string literal como formato.");
+                    // Consumir hasta el ) para continuar parseando
+                    parse_assignment();
                 }
-                // Si hay más argumentos después del formato
-                if (match(Token::COMA)) {
-                    pn->args.push_back(parse_assignment());
-                    while (match(Token::COMA))
-                        pn->args.push_back(parse_assignment());
-                }
-            } else {
-                // Sin formato explícito, usar el primer argumento como valor con formato por defecto
-                pn->args.push_back(parse_assignment());
+                // Argumentos adicionales separados por coma
                 while (match(Token::COMA))
                     pn->args.push_back(parse_assignment());
             }
+            consume(Token::RPAREN, "Se esperaba ')'");
+            return pn;
         }
-        consume(Token::RPAREN, "Se esperaba ')'");
-        return pn;
-    }
     sync_error("Se esperaba una expresión");
     return nullptr;
 }

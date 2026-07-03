@@ -1,27 +1,133 @@
-int main() {
-    int x;
-    int y;
-    int z;
-    x = 10;
-    y = 3;
-    if (x > y) {
-        z = x + y;
+// Edge case test: void type
+// Tests void function return, void pointers, and edge cases
+
+void void_func_no_params() {
+    printf("%d\n", 999);
+}
+
+void void_func_with_params(int x, float y) {
+    printf("%d\n", x);
+    // Note: can't print float directly in this language
+}
+
+int int_func() {
+    return 42;
+}
+
+void void_calls_void() {
+    void_func_no_params(); // nested void call
+}
+
+void* return_void_ptr() {
+    int x = 100;
+    return &x; // return int* as void*
+}
+
+void void_with_if(bool flag) {
+    if (flag) {
+        printf("%d\n", 1);
     } else {
-        z = x - y;
+        printf("%d\n", 0);
     }
-    printf(z);
+}
 
-    x = x + 5;
-    printf(x);
+void void_with_loop() {
+    int i;
+    for (i = 0; i < 3; i = i + 1) {
+        printf("%d\n", i);
+    }
+}
 
-    y = y * 2;
-    printf(y);
+void vf1() { printf("%d\n", 10); }
+void vf2() { printf("%d\n", 20); }
+void vf3() { printf("%d\n", 30); }
 
-    x = x / 3;
-    printf(x);
+void void_with_locals() {
+    int local = 777;
+    printf("%d\n", local);
+}
 
-    y = y - 1;
-    printf(y);
+void void_complex() {
+    int a = 5;
+    int b = 10;
+    if (a < b) {
+        printf("%d\n", 1);
+    } else {
+        printf("%d\n", 0);
+    }
+}
 
+int main() {
+    bool ok;
+    
+    // Test 1: Void function with no parameters
+    void_func_no_params(); // esperado: 999
+    
+    // Test 2: Void function with parameters
+    void_func_with_params(123, 4.5); // esperado: 123
+    
+    // Test 3: Nested void function calls
+    void_calls_void(); // esperado: 999
+    
+    // Test 4: Void function in expression context (should not compile in strict C)
+    // void_func_no_params(); // This should be a statement, not expression
+    
+    // Test 5: Void pointer from malloc
+    void* vp = malloc(100);
+    ok = vp != 0; // should be non-null
+    printf("%d\n", ok); // esperado: 1
+    free(vp);
+    
+    // Test 6: Void pointer to int pointer conversion
+    int* ip = malloc(sizeof(int));
+    *ip = 55;
+    void* vptr = ip;
+    int* ip2 = vptr;
+    ok = *ip2 == 55;
+    printf("%d\n", ok); // esperado: 1
+    free(ip);
+    
+    // Test 7: Void pointer to char pointer conversion
+    char* cp = malloc(sizeof(char));
+    *cp = 'A';
+    void* vcptr = cp;
+    char* cp2 = vcptr;
+    ok = *cp2 == 'A';
+    printf("%d\n", ok); // esperado: 1
+    free(cp);
+    
+    // Test 8: Void pointer from function
+    void* func_ptr = return_void_ptr();
+    ok = func_ptr != 0;
+    printf("%d\n", ok); // esperado: 1
+    
+    // Test 9: Void function with control flow
+    void_with_if(true); // esperado: 1
+    void_with_if(false); // esperado: 0
+    
+    // Test 10: Void function with loop
+    void_with_loop(); // esperado: 0 1 2
+    
+    // Test 11: Void function as parameter type (function pointer not supported)
+    // This tests that void can be used in parameter lists
+    
+    // Test 12: Multiple void functions in sequence
+    vf1(); // esperado: 10
+    vf2(); // esperado: 20
+    vf3(); // esperado: 30
+    
+    // Test 13: Void function with local variables
+    void_with_locals(); // esperado: 777
+    
+    // Test 14: Void function with complex logic
+    void_complex(); // esperado: 1
+    
+    // Test 15: Void pointer arithmetic (should not be allowed in strict C)
+    // void* vpa = malloc(10);
+    // vpa = vpa + 1; // This should fail
+    
+    // Test 16: Void in sizeof (should fail in strict C)
+    // int size = sizeof(void); // This should fail
+    
     return 0;
 }
