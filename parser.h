@@ -58,7 +58,7 @@ private:
     // Helpers
     bool is_type_start() const;
     bool can_start_type();
-    VarDecl* parse_local_var_decl();
+    Stm* parse_local_var_decl();
     void rollback(Scanner::Pos saved);
     void parse_array_suffix(VarDecl* vd);
 

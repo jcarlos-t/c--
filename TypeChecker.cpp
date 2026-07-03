@@ -14,7 +14,7 @@ using namespace std;
 // Salidas principales (campos anotados en el AST):
 //   - Exp::resolvedType   — tipo semántico de cada expresión
 //   - VarDecl::offset, memSize, resolvedType — layout en stack
-//   - IdentifierNode::binding — enlace al VarDecl de la variable
+//   - IdNode::binding — enlace al VarDecl de la variable
 //   - FunDecl::frameSize — tamaño total del stack frame
 //   - StructDecl::memberOffsets, memberSizes, totalSize
 //
@@ -232,6 +232,8 @@ bool TypeChecker::check_assign(Type* target, Type* value) {
     if (target->ttype == Type::DOUBLE && value->ttype == Type::FLOAT) return true;
     // Narrowing: double → float (C compatible)
     if (target->ttype == Type::FLOAT && value->ttype == Type::DOUBLE) return true;
+    // Truncación: float/double → int/char/long (C compatible)
+    if (is_integral_type(target) && (value->ttype == Type::FLOAT || value->ttype == Type::DOUBLE)) return true;
     // Conversión implícita: int/char/long → bool
     if (target->ttype == Type::BOOL && is_integral_type(value)) return true;
     // Conversión implícita: bool → int/char/long
@@ -382,7 +384,7 @@ void TypeChecker::visit(FunDecl* f) {
             // Ej: int a[5][3] → ArrayType(ArrayType(IntType, 3), 5)
             for (int idx = (int)v->array_sizes.size() - 1; idx >= 0; idx--) {
                 int dim = -1;
-                if (auto* il = dynamic_cast<IntegerLiteralNode*>(v->array_sizes[idx]))
+                if (auto* il = dynamic_cast<NumberLiteralNode*>(v->array_sizes[idx]))
                     dim = (int)il->value;
                 ArrayType* at = new ArrayType(t, dim);
                 typeCache.push_back(at);
@@ -613,7 +615,7 @@ void TypeChecker::visit(VarDecl* v) {
     // Wrap en ArrayType si tiene dimensiones (orden inverso: primera dimensión = outermost)
     for (int idx = (int)v->array_sizes.size() - 1; idx >= 0; idx--) {
         int dim = -1;
-        if (auto* il = dynamic_cast<IntegerLiteralNode*>(v->array_sizes[idx]))
+        if (auto* il = dynamic_cast<NumberLiteralNode*>(v->array_sizes[idx]))
             dim = (int)il->value;
         ArrayType* at = new ArrayType(t, dim);
         typeCache.push_back(at);
@@ -685,7 +687,7 @@ void TypeChecker::visit(StructDecl* s) {
         // Wrap en ArrayType si tiene dimensiones (orden inverso: primera dimensión = outermost)
         for (int idx = (int)m->array_sizes.size() - 1; idx >= 0; idx--) {
             int dim = -1;
-            if (auto* il = dynamic_cast<IntegerLiteralNode*>(m->array_sizes[idx]))
+            if (auto* il = dynamic_cast<NumberLiteralNode*>(m->array_sizes[idx]))
                 dim = (int)il->value;
             ArrayType* at = new ArrayType(mt, dim);
             typeCache.push_back(at);
@@ -706,13 +708,17 @@ void TypeChecker::visit(StructDecl* s) {
 // visit(Body) — typecheck de bloque { ... }
 // -----------------------------------------------------------
 // Abre un nuevo ámbito (scope) para las variables declaradas
-// dentro del bloque.
+// dentro del bloque. Bodies sintéticos (comma-decl) no crean scope.
 void TypeChecker::visit(Body* b) {
-    env.add_level();
-    varEnv.add_level();
+    if (!b->synthetic) {
+        env.add_level();
+        varEnv.add_level();
+    }
     for (auto s : b->stmts) s->accept(this);
-    varEnv.remove_level();
-    env.remove_level();
+    if (!b->synthetic) {
+        varEnv.remove_level();
+        env.remove_level();
+    }
 }
 
 // Expresión como statement: solo verifica tipos de la expresión (descarta el valor).
@@ -939,12 +945,23 @@ void TypeChecker::visit(BinaryOpNode* e) {
             }
             break;
 
-        // Comparaciones: operandos aritméticos, resultado bool
+        // Comparaciones: operandos aritméticos o punteros, resultado bool
         case BinaryOp::EQ: case BinaryOp::NE:
         case BinaryOp::LT: case BinaryOp::GT:
         case BinaryOp::LE: case BinaryOp::GE:
             if (is_arithmetic_type(left) && is_arithmetic_type(right)) {
                 resultType = intType;
+            } else if (left->ttype == Type::POINTER && right->ttype == Type::POINTER) {
+                resultType = intType;
+            } else if ((left->ttype == Type::POINTER && is_integral_type(right)) ||
+                       (is_integral_type(left) && right->ttype == Type::POINTER)) {
+                // pointer == 0 / pointer != 0 (NULL checks)
+                if (e->op == BinaryOp::EQ || e->op == BinaryOp::NE) {
+                    resultType = intType;
+                } else {
+                    error("comparación aritmética entre puntero y entero.");
+                    resultType = intType;
+                }
             } else {
                 error("comparación requiere tipo aritmético.");
                 resultType = intType;
@@ -1048,7 +1065,7 @@ void TypeChecker::visit(UnaryOpNode* e) {
 //       x = 3.5 → verifica int ← float → error
 //       f = 3.5 → verifica float ← float ok
 void TypeChecker::visit(AssignmentNode* e) {
-    // El target debe ser l-value con resolvedType (Identifier, Index, Member, etc.).
+    // El target debe ser l-value con resolvedType (Id, Index, Member, etc.).
     isLvalContext = true;
     e->target->accept(this); Type* targetType = e->target->resolvedType;
     isLvalContext = false;
@@ -1063,7 +1080,7 @@ void TypeChecker::visit(AssignmentNode* e) {
               targetType->str() + ").");
     }
     e->resolvedType = targetType;
-    if (auto* id = dynamic_cast<IdentifierNode*>(e->target)) {
+    if (auto* id = dynamic_cast<IdNode*>(e->target)) {
         initialized_vars.insert(id->binding);
     }
 }
@@ -1125,7 +1142,7 @@ bool TypeChecker::checkFuncCall(const string& fname, FuncInfo& info, FcallNode* 
 //
 //   Ej: suma(1, 2) → busca función "suma", verifica argumentos
 void TypeChecker::visit(FcallNode* e) {
-    if (auto* id = dynamic_cast<IdentifierNode*>(e->callee)) {
+    if (auto* id = dynamic_cast<IdNode*>(e->callee)) {
         string fname = id->name;
 
         // --- Llamada a función normal ---
@@ -1235,7 +1252,7 @@ void TypeChecker::visit(ArrowAccessNode* e) {
 }
 
 // -----------------------------------------------------------
-// visit(IdentifierNode) — typecheck de identificador
+// visit(IdNode) — typecheck de identificador
 // -----------------------------------------------------------
 // Busca la variable en el environment. Si existe, asigna
 // el binding (VarDecl*) al nodo y retorna su tipo.
@@ -1244,7 +1261,7 @@ void TypeChecker::visit(ArrowAccessNode* e) {
 //
 //   Ej: x → busca "x" en varEnv, binding = &VarDecl{x, ...}
 //       resolvedType = IntType
-void TypeChecker::visit(IdentifierNode* e) {
+void TypeChecker::visit(IdNode* e) {
     VarDecl* vd = nullptr;
     if (!varEnv.lookup(e->name, vd)) {
         error("variable '" + e->name + "' no declarada.");
@@ -1273,7 +1290,7 @@ void TypeChecker::visit(IdentifierNode* e) {
 // -----------------------------------------------------------
 // Visits de literales — cada literal fija resolvedType en el nodo
 // -----------------------------------------------------------
-void TypeChecker::visit(IntegerLiteralNode* e) {
+void TypeChecker::visit(NumberLiteralNode* e) {
     e->resolvedType = intType;
 }
 void TypeChecker::visit(FloatLiteralNode* e) {

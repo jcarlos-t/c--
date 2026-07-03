@@ -8,7 +8,7 @@ using namespace std;
 // ConstantFolding - Evaluación de expresiones constantes
 // ============================================================
 
-void ConstantFolding::visit(IntegerLiteralNode* e) {
+void ConstantFolding::visit(NumberLiteralNode* e) {
     e->isConstant = true;
     e->constantValue = e->value;
 }
@@ -32,7 +32,7 @@ void ConstantFolding::visit(StringLiteralNode* e) {
     e->isConstant = false;
 }
 
-void ConstantFolding::visit(IdentifierNode* e) {
+void ConstantFolding::visit(IdNode* e) {
     e->isConstant = false;
 }
 

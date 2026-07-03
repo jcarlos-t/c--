@@ -63,13 +63,13 @@ SizeOfNode::~SizeOfNode() {
     else delete expr_arg;
 }
 
-// ===================== IdentifierNode =====================
-IdentifierNode::IdentifierNode(const string& n)
+// ===================== IdNode =====================
+IdNode::IdNode(const string& n)
     : Exp(), name(n) {}
-IdentifierNode::~IdentifierNode() {}
+IdNode::~IdNode() {}
 
-// ===================== IntegerLiteralNode =====================
-IntegerLiteralNode::IntegerLiteralNode(long long v)
+// ===================== NumberLiteralNode =====================
+NumberLiteralNode::NumberLiteralNode(long long v)
     : Exp(), value(v) {}
 
 // ===================== FloatLiteralNode =====================
@@ -176,17 +176,33 @@ Program::~Program() {
 PrimitiveTypeNode::PrimitiveTypeNode(Prim p)
     : TypeNode(), prim(p) {}
 void PrimitiveTypeNode::accept(Visitor* v) { v->visit(this); }
+TypeNode* PrimitiveTypeNode::clone() const {
+    PrimitiveTypeNode* n = new PrimitiveTypeNode(prim);
+    n->isUnsigned = isUnsigned;
+    n->isConst = isConst;
+    return n;
+}
 
 // ===================== PointerTypeNode =====================
 PointerTypeNode::PointerTypeNode(TypeNode* b)
     : TypeNode(), base(b) {}
 PointerTypeNode::~PointerTypeNode() { delete base; }
 void PointerTypeNode::accept(Visitor* v) { v->visit(this); }
+TypeNode* PointerTypeNode::clone() const {
+    PointerTypeNode* n = new PointerTypeNode(base->clone());
+    n->isConst = isConst;
+    return n;
+}
 
 // ===================== StructTypeNode =====================
 StructTypeNode::StructTypeNode(const string& n)
     : TypeNode(), name(n) {}
 void StructTypeNode::accept(Visitor* v) { v->visit(this); }
+TypeNode* StructTypeNode::clone() const {
+    StructTypeNode* n = new StructTypeNode(name);
+    n->isConst = isConst;
+    return n;
+}
 
 
 

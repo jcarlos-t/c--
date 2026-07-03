@@ -42,6 +42,7 @@ public:
     TypeNode() {}
     virtual ~TypeNode() {}
     virtual void accept(Visitor* visitor) = 0;
+    virtual TypeNode* clone() const = 0;
 };
 
 // Tipo primitivo: void, int, char, float, double, bool, long
@@ -52,6 +53,7 @@ public:
     bool isUnsigned = false; // Modificador unsigned
     PrimitiveTypeNode(Prim p);
     void accept(Visitor* visitor);
+    TypeNode* clone() const;
 
 };
 
@@ -62,6 +64,7 @@ public:
     PointerTypeNode(TypeNode* b);
     ~PointerTypeNode();
     void accept(Visitor* visitor);
+    TypeNode* clone() const;
 
 };
 
@@ -71,6 +74,7 @@ public:
     string name;
     StructTypeNode(const string& n);
     void accept(Visitor* visitor);
+    TypeNode* clone() const;
 
 };
 
@@ -202,22 +206,22 @@ public:
 };
 
 // Referencia a variable por nombre
-class IdentifierNode : public Exp {
+class IdNode : public Exp {
 public:
     string name;
     VarDecl* binding = nullptr;  // VarDecl resuelto por TypeChecker (scope/shadowing)
-    IdentifierNode(const string& n);
-    ~IdentifierNode();
+    IdNode(const string& n);
+    ~IdNode();
     void accept(Visitor* visitor);
 
     void computeAddress(Visitor* visitor);
 };
 
 // Literal entero
-class IntegerLiteralNode : public Exp {
+class NumberLiteralNode : public Exp {
 public:
     long long value;
-    IntegerLiteralNode(long long v);
+    NumberLiteralNode(long long v);
     void accept(Visitor* visitor);
 
 };
@@ -283,6 +287,7 @@ public:
 class Body : public Stm {
 public:
     vector<Stm*> stmts;
+    bool synthetic = false; // true if created by comma-separated decl, no new scope
     Body();
     ~Body();
     void accept(Visitor* visitor);

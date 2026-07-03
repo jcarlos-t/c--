@@ -15,8 +15,8 @@ void IndexNode::accept(Visitor* v) { v->visit(this); }
 void MemberAccessNode::accept(Visitor* v) { v->visit(this); }
 void ArrowAccessNode::accept(Visitor* v) { v->visit(this); }
 void SizeOfNode::accept(Visitor* v) { v->visit(this); }
-void IdentifierNode::accept(Visitor* v) { v->visit(this); }
-void IntegerLiteralNode::accept(Visitor* v) { v->visit(this); }
+void IdNode::accept(Visitor* v) { v->visit(this); }
+void NumberLiteralNode::accept(Visitor* v) { v->visit(this); }
 void FloatLiteralNode::accept(Visitor* v) { v->visit(this); }
 void BoolLiteralNode::accept(Visitor* v) { v->visit(this); }
 void CharLiteralNode::accept(Visitor* v) { v->visit(this); }

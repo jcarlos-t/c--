@@ -131,11 +131,15 @@ void Parser::parse_array_suffix(VarDecl* vd) {
 // Types
 // =============================
 
-// parse_type: parsea tipo básico + cero o más '*' (punteros)
+// parse_type: parsea tipo básico + cero o más '*' (punteros) + opcional const
 TypeNode* Parser::parse_type() {
     TypeNode* base = parse_basic_type();
     while (match(Token::STAR)) {
         base = new PointerTypeNode(base);
+    }
+    // Allow const after pointer (e.g., int* const)
+    if (match(Token::CONST)) {
+        base->isConst = true;
     }
     return base;
 }
@@ -405,11 +409,42 @@ Stm* Parser::parse_statement() {
     return new ExprStmtNode(expr);
 }
 
-// parse_local_var_decl: parsea declaración de variable local
-VarDecl* Parser::parse_local_var_decl() {
+// parse_local_var_decl: parsea declaración de variable local (soporta múltiples separadas por coma)
+Stm* Parser::parse_local_var_decl() {
     TypeNode* type = parse_type();
     Token* name = consume(Token::ID, "Se esperaba identificador");
-    return parse_variable_decl(type, name->text);
+    
+    // Create first variable
+    VarDecl* first_vd = parse_variable_decl(type, name->text, false);
+    
+    // Check for comma-separated declarations
+    vector<VarDecl*> decls;
+    decls.push_back(first_vd);
+    
+    while (match(Token::COMA)) {
+        Token* next_name = consume(Token::ID, "Se esperaba identificador después de ','");
+        // Clone the type for each variable (same type, different variable)
+        TypeNode* next_type = type->clone();
+        VarDecl* next_vd = parse_variable_decl(next_type, next_name->text, false);
+        decls.push_back(next_vd);
+    }
+    
+    consume(Token::SEMICOL, "Se esperaba ';' al final de la declaración");
+    
+    // Return as individual statements (simpler for now)
+    // For proper implementation, we'd need a multi-declaration node
+    // For now, just return the first one and handle the rest separately
+    if (decls.size() == 1) {
+        return first_vd;
+    }
+    
+    // Create a synthetic body (no new scope) with all declarations
+    Body* body = new Body();
+    body->synthetic = true;
+    for (auto vd : decls) {
+        body->stmts.push_back(vd);
+    }
+    return body;
 }
 
 // parse_compound_statement: parsea { stmts }
@@ -725,10 +760,10 @@ Exp* Parser::parse_primary() {
         return new BoolLiteralNode(false);
     }
     if (match(Token::ID)) {
-        return new IdentifierNode(previous->text);
+        return new IdNode(previous->text);
     }
     if (match(Token::NUM)) {
-        return new IntegerLiteralNode(stoll(previous->text));
+        return new NumberLiteralNode(stoll(previous->text));
     }
     if (match(Token::FNUM)) {
         return new FloatLiteralNode(stod(previous->text));

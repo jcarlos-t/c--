@@ -132,7 +132,7 @@ public:
     }
 
     // Busca y asigna en v. Retorna true si el símbolo existe.
-    // TypeChecker usa esto en visit(IdentifierNode) y capturas de lambda.
+    // TypeChecker usa esto en visit(IdNode) y capturas de lambda.
     bool lookup(const string& x, T& v) const {
         int idx = search_rib(x);
         if (idx < 0) return false;
