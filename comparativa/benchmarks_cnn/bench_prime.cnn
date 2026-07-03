@@ -28,6 +28,6 @@ int main() {
         i = i + 1;
     }
     
-    printf(count);
+    printf("%d\n", count);
     return 0;
 }
