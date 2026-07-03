@@ -1,23 +1,113 @@
+// Edge case test: const modifier
+// Tests const with different types, scopes, and edge cases
+
+const int global_const = 42;
+
+void use_const_param(const int x) {
+    int y = x; // can read const param
+    printf("%d\n", y);
+}
+
 int main() {
-    int matriz[2][3];
-    int i;
-    int j;
-
-    // Inicialización manual celda por celda
-    matriz[0][0] = 1;
-    matriz[0][1] = 2;
-    matriz[0][2] = 3;
-    matriz[1][0] = 4;
-    matriz[1][1] = 5;
-    matriz[1][2] = 6;
-
-    // Recorrido con bucles for permitidos
-    for (i = 0; i < 2; i = i + 1) {
-        for (j = 0; j < 3; j = j + 1) {
-            printf(matriz[i][j]); 
-            // Esperado secuencial: 1, 2, 3, 4, 5, 6
-        }
+    bool ok;
+    
+    // Test 1: Const int basic usage
+    const int ci = 10;
+    int i = ci;
+    ok = i == 10;
+    printf("%d\n", ok); // esperado: 1
+    
+    // Test 2: Const float
+    const float cf = 3.14;
+    float f = cf;
+    ok = f > 3.13 && f < 3.15;
+    printf("%d\n", ok); // esperado: 1
+    
+    // Test 3: Const double
+    const double cd = 2.71828;
+    double d = cd;
+    ok = d > 2.71827 && d < 2.71829;
+    printf("%d\n", ok); // esperado: 1
+    
+    // Test 4: Const char
+    const char cc = 'X';
+    char c = cc;
+    ok = c == 'X';
+    printf("%d\n", ok); // esperado: 1
+    
+    // Test 5: Const long long
+    const long long cll = 9000000000;
+    long long ll = cll;
+    ok = ll == 9000000000;
+    printf("%d\n", ok); // esperado: 1
+    
+    // Test 6: Const unsigned
+    const unsigned cu = 4294967295;
+    unsigned u = cu;
+    ok = u == 4294967295;
+    printf("%d\n", ok); // esperado: 1
+    
+    // Test 7: Const bool
+    const bool cb = true;
+    bool b = cb;
+    ok = b == true;
+    printf("%d\n", ok); // esperado: 1
+    
+    // Test 8: Const with arrays (element access)
+    const int carr[3] = {1, 2, 3}; // Note: initialization syntax may vary
+    int arr_val = carr[1];
+    ok = arr_val == 2;
+    printf("%d\n", ok); // esperado: 1
+    
+    // Test 9: Const global variable access
+    int global_val = global_const;
+    ok = global_val == 42;
+    printf("%d\n", ok); // esperado: 1
+    
+    // Test 10: Const in function parameter
+    use_const_param(100); // esperado: 100
+    
+    // Test 11: Const with pointer (read-only through pointer)
+    int x = 5;
+    const int* ptr = &x;
+    int val = *ptr;
+    ok = val == 5;
+    printf("%d\n", ok); // esperado: 1
+    
+    // Test 12: Const pointer (pointer itself is const)
+    int y = 10;
+    int* const ptr2 = &y;
+    *ptr2 = 20; // can modify what pointer points to
+    ok = y == 20;
+    printf("%d\n", ok); // esperado: 1
+    
+    // Test 13: Const in local scope
+    {
+        const int local_const = 77;
+        int local_copy = local_const;
+        ok = local_copy == 77;
+        printf("%d\n", ok); // esperado: 1
     }
-
+    
+    // Test 14: Const with arithmetic
+    const int c1 = 5;
+    const int c2 = 10;
+    int result = c1 + c2;
+    ok = result == 15;
+    printf("%d\n", ok); // esperado: 1
+    
+    // Test 15: Const with comparison
+    const int c3 = 20;
+    const int c4 = 20;
+    ok = c3 == c4;
+    printf("%d\n", ok); // esperado: 1
+    
+    // Test 16: Const float with arithmetic
+    const float cf1 = 1.5;
+    const float cf2 = 2.5;
+    float fresult = cf1 * cf2;
+    ok = fresult > 3.74 && fresult < 3.76;
+    printf("%d\n", ok); // esperado: 1
+    
     return 0;
 }

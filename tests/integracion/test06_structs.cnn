@@ -14,7 +14,7 @@ int main() {
     q.y = 7;
 
     sum = p.x + q.y;
-    printf(sum); // esperado: 17
+    printf("%d\n", sum); // esperado: 17
 
     return 0;
 }

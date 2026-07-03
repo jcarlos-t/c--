@@ -10,19 +10,19 @@ int main() {
     } else {
         z = x - y;
     }
-    printf(z); // esperado:13
+    printf("%d\n", z); // esperado:13
 
     x = x +5;
-    printf(x); // esperado:15
+    printf("%d\n", x); // esperado:15
 
     y = y *2;
-    printf(y); // esperado:6
+    printf("%d\n", y); // esperado:6
 
     x = x /3;
-    printf(x); // esperado:5
+    printf("%d\n", x); // esperado:5
 
     y = y -1;
-    printf(y); // esperado:5
+    printf("%d\n", y); // esperado:5
 
     return 0;
 }

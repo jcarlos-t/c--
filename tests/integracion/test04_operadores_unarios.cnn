@@ -8,17 +8,17 @@ int main() {
     c = 0;
 
     a = ++b;
-    printf(a); // esperado:6
-    printf(b); // esperado:6
+    printf("%d\n", a); // esperado:6
+    printf("%d\n", b); // esperado:6
 
     c = b--;
-    printf(c); // esperado:6
-    printf(b); // esperado:5
+    printf("%d\n", c); // esperado:6
+    printf("%d\n", b); // esperado:5
 
     if(!(a==0) && (b < 10 || c>0 )){
-        printf(1); // esperado:1
+        printf("%d\n", 1); // esperado:1
     } else {
-        printf(0);
+        printf("%d\n", 0);
     }
 
     return 0;

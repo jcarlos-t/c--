@@ -14,9 +14,9 @@ int suma(int a, int b) {
 
 int main() {
     int a = 2 * 2;
-    printf(a); // esperado:4
-    printf(factorial(a)); // esperado:24
-    printf(triple(a)); // esperado:12
-    printf(suma(a,a)); // esperado:8
+    printf("%d\n", a); // esperado:4
+    printf("%d\n", factorial(a)); // esperado:24
+    printf("%d\n", triple(a)); // esperado:12
+    printf("%d\n", suma(a,a)); // esperado:8
     return 0;
 }

@@ -2,6 +2,6 @@ int main() {
     int* addr;
     addr = malloc(5);
     free(addr);
-    printf(0); // esperado: 0
+    printf("%d\n", 0); // esperado: 0
     return 0;
 }

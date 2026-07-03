@@ -3,16 +3,16 @@ int main() {
     x = 2;
     switch (x) {
         case 1: {
-            printf(10);
+            printf("%d\n", 10);
         }
         case 2: {
-            printf(20); // esperado: 20
+            printf("%d\n", 20); // esperado: 20
         }
         case 3: {
-            printf(30); // esperado: 30
+            printf("%d\n", 30); // esperado: 30
         }
         default: {
-            printf(99); // esperado: 99
+            printf("%d\n", 99); // esperado: 99
         }
     }
     return 0;

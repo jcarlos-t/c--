@@ -11,7 +11,7 @@ int main() {
     
     // Test direccionamiento y desreferenciación
     *p = 200;
-    printf(x);  // esperado: 200
+    printf("%d\n", x);  // esperado: 200
     
     // Test malloc y free
     int* arr;
@@ -23,7 +23,7 @@ int main() {
     sum = arr[0] + arr[1] + arr[2];
     free(arr);
     
-    printf(sum);  // esperado: 6
+    printf("%d\n", sum);  // esperado: 6
     
     // Test puntero a struct
     struct Point pt;
@@ -32,8 +32,8 @@ int main() {
     ptPtr->x = 10;
     ptPtr->y = 20;
     
-    printf(pt.x);  // esperado: 10
-    printf(pt.y);  // esperado: 20
+    printf("%d\n", pt.x);  // esperado: 10
+    printf("%d\n", pt.y);  // esperado: 20
     
     return 0;
 }
