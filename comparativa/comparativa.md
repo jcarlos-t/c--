@@ -1,6 +1,7 @@
 # Comparativa de rendimiento — Compilador C--
 
-Comparación del compilador **C--** con **GCC** y **Clang** en tiempo de compilación, tiempo de ejecución y tamaño de binario.
+Comparación del compilador **C--** con **GCC** en tiempo de compilación,
+tiempo de ejecución y tamaño de binario.
 
 ## Metodología
 
@@ -23,109 +24,141 @@ Cada benchmark existe en par equivalente: `benchmarks_cnn/*.cnn` y `benchmarks_c
 |---------|-------------|
 | Compilación (codegen) | `c-- -c` — solo frontend + typecheck + codegen |
 | Compilación (full) | `c-- --exec` — pipeline completo hasta ejecutable |
-| Compilación GCC/Clang | `gcc` / `clang` con `-O0` y `-O2` hasta binario |
+| Compilación GCC | `gcc` con `-O0` y `-O2` hasta binario |
 | Ejecución | Mediana de **7 ejecuciones** (timeout 120 s por run) |
 | Tamaño | Bytes del ejecutable en disco |
 
 ### Limitaciones
 
-1. C-- usa `printf(int)` y `printf(double)`, no `printf("%ld\n", ...)` — en benchmarks CPU-bound el impacto es bajo.
-2. C-- aplica constant folding; GCC/Clang -O2 aplican decenas de passes de optimización.
-3. Mediciones en una sola máquina; no se normaliza por frecuencia de CPU.
+1. `C--` usa `printf("%d\n", ...)` / `printf("%f\n", ...)` — soporte nativo de
+   formato desde el fix de printf (jul-2026); antes de ese fix los benchmarks
+   usaban `printf(valor)` sin formato, sintaxis ya no aceptada por el parser.
+2. `C--` aplica constant folding; GCC -O2 aplica decenas de passes de optimización.
+3. Mediciones tomadas dentro de un filesystem WSL2 (`\\wsl.localhost\...`); el
+   *spawn* de procesos externos (`gcc`, el binario resultante) sufre overhead
+   de E/S notablemente mayor que en un Linux nativo. Esto **infla los tiempos
+   de compilación de GCC y de `C-- --exec`** (que también invoca `gcc` para
+   ensamblar/enlazar) más de lo que infla el modo `c-- -c` (que no toca disco
+   más que para leer el fuente). Por eso el ratio codegen-only vs. GCC de esta
+   corrida es más extremo que en una máquina Linux nativa — no se debe leer
+   como una mejora arquitectónica del compilador, sino como un artefacto del
+   entorno de medición.
+4. **Clang no está instalado en este entorno** — las columnas Clang de una
+   corrida anterior (2026-07-01, máquina distinta) no se reprodujeron aquí.
+5. Mediciones en una sola máquina; no se normaliza por frecuencia de CPU.
 
 ### Entorno
 
 ```
-Fecha: 2026-07-01
-GCC: 16.1.1
-Clang: 22.1.6
-Python: 3.14.6
+Fecha: 2026-07-03
+GCC: 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04.1)
+Clang: no instalado
+Python: 3.12.3
 Repeticiones: 7 por medición
-Timeoutejec: 120 s
+Timeout ejec: 120 s
 ```
 
 ## Resultados
 
 ### Tiempos de compilación
 
-| Benchmark | C-- codegen | C-- full | GCC -O0 | GCC -O2 | Clang -O0 | Clang -O2 |
-|-----------|------------:|---------:|--------:|--------:|----------:|----------:|
-| bench_fib | 1.3 ms | 17.3 ms | 23.9 ms | 49.7 ms | 38.2 ms | 37.5 ms |
-| bench_matmul | 1.3 ms | 18.9 ms | 26.2 ms | 37.9 ms | 39.0 ms | 46.8 ms |
-| bench_float | 1.4 ms | 15.8 ms | 27.5 ms | 29.3 ms | 35.9 ms | 41.1 ms |
-| bench_struct | 1.3 ms | 18.9 ms | 24.8 ms | 29.1 ms | 39.1 ms | 36.4 ms |
-| bench_prime | 1.4 ms | 16.6 ms | 24.5 ms | 29.8 ms | 35.8 ms | 38.6 ms |
-| bench_mixed | 1.3 ms | 16.9 ms | 24.9 ms | 30.4 ms | 35.5 ms | 36.8 ms |
+| Benchmark | C-- codegen | C-- full | GCC -O0 | GCC -O2 |
+|-----------|------------:|---------:|--------:|--------:|
+| bench_fib | 1.7 ms | 478.5 ms | 470.4 ms | 554.1 ms |
+| bench_matmul | 1.2 ms | 195.5 ms | 278.5 ms | 220.6 ms |
+| bench_float | 1.1 ms | 242.1 ms | 197.6 ms | 220.1 ms |
+| bench_struct | 1.1 ms | 180.4 ms | 166.2 ms | 193.3 ms |
+| bench_prime | 1.1 ms | 270.2 ms | 165.4 ms | 277.9 ms |
+| bench_mixed | 1.1 ms | 286.2 ms | 491.0 ms | 335.7 ms |
 
 ![Tiempos de compilación](results/charts/compilation_times.svg)
 
 ### Tiempos de ejecución
 
-| Benchmark | C-- | GCC -O0 | GCC -O2 | Clang -O0 | Clang -O2 |
-|-----------|----:|--------:|--------:|----------:|----------:|
-| bench_fib | 61.7 ms | 51.6 ms | 13.1 ms | 43.7 ms | 25.7 ms |
-| bench_matmul | 3.2 ms | 2.4 ms | 0.8 ms | 1.8 ms | 0.9 ms |
-| bench_float | 9.0 ms | 2.3 ms | 1.0 ms | 4.4 ms | 1.1 ms |
-| bench_struct | 2.3 ms | 1.9 ms | 0.9 ms | 1.7 ms | 0.5 ms |
-| bench_prime | 3.7 ms | 2.6 ms | 2.5 ms | 2.8 ms | 2.5 ms |
-| bench_mixed | 2.4 ms | 1.4 ms | 0.7 ms | 1.6 ms | 0.5 ms |
+| Benchmark | C-- | GCC -O0 | GCC -O2 |
+|-----------|----:|--------:|--------:|
+| bench_fib | 72.4 ms | 57.1 ms | 13.5 ms |
+| bench_matmul | 3.3 ms | 1.7 ms | 0.8 ms |
+| bench_float | 6.3 ms | 1.5 ms | 0.7 ms |
+| bench_struct | 1.9 ms | 2.5 ms | 1.3 ms |
+| bench_prime | 2.5 ms | 4.3 ms | 1.6 ms |
+| bench_mixed | 3.0 ms | 1.3 ms | 0.5 ms |
 
 ![Tiempos de ejecución](results/charts/execution_times.svg)
 
 ### Tamaños de binario
 
-| Benchmark | C-- | GCC -O0 | GCC -O2 | Clang -O0 | Clang -O2 |
-|-----------|----:|--------:|--------:|----------:|----------:|
-| bench_fib | 16.0 KB | 15.6 KB | 15.6 KB | 15.6 KB | 15.6 KB |
-| bench_matmul | 16.1 KB | 15.7 KB | 15.7 KB | 15.7 KB | 15.7 KB |
-| bench_float | 15.9 KB | 15.6 KB | 15.6 KB | 15.6 KB | 15.6 KB |
-| bench_struct | 15.9 KB | 15.7 KB | 15.6 KB | 15.7 KB | 15.6 KB |
-| bench_prime | 16.1 KB | 15.6 KB | 15.6 KB | 15.6 KB | 15.6 KB |
-| bench_mixed | 15.9 KB | 15.6 KB | 15.6 KB | 15.6 KB | 15.6 KB |
+| Benchmark | C-- | GCC -O0 | GCC -O2 |
+|-----------|----:|--------:|--------:|
+| bench_fib | 15.6 KB | 15.6 KB | 15.6 KB |
+| bench_matmul | 15.7 KB | 15.6 KB | 15.7 KB |
+| bench_float | 15.5 KB | 15.6 KB | 15.6 KB |
+| bench_struct | 15.5 KB | 15.6 KB | 15.6 KB |
+| bench_prime | 15.7 KB | 15.6 KB | 15.6 KB |
+| bench_mixed | 15.5 KB | 15.6 KB | 15.6 KB |
 
 ![Tamaños de binario](results/charts/binary_sizes.svg)
 
 ### Speedups de ejecución (vs C--)
 
-| Benchmark | GCC -O0 | GCC -O2 | Clang -O0 | Clang -O2 |
-|-----------|--------:|--------:|----------:|----------:|
-| bench_fib | 1.20× | 4.70× | 1.41× | 2.40× |
-| bench_matmul | 1.35× | 3.93× | 1.78× | 3.64× |
-| bench_float | 3.88× | 9.03× | 2.06× | 8.31× |
-| bench_struct | 1.20× | 2.61× | 1.34× | 4.39× |
-| bench_prime | 1.40× | 1.47× | 1.32× | 1.45× |
-| bench_mixed | 1.74× | 3.57× | 1.48× | 4.59× |
+| Benchmark | GCC -O0 | GCC -O2 |
+|-----------|--------:|--------:|
+| bench_fib | 1.27× | 5.36× |
+| bench_matmul | 2.00× | 4.19× |
+| bench_float | 4.22× | 9.26× |
+| bench_struct | 0.79× | 1.53× |
+| bench_prime | 0.59× | 1.54× |
+| bench_mixed | 2.28× | 6.34× |
 
-> Ratio > 1 significa que el compilador es más rápido que C--.
+> Ratio > 1 significa que GCC es más rápido que C--; ratio < 1 significa que
+> C-- fue más rápido en esta corrida (ver nota sobre ruido en Análisis).
 
 ## Análisis
 
 ### Compilación
 
-C-- codegen es **~20–35× más rápido** que GCC/Clang -O2. Esto es esperable: el frontend de C-- es un parser simple sin optimizaciones multi-pase. El pipeline completo (`--exec`) añade el tiempo de `gcc` para ensamblar y linkear, acercándose a los tiempos de GCC -O0.
+En modo `c-- -c` (solo parseo + typecheck + codegen, sin tocar disco salvo
+para leer el fuente), C-- toma consistentemente ~1.1–1.7 ms. El pipeline
+completo (`--exec`) delega en `gcc` para ensamblar/enlazar y por eso escala
+con el mismo overhead de proceso externo que sufre GCC en este entorno WSL2
+(ver Limitaciones, punto 3) — de ahí que `C-- full` y `GCC -O0/-O2` queden en
+el mismo orden de magnitud (~165–555 ms), mientras que el modo codegen puro
+se mantiene ~100–450× más rápido. Esa brecha extrema no debe interpretarse
+como una ventaja arquitectónica real de C--, sino como el resultado de que
+solo el modo codegen evita por completo el costo de I/O de este entorno.
 
 ### Ejecución
 
-La mediana de speedup de GCC -O2 sobre C-- es **3.75×**. Las brechas más grandes se dan en:
+La mediana de speedup de GCC -O2 sobre C-- es **~4.78×**. Las brechas más
+grandes se dan en:
 
-- **bench_float (9.03×)**: GCC vectoriza con SSE/AVX; C-- usa SSE escalar.
-- **bench_fib (4.70×)**: GCC optimiza la recursión con reuso de registros; C-- spillea todo al stack.
-- **bench_matmul (3.93×)**: GCC desenrolla loops y vectoriza; C-- accede linealmente.
+- **bench_float (9.26×)**: GCC vectoriza con SSE/AVX; C-- usa SSE escalar.
+- **bench_mixed (6.34×)** y **bench_fib (5.36×)**: mezcla de aritmética y
+  recursión donde GCC reutiliza registros; C-- spillea todo al stack.
+- **bench_matmul (4.19×)**: GCC desenrolla loops y vectoriza; C-- accede linealmente.
 
-En **bench_prime (1.47×)** la brecha es menor porque el cuello de botella es la aritmética entera, donde C-- genera código directo sin sobrecarga de llamadas a función.
+En **bench_struct (1.53×)** y **bench_prime (1.54×)** la brecha es menor
+porque el cuello de botella es aritmética entera y control de flujo, donde
+C-- genera código directo sin sobrecarga de optimización. Contra GCC -O0,
+**bench_struct** y **bench_prime** incluso midieron a C-- más rápido
+(0.79× y 0.59×) — con cargas de ~2–4 ms y 7 repeticiones, el ruido de
+scheduling en WSL2 pesa más que la diferencia real de codegen; no se debe
+sobre-interpretar ese resultado puntual.
 
 ### Tamaño de binario
 
-Los binarios de C-- son consistentemente **~400-500 bytes más grandes** que los de GCC. Esto se debe a que C-- incluye código de soporte (potencia, formato `printf`) que GCC maneja vía libc, y a que C-- no elimina código muerto.
+Los binarios de C-- son comparables a los de GCC (diferencia de apenas
+decenas de bytes en esta corrida, dentro del margen de las secciones fijas
+de runtime/`printf`). No hay una penalización sistemática relevante.
 
 ### Fortalezas y debilidades
 
 **Fortalezas de C--:**
-- Compilación extremadamente rápida (~1.3 ms codegen)
+- Compilación (parseo + typecheck + codegen) extremadamente rápida (~1.1 ms)
 - Código generado claro, legible y didáctico
 - Constant folding reduce expresiones constantes en tiempo de compilación
 
-**Debilidades frente a GCC/Clang -O2:**
+**Debilidades frente a GCC -O2:**
 - Sin asignación de registros (todo spillea al stack)
 - Sin vectorización SIMD
 - Sin desenrollado de loops
@@ -136,17 +169,15 @@ Los binarios de C-- son consistentemente **~400-500 bytes más grandes** que los
 
 ```bash
 # 1. Compilar el compilador (desde la raíz del repo)
-make -C /home/tkaos/UTEC/C5/compi/c-- all
+make
 
-# 2. Ejecutar mediciones
+# 2. Ejecutar mediciones (requiere matplotlib: pip install --user matplotlib)
 cd comparativa/scripts
-chmod +x run_all.sh
-./run_all.sh
-```
-
-O por pasos:
-
-```bash
 python3 run_benchmarks.py
 python3 analyze_results.py
 ```
+
+`run_all.sh` hace ambos pasos en uno, pero el archivo trae terminadores de
+línea CRLF en este checkout — si falla con `required file not found` o
+`$'\r': command not found`, ejecutar los dos scripts de Python por separado
+como arriba, o convertir el script con `dos2unix run_all.sh` primero.
