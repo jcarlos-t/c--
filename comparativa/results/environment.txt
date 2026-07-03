@@ -1,8 +1,8 @@
-date: 2026-07-03T12:53:37-05:00
+date: 2026-07-03T14:43:52-05:00
 runs_per_measurement: 7
 metric: median
 exec_timeout_sec: 120
 
-gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
-clang: not installed
-python: Python 3.12.3
+gcc: gcc (GCC) 16.1.1 20260625
+clang: clang version 22.1.6
+python: Python 3.14.6
