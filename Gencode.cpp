@@ -442,7 +442,11 @@ void GenCodeVisitor::emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices
         if (elemSize == 1) out << "  addq %r10, %rax\n";
         else if (elemSize == 2) out << "  leaq (%rax,%r10,2), %rax\n";
         else if (elemSize == 4) out << "  leaq (%rax,%r10,4), %rax\n";
-        else out << "  leaq (%rax,%r10,8), %rax\n";
+        else {
+            out << "  movq $" << elemSize << ", %r11\n";
+            out << "  imulq %r11, %r10\n";
+            out << "  addq %r10, %rax\n";
+        }
         return;
     }
 
@@ -454,12 +458,17 @@ void GenCodeVisitor::emitIndexedAddress(VarDecl* vd, const vector<Exp*>& indices
     else
         loadBinding(vd);
 
-    string scale;
-    if (elemSize == 1) scale = "";
-    else if (elemSize == 2) scale = ",2";
-    else if (elemSize == 4) scale = ",4";
-    else scale = ",8";
-    out << "  leaq (%rax,%rdi" << scale << "), %rax\n";
+    if (elemSize == 1) {
+        out << "  addq %rdi, %rax\n";
+    } else if (elemSize == 2) {
+        out << "  leaq (%rax,%rdi,2), %rax\n";
+    } else if (elemSize == 4) {
+        out << "  leaq (%rax,%rdi,4), %rax\n";
+    } else {
+        out << "  movq $" << elemSize << ", %rcx\n";
+        out << "  imulq %rcx, %rdi\n";
+        out << "  addq %rdi, %rax\n";
+    }
 }
 
 // ============================================================
@@ -491,12 +500,18 @@ void GenCodeVisitor::emitIndexedLoad(VarDecl* vd, const vector<Exp*>& indices) {
     else
         loadBinding(vd);
 
-    string scale;
-    if (elemSize == 1) scale = "";
-    else if (elemSize == 2) scale = ",2";
-    else if (elemSize == 4) scale = ",4";
-    else scale = ",8";
-    out << "  " << loadInstr(elemSize) << " (%rax,%rdi" << scale << "), %rax\n";
+    if (elemSize == 1) {
+        out << "  movzbq (%rax,%rdi), %rax\n";
+    } else if (elemSize == 2) {
+        out << "  movslq (%rax,%rdi,2), %rax\n";
+    } else if (elemSize == 4) {
+        out << "  movslq (%rax,%rdi,4), %rax\n";
+    } else {
+        out << "  movq $" << elemSize << ", %rcx\n";
+        out << "  imulq %rcx, %rdi\n";
+        out << "  addq %rdi, %rax\n";
+        out << "  " << loadInstr(elemSize) << " (%rax), %rax\n";
+    }
 }
 
 // ============================================================
@@ -549,12 +564,20 @@ void GenCodeVisitor::emitIndexedStore(VarDecl* vd, const vector<Exp*>& indices,
     if (elemSize == 1) valReg = "%cl";
     else if (elemSize == 4) valReg = "%ecx";
 
-    string scale;
-    if (elemSize == 1) scale = "";
-    else if (elemSize == 2) scale = ",2";
-    else if (elemSize == 4) scale = ",4";
-    else scale = ",8";
-    out << "  " << storeInstr(elemSize) << " " << valReg << ", (%rax,%rdi" << scale << ")\n";
+    if (elemSize == 1) {
+        out << "  movb %cl, (%rax,%rdi)\n";
+    } else if (elemSize == 2) {
+        out << "  movw %cx, (%rax,%rdi,2)\n";
+    } else if (elemSize == 4) {
+        out << "  movl %ecx, (%rax,%rdi,4)\n";
+    } else {
+        out << "  pushq %rcx\n";
+        out << "  movq $" << elemSize << ", %rcx\n";
+        out << "  imulq %rcx, %rdi\n";
+        out << "  addq %rdi, %rax\n";
+        out << "  popq %rcx\n";
+        out << "  " << storeInstr(elemSize) << " " << valReg << ", (%rax)\n";
+    }
 }
 
 // ============================================================
@@ -795,11 +818,14 @@ void GenCodeVisitor::storeTarget(const LVal &lv) {
         }
         break;
     }
-    case LValKind::Deref:
+    case LValKind::Deref: {
         // *p = val: pop dirección previamente pusheada en visit(UnaryOp)
+        int size = lv.storeSize;
+        string valReg = (size == 1) ? "%al" : (size == 4) ? "%eax" : "%rax";
         out << "  popq %rbx\n";
-        out << "  movq %rax, (%rbx)\n";
+        out << "  " << storeInstr(size) << " " << valReg << ", (%rbx)\n";
         break;
+    }
     default:
         throw runtime_error("Asignación a expresión que no es lvalue");
     }
@@ -938,6 +964,12 @@ void GenCodeVisitor::visit(IdentifierNode *e) {
         lvalTarget->kind = LValKind::Id;
         lvalTarget->name = e->name;
         lvalTarget->binding = e->binding;
+        return;
+    }
+    // Array-to-pointer decay: si la variable es arreglo, cargamos su dirección
+    // en lugar de su valor (el typechecker cambió resolvedType a PointerType).
+    if (e->binding && e->binding->resolvedType->ttype == Type::ARRAY) {
+        leaBinding(e->binding);
         return;
     }
     loadBinding(e->binding);
@@ -1313,6 +1345,7 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
     // para que storeTarget haga pop y escriba ahí.
     if (lvalTarget && e->op == UnaryOp::DEREF) {
         lvalTarget->kind = LValKind::Deref;
+        lvalTarget->storeSize = e->resolvedType ? e->resolvedType->size() : 8;
         lvalTarget = nullptr;
         e->operand->accept(this);
         out << "  pushq %rax\n";  // dirección será popeada por storeTarget
@@ -1417,10 +1450,12 @@ void GenCodeVisitor::visit(UnaryOpNode *e) {
         out << "  popq %rax\n";
         break;
     }
-    case UnaryOp::DEREF:
-        // *p: cargar valor apuntado
-        out << "  movq (%rax), %rax\n";
+    case UnaryOp::DEREF: {
+        // *p: cargar valor apuntado, tamaño según tipo base del puntero
+        int derefSize = e->resolvedType ? e->resolvedType->size() : 8;
+        out << "  " << loadInstr(derefSize) << " (%rax), %rax\n";
         break;
+    }
     default:
         break;
     }

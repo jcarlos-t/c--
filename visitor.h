@@ -213,6 +213,7 @@ public:
         vector<bool> memberArrow;       // true si el miembro se accedió vía ->
         string structName;              // tipo del struct contenedor
         bool isArrow = false;           // ptr->miembro vs obj.miembro
+        int storeSize = 8;              // bytes a almacenar (para Deref)
     };
 
 private:

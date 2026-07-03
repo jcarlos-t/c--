@@ -1252,7 +1252,18 @@ void TypeChecker::visit(IdentifierNode* e) {
         return;
     }
     e->binding = vd;
-    e->resolvedType = vd->resolvedType;
+    
+    // Array-to-pointer decay: en contexto rvalue, el identificador de un arreglo
+    // se convierte en puntero a su primer elemento.
+    //   Ej: int a[4] → a (en rvalue) es int*
+    if (!isLvalContext && vd->resolvedType->ttype == Type::ARRAY) {
+        ArrayType* at = (ArrayType*)vd->resolvedType;
+        PointerType* ptrType = new PointerType(at->base);
+        typeCache.push_back(ptrType);
+        e->resolvedType = ptrType;
+    } else {
+        e->resolvedType = vd->resolvedType;
+    }
     
     if (!isLvalContext && functionDepth > 0 && initialized_vars.find(vd) == initialized_vars.end()) {
         error("variable '" + e->name + "' usada sin inicializar.", e->loc);
