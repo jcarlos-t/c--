@@ -100,9 +100,15 @@ construido. La sección 4 cierra con las conclusiones generales.
 
 ### 2.1 Optimizaciones implementadas
 
-`C--` aplica una única optimización sobre el código generado: **constant
-folding** (`ConstantFolding.cpp`), un paso del pipeline que corre después
-del `TypeChecker` y antes de `GenCodeVisitor`.
+`C--` aplica tres optimizaciones: **constant folding**, un **atajo tipo
+mirilla (peephole)** para stores de constantes, y **bin packing** de
+offsets en el stack frame. Además, la eliminación de ramas muertas que
+hace constant folding (ver más abajo) es, de forma superficial, la
+única eliminación de código muerto que implementa el compilador — no
+hay una pasada general de DCE (ver 2.6).
+
+**Constant folding** (`ConstantFolding.cpp`) es un paso del pipeline que
+corre después del `TypeChecker` y antes de `GenCodeVisitor`.
 
 - **Qué hace**: evalúa en tiempo de compilación cualquier subexpresión
   cuyos operandos sean *todos* literales (`NumberLiteralNode`,
@@ -122,14 +128,66 @@ del `TypeChecker` y antes de `GenCodeVisitor`.
   que nunca se ejecuta — p. ej. `while (1) { ... }` genera un loop sin
   `cmp`/`je` por iteración, y `if (0) { ... }` no genera código para la
   rama `then` en absoluto.
-- **Por qué no explica las diferencias de rendimiento de 2.4**: ninguno
-  de los seis benchmarks tiene loops calientes que operen sobre literales
-  puros — todos leen y escriben variables (contadores de loop, elementos
-  de arreglo, campos de struct). El folding sigue siendo correcto y útil
-  para el caso general, pero las brechas de tiempo de ejecución frente a
-  GCC/Clang vienen de optimizaciones que `C--` no implementa: asignación
-  de registros, vectorización SIMD, desenrollado de loops e inlining (ver
-  2.6).
+
+**Mirilla para stores de constantes** (`directStoreForConstant` en
+`Gencode.cpp`) es un atajo local en el generador de código, no un paso
+separado que reescanea el ensamblador ya emitido: cuando el valor a
+asignar o inicializar es un literal (o una subexpresión ya plegada por
+constant folding) y el destino es una variable simple de `int`, `char`,
+`long long`, `unsigned` o `float`, `GenCodeVisitor` reconoce el patrón
+"cargar constante en un registro, luego guardar el registro en memoria"
+y lo colapsa en una única instrucción de store con la constante como
+inmediato — la esencia de una optimización de mirilla, aplicada en el
+momento de emitir código en vez de como una pasada posterior.
+
+- **Ejemplo real**: compilando `int x = 5; x = 7;` con `./c-- -c`, ambas
+  líneas emiten un solo `movl $5, -16(%rbp)` y `movl $7, -16(%rbp)`
+  respectivamente — nunca se genera el `movq $5, %rax` /
+  `movq %rax, -16(%rbp)` que produciría el camino genérico (evaluar la
+  expresión en `%rax` y luego guardarla).
+- **Dónde no aplica**: variables `double` (un inmediato de 64 bits no
+  cabe como operando inmediato de una instrucción x86-64) y cualquier
+  destino cuyo valor no sea conocido en tiempo de compilación (una
+  variable, una llamada a función, etc.) — ahí se usa el camino normal.
+- **Alcance**: cubre asignaciones (`x = 5;`) e inicializaciones de
+  variables locales (`int x = 5;`); no aplica a variables globales, que
+  ya se inicializan directamente en `.data` por un mecanismo aparte.
+
+**Bin packing de offsets en el stack frame** (`TypeChecker::assignOffsets`)
+decide en qué posición del frame vive cada variable local. En vez de
+darle a cada variable su propio slot de 8 bytes sin importar su tamaño
+real, agrupa las variables por tamaño (>8 B, 8 B, 4 B, 1 B) y empaqueta
+varias en el mismo bloque de 8 bytes: dos variables de 4 bytes (`int`,
+`float`, `unsigned`) comparten un bloque, y hasta cuatro de 1 byte
+(`char`, `bool`) comparten un bloque en sub-slots de 2 bytes.
+
+- **Ejemplo real**: `int a=1; int b=2; int c=3; char d='x'; char e='y';`
+  compilado con `./c-- -c` reserva un frame de **32 bytes** (`subq $32,
+  %rsp`): `a`/`b` comparten un bloque de 8 B (offsets `-32`/`-28`), `c`
+  ocupa el siguiente bloque de 8 B él solo (queda impar), y `d`/`e`
+  comparten el último bloque de 8 B (offsets `-16`/`-14`). Sin bin
+  packing (un slot de 8 B por variable, 5 variables) el frame habría
+  necesitado 40 bytes crudos (48 alineados a 16) en vez de los 24 crudos
+  (32 alineados) que efectivamente usa. `bench_stackframe` (2.2) escala
+  este mismo caso a 12 `int` + 12 `char`: frame real de 96 bytes contra
+  208 bytes que necesitaría sin bin packing (~2.2× más chico).
+- **Qué no hace**: no reordena variables para minimizar *padding* entre
+  bloques de distinto tamaño más allá de la agrupación por clase, ni
+  reutiliza el espacio de variables cuyo *lifetime* ya terminó (cada
+  variable declarada en la función ocupa su bloque durante todo el
+  frame, sin importar en qué scope se usa).
+
+**Por qué ninguna de las tres explica las diferencias de rendimiento de
+2.4**: ninguno de los seis benchmarks tiene loops calientes que operen
+sobre literales puros, reasignen variables a constantes repetidamente,
+o dependan de un stack frame más pequeño para ir más rápido — todos
+leen y escriben variables calculadas en runtime, y el ahorro de bin
+packing es en bytes de stack reservados, no en instrucciones ejecutadas
+por iteración. Las tres optimizaciones siguen siendo correctas y útiles
+para el caso general, pero las brechas de tiempo de ejecución frente a
+GCC/Clang vienen de optimizaciones que `C--` no implementa: asignación
+de registros, vectorización SIMD, desenrollado de loops e inlining (ver
+2.6).
 
 ### 2.2 Metodología
 
@@ -149,6 +207,13 @@ y `benchmarks_c/*.c`):
 | bench_struct | Struct + puntero en loop (n=500k) — structs, punteros y `->` |
 | bench_prime | Criba de primos hasta 40k — loops, módulo, condicionales |
 | bench_mixed | Struct con int y float (n=150k) — tipos combinados |
+| bench_constfold | Expresión literal reevaluada 12M veces en un loop — mide constant folding (2.1) |
+| bench_conststore | 6 variables reseteadas a literales 15M veces en un loop — mide la mirilla de stores de constantes (2.1) |
+| bench_stackframe | 12 `int` + 12 `char` locales sumados en un loop de 1.5M — mide bin packing de offsets (2.1) |
+
+Los últimos tres son microbenchmarks dirigidos: cada uno satura el
+patrón de código que explota una optimización específica de 2.1, en vez
+de representar una carga de trabajo general como los primeros seis.
 
 **Métricas**:
 
@@ -160,6 +225,7 @@ y `benchmarks_c/*.c`):
 | Compilación Clang | `clang` con `-O0` y `-O2` hasta binario |
 | Ejecución | Mediana de **7 ejecuciones** (timeout 120 s por run) |
 | Tamaño | Bytes del ejecutable en disco |
+| Stack frame de `main` | Bytes de `subq $N, %rsp` en el prólogo (`./c-- -c`), solo `C--` — refleja el bin packing de offsets; no comparable 1:1 con GCC/Clang |
 
 **Entorno**: GCC 16.1.1 (20260625), Clang 22.1.6, Python 3.14.6,
 7 repeticiones por medición, timeout de ejecución de 120 s (fecha de la
@@ -174,6 +240,14 @@ compilador. `C--` solo aplica constant folding (ver 2.1), mientras GCC
 -O2 y Clang -O2 aplican decenas de passes de optimización (vectorización,
 inlining, desenrollado de loops, eliminación de código muerto, etc.).
 Mediciones en una sola máquina, sin normalizar por frecuencia de CPU.
+
+> **Nota:** las tablas de 2.3–2.5 de abajo todavía corresponden solo a
+> los 6 benchmarks generales (la última corrida "final" registrada).
+> `bench_constfold`, `bench_conststore`, `bench_stackframe` y la métrica
+> de stack frame ya están integrados en `run_benchmarks.py` /
+> `analyze_results.py` (ver [`comparativa/`](comparativa/comparativa.md)),
+> pero falta volver a correr la medición en el entorno de referencia
+> para que estas tablas y las gráficas reflejen los 9 benchmarks.
 
 ### 2.3 Tiempos de compilación
 
@@ -274,8 +348,8 @@ regresión real de `-O2`.
 
 Los binarios de `C--` son comparables a los de GCC y Clang (diferencia
 de apenas un par de cientos de bytes en esta corrida); no hay una
-penalización sistemática relevante, a pesar de que `C--` no elimina
-código muerto.
+penalización sistemática relevante, a pesar de que `C--` no tiene una
+pasada general de eliminación de código muerto (ver 2.6).
 
 ### 2.6 Fortalezas y debilidades observadas
 
@@ -283,6 +357,8 @@ código muerto.
 - Compilación (parseo + typecheck + codegen) extremadamente rápida (~2.6–4.3 ms)
 - Código generado claro, legible y didáctico
 - Constant folding reduce expresiones constantes y ramas muertas en tiempo de compilación (ver 2.1)
+- Mirilla local para stores de constantes evita el paso redundante por `%rax` en asignaciones/inicializaciones (ver 2.1)
+- Bin packing de offsets agrupa variables pequeñas en el mismo bloque de 8 bytes del stack frame, en vez de un slot completo por variable (ver 2.1)
 
 **Debilidades frente a GCC/Clang -O2:**
 - Sin asignación de registros — cada variable vive en un slot de stack
@@ -302,7 +378,10 @@ código muerto.
   directamente, sin tocar memoria ni la pila.
 - Sin vectorización SIMD
 - Sin desenrollado de loops
-- Sin eliminación de código muerto
+- Sin eliminación general de código muerto — solo se poda la rama de un
+  `if`/`while`/`for` con condición constante (ver 2.1); código
+  inalcanzable después de un `return`, variables no usadas o funciones
+  no llamadas no se detectan ni se eliminan
 - Sin inlining de funciones
 
 ## 3. Descripción del lenguaje
@@ -532,10 +611,11 @@ Parser (recursive descent) ──► AST (Program*)
 El AST usa **triple dispatch**: cada nodo implementa `accept` para tres
 visitors (`Visitor` de interpretación, `TypeVisitor` de typechecking,
 `CodeGenVisitor` de generación de código), identificados en tiempo de
-ejecución con `dynamic_cast`. Cada variable recibe un slot de pila de 8
-bytes (o su tamaño real si es mayor), y el frame se alinea a 16 bytes,
-evitando la complejidad de un *bin packing* de offsets sin penalización
-práctica en x86-64.
+ejecución con `dynamic_cast`. Los offsets de cada variable dentro del
+stack frame se calculan con un algoritmo de *bin packing*
+(`TypeChecker::assignOffsets`, ver 2.1) que agrupa variables por tamaño
+para no desperdiciar un slot de 8 bytes completo en cada una; el frame
+resultante se alinea a 16 bytes.
 
 Ver [`docs/lenguaje.md`](docs/lenguaje.md) para el detalle completo de
 la jerarquía de nodos del AST, el manejo de l-values (`captureLVal` /
@@ -590,9 +670,11 @@ int main() {
   → codegen x86-64) capaz de compilar un subset expresivo de C —
   incluyendo punteros, structs, arreglos multidimensionales, `long long`
   y `unsigned` — a código ensamblador nativo funcional.
-- La única optimización implementada es constant folding (2.1); es
-  correcta y barata, pero no incide en el rendimiento de los benchmarks
-  medidos porque estos operan sobre variables, no sobre literales.
+- Las optimizaciones implementadas (constant folding, mirilla para
+  stores de constantes y bin packing de offsets, ver 2.1) son correctas
+  y baratas, pero no inciden en el rendimiento de los benchmarks
+  medidos porque estos operan sobre variables en runtime, no sobre
+  literales ni sobre el tamaño del stack frame.
 - El costo de no tener asignación de registros, vectorización, inlining
   ni eliminación de código muerto se paga en tiempo de ejecución: el
   código generado por `C--` es, en la mediana de los seis benchmarks,

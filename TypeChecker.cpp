@@ -864,6 +864,9 @@ void TypeChecker::visit(UnaryOpNode* e) {
                 error("operación unaria requiere int, char, float o double.");
                 resultType = t;
             }
+            if (t->isConst) {
+                error("no se puede modificar una variable declarada como const.");
+            }
             break;
         case UnaryOp::LOG_NOT:
             if (t->ttype == Type::VOID) {
