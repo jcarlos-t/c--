@@ -87,14 +87,13 @@ Genera el ejecutable `c--`. Los archivos `.o` intermedios se eliminan automátic
 punteros, arreglos multidimensionales, structs, `long long` y `unsigned`.
 Implementa un pipeline clásico de cinco etapas — scanner → parser →
 typechecker → constant folding → generación de código — y produce
-ensamblador x86-64 (sintaxis AT&T/GAS), que `gcc` ensambla y enlaza a un
+ensamblador x86-64 , que `gcc` ensambla y enlaza a un
 ejecutable nativo.
 
 Este informe va primero a lo empírico: la sección 2 mide y explica qué
 tan rápido compila y ejecuta `C--` frente a GCC y Clang, y por qué. La
 sección 3 documenta el diseño del lenguaje (gramática, tipos, semántica,
-arquitectura interna) para quien quiera profundizar en cómo está
-construido. La sección 4 cierra con las conclusiones generales.
+arquitectura interna). La sección 4 cierra con las conclusiones generales.
 
 ## 2. Análisis
 
@@ -103,9 +102,7 @@ construido. La sección 4 cierra con las conclusiones generales.
 `C--` aplica tres optimizaciones: **constant folding**, un **atajo tipo
 mirilla (peephole)** para stores de constantes, y **bin packing** de
 offsets en el stack frame. Además, la eliminación de ramas muertas que
-hace constant folding (ver más abajo) es, de forma superficial, la
-única eliminación de código muerto que implementa el compilador — no
-hay una pasada general de DCE (ver 2.6).
+hace constant folding (ver más abajo).
 
 **Constant folding** (`ConstantFolding.cpp`) es un paso del pipeline que
 corre después del `TypeChecker` y antes de `GenCodeVisitor`.
@@ -175,17 +172,6 @@ varias en el mismo bloque de 8 bytes: dos variables de 4 bytes (`int`,
   variable declarada en la función ocupa su bloque durante todo el
   frame, sin importar en qué scope se usa).
 
-**Por qué ninguna de las tres explica las diferencias de rendimiento de
-2.4**: ninguno de los seis benchmarks tiene loops calientes que operen
-sobre literales puros, reasignen variables a constantes repetidamente,
-o dependan de un stack frame más pequeño para ir más rápido — todos
-leen y escriben variables calculadas en runtime, y el ahorro de bin
-packing es en bytes de stack reservados, no en instrucciones ejecutadas
-por iteración. Las tres optimizaciones siguen siendo correctas y útiles
-para el caso general, pero las brechas de tiempo de ejecución frente a
-GCC/Clang vienen de optimizaciones que `C--` no implementa: asignación
-de registros, vectorización SIMD, desenrollado de loops e inlining (ver
-2.6).
 
 ### 2.2 Metodología
 
@@ -223,9 +209,8 @@ de representar una carga de trabajo general como los primeros seis.
 | Ejecución | Mediana de **7 ejecuciones** (timeout 120 s por run) |
 | Tamaño | Bytes del ejecutable en disco |
 
-**Entorno**: GCC 16.1.1 (20260625), Clang 22.1.6, Python 3.14.6,
-7 repeticiones por medición, timeout de ejecución de 120 s (fecha de la
-medición: 2026-07-03 21:50 -05:00). La comparación es a tres vías
+**Entorno**: GCC 16.1.1, Clang 22.1.6, Python 3.14.6,
+7 repeticiones por medición, timeout de ejecución de 120 s. La comparación es a tres vías
 (`C--` / GCC / Clang).
 
 **Limitaciones**: mediciones realizadas en un entorno Linux nativo. Las
@@ -236,8 +221,7 @@ compilador. `C--` aplica constant folding, mirilla de stores de
 constantes y bin packing de offsets (ver 2.1), mientras GCC -O2 y
 Clang -O2 aplican decenas de passes de optimización (vectorización,
 inlining, desenrollado de loops, eliminación de código muerto,
-razonamiento sobre loops completos, etc.). Mediciones en una sola
-máquina, sin normalizar por frecuencia de CPU.
+razonamiento sobre loops completos, etc.).
 
 ### 2.3 Tiempos de compilación
 
@@ -703,6 +687,3 @@ int main() {
 - El tamaño de binario es prácticamente idéntico al de GCC y Clang en
   esta corrida, por lo que la ausencia de eliminación de código muerto
   no representa hoy un costo significativo en los programas de prueba.
-- Las pruebas de integración (`tests/integracion/`) cubren las
-  características centrales del lenguaje documentadas en la sección 3,
-  dando una base de regresión para futuras optimizaciones.
