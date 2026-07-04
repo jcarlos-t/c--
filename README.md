@@ -100,9 +100,12 @@ construido. La sección 4 cierra con las conclusiones generales.
 
 ### 2.1 Optimizaciones implementadas
 
-`C--` aplica una única optimización sobre el código generado: **constant
-folding** (`ConstantFolding.cpp`), un paso del pipeline que corre después
-del `TypeChecker` y antes de `GenCodeVisitor`.
+`C--` aplica dos optimizaciones sobre el código generado: **constant
+folding** y un **atajo tipo mirilla (peephole)** para stores de
+constantes.
+
+**Constant folding** (`ConstantFolding.cpp`) es un paso del pipeline que
+corre después del `TypeChecker` y antes de `GenCodeVisitor`.
 
 - **Qué hace**: evalúa en tiempo de compilación cualquier subexpresión
   cuyos operandos sean *todos* literales (`NumberLiteralNode`,
@@ -122,14 +125,40 @@ del `TypeChecker` y antes de `GenCodeVisitor`.
   que nunca se ejecuta — p. ej. `while (1) { ... }` genera un loop sin
   `cmp`/`je` por iteración, y `if (0) { ... }` no genera código para la
   rama `then` en absoluto.
-- **Por qué no explica las diferencias de rendimiento de 2.4**: ninguno
-  de los seis benchmarks tiene loops calientes que operen sobre literales
-  puros — todos leen y escriben variables (contadores de loop, elementos
-  de arreglo, campos de struct). El folding sigue siendo correcto y útil
-  para el caso general, pero las brechas de tiempo de ejecución frente a
-  GCC/Clang vienen de optimizaciones que `C--` no implementa: asignación
-  de registros, vectorización SIMD, desenrollado de loops e inlining (ver
-  2.6).
+
+**Mirilla para stores de constantes** (`directStoreForConstant` en
+`Gencode.cpp`) es un atajo local en el generador de código, no un paso
+separado que reescanea el ensamblador ya emitido: cuando el valor a
+asignar o inicializar es un literal (o una subexpresión ya plegada por
+constant folding) y el destino es una variable simple de `int`, `char`,
+`long long`, `unsigned` o `float`, `GenCodeVisitor` reconoce el patrón
+"cargar constante en un registro, luego guardar el registro en memoria"
+y lo colapsa en una única instrucción de store con la constante como
+inmediato — la esencia de una optimización de mirilla, aplicada en el
+momento de emitir código en vez de como una pasada posterior.
+
+- **Ejemplo real**: compilando `int x = 5; x = 7;` con `./c-- -c`, ambas
+  líneas emiten un solo `movl $5, -16(%rbp)` y `movl $7, -16(%rbp)`
+  respectivamente — nunca se genera el `movq $5, %rax` /
+  `movq %rax, -16(%rbp)` que produciría el camino genérico (evaluar la
+  expresión en `%rax` y luego guardarla).
+- **Dónde no aplica**: variables `double` (un inmediato de 64 bits no
+  cabe como operando inmediato de una instrucción x86-64) y cualquier
+  destino cuyo valor no sea conocido en tiempo de compilación (una
+  variable, una llamada a función, etc.) — ahí se usa el camino normal.
+- **Alcance**: cubre asignaciones (`x = 5;`) e inicializaciones de
+  variables locales (`int x = 5;`); no aplica a variables globales, que
+  ya se inicializan directamente en `.data` por un mecanismo aparte.
+
+**Por qué ninguna de las dos explica las diferencias de rendimiento de
+2.4**: ninguno de los seis benchmarks tiene loops calientes que operen
+sobre literales puros o reasignen variables a constantes repetidamente
+— todos leen y escriben variables calculadas en runtime (contadores de
+loop, elementos de arreglo, campos de struct). Ambas optimizaciones
+siguen siendo correctas y útiles para el caso general, pero las brechas
+de tiempo de ejecución frente a GCC/Clang vienen de optimizaciones que
+`C--` no implementa: asignación de registros, vectorización SIMD,
+desenrollado de loops e inlining (ver 2.6).
 
 ### 2.2 Metodología
 
@@ -283,6 +312,7 @@ código muerto.
 - Compilación (parseo + typecheck + codegen) extremadamente rápida (~2.6–4.3 ms)
 - Código generado claro, legible y didáctico
 - Constant folding reduce expresiones constantes y ramas muertas en tiempo de compilación (ver 2.1)
+- Mirilla local para stores de constantes evita el paso redundante por `%rax` en asignaciones/inicializaciones (ver 2.1)
 
 **Debilidades frente a GCC/Clang -O2:**
 - Sin asignación de registros — cada variable vive en un slot de stack
