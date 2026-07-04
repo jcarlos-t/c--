@@ -1,0 +1,10 @@
+Benchmark,C--_FrameBytes
+bench_fib,16
+bench_matmul,76816
+bench_float,16
+bench_struct,32
+bench_prime,32
+bench_mixed,32
+bench_constfold,16
+bench_conststore,48
+bench_stackframe,96
