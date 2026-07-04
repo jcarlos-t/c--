@@ -1,4 +1,3 @@
-// Matrix multiplication benchmark - tests multidimensional arrays and nested loops
 #include <stdio.h>
 
 int main() {

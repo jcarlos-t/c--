@@ -1,4 +1,3 @@
-// Float arithmetic benchmark - tests intensive float/double operations
 int main() {
     int n;
     n = 500000;

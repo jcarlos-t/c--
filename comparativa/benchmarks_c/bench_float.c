@@ -1,4 +1,3 @@
-// Float arithmetic benchmark - tests intensive float/double operations
 #include <stdio.h>
 
 int main() {

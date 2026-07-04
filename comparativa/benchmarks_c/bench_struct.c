@@ -1,4 +1,3 @@
-// Struct and pointer benchmark - tests struct access and pointer operations
 #include <stdio.h>
 
 struct Point {

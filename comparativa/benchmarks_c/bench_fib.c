@@ -1,4 +1,3 @@
-// Fibonacci recursive benchmark - tests recursive calls and control flow
 #include <stdio.h>
 
 int fib(int n) {

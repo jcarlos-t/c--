@@ -1,4 +1,3 @@
-// Mixed operations benchmark - combines all features
 #include <stdio.h>
 
 struct Data {

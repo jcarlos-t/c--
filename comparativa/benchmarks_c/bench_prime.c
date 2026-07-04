@@ -1,4 +1,3 @@
-// Prime numbers benchmark - tests loops, modulo, and conditionals
 #include <stdio.h>
 
 int main() {

@@ -1,4 +1,3 @@
-// Prime numbers benchmark - tests loops, modulo, and conditionals
 int main() {
     int n;
     n = 40000;
