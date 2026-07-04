@@ -1,6 +1,3 @@
-// Constant store benchmark - every iteration resets several local
-// variables to literal values; a compiler that stores the literal
-// straight to memory avoids the extra load-into-register step.
 #include <stdio.h>
 
 int main() {

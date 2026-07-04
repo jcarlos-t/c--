@@ -6,7 +6,6 @@ Genera CSV en comparativa/results/.
 
 import csv
 import os
-import re
 import shutil
 import statistics
 import subprocess
@@ -32,11 +31,9 @@ BENCHMARKS = [
     "bench_prime",
     "bench_mixed",
     # Microbenchmarks dirigidos a las optimizaciones de C-- (ver 2.1 del
-    # informe): constant folding, mirilla de stores de constantes y bin
-    # packing de offsets en el stack frame.
+    # informe): constant folding y mirilla de stores de constantes.
     "bench_constfold",
     "bench_conststore",
-    "bench_stackframe",
 ]
 
 RUNS = 7
@@ -60,8 +57,6 @@ EXECUTION_COLUMNS = [
 ]
 
 SIZE_COLUMNS = EXECUTION_COLUMNS
-
-FRAME_COLUMNS = ["C--_FrameBytes"]
 
 
 def run_cmd(cmd, timeout=None, cwd=None):
@@ -190,31 +185,6 @@ def file_size(path):
     return "ERROR"
 
 
-def measure_frame_size(cnn_file):
-    """Compila con -c y extrae el tamaño del stack frame de main() desde
-    la instrucción `subq $N, %rsp` del prólogo. Refleja el efecto real del
-    bin packing de offsets (TypeChecker::assignOffsets); ver comparativa.md."""
-    r = run_cmd([str(COMPILER), str(cnn_file), "-c"])
-    if r is None or r.returncode != 0:
-        return "ERROR"
-    lines = r.stdout.splitlines()
-    in_main = False
-    for line in lines:
-        if line.strip() == "main:":
-            in_main = True
-            continue
-        if not in_main:
-            continue
-        m = re.match(r"\s*subq \$(\d+), %rsp", line)
-        if m:
-            return m.group(1)
-        if line.strip().endswith(":") and not line.startswith(" "):
-            # Se llegó a otra etiqueta de nivel superior sin encontrar subq:
-            # main() no reserva stack frame (sin variables locales).
-            break
-    return "0"
-
-
 def write_csv(filename, columns, rows):
     path = RESULTS_DIR / filename
     with path.open("w", newline="", encoding="utf-8") as f:
@@ -244,7 +214,6 @@ def main():
     comp_rows = []
     exec_rows = []
     size_rows = []
-    frame_rows = []
 
     for bench in BENCHMARKS:
         print(f"\n=== {bench} ===")
@@ -309,12 +278,9 @@ def main():
             file_size(clang_o2_bin) if tool_available("clang") else "N/A",
         ]))
 
-        frame_rows.append((bench, [measure_frame_size(cnn_file)]))
-
     write_csv("compilation_times.csv", COMPILATION_COLUMNS, comp_rows)
     write_csv("execution_times.csv", EXECUTION_COLUMNS, exec_rows)
     write_csv("binary_sizes.csv", SIZE_COLUMNS, size_rows)
-    write_csv("stack_frame_sizes.csv", FRAME_COLUMNS, frame_rows)
 
     print("\nBenchmarks completados.")
 

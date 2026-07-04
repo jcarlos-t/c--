@@ -1,6 +1,3 @@
-// Constant folding benchmark - a literal-only expression is re-evaluated
-// every iteration; a compiler that folds it at compile time turns it into
-// a single constant load instead of repeating the arithmetic at runtime.
 #include <stdio.h>
 
 int main() {

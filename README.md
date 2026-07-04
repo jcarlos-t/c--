@@ -168,9 +168,7 @@ varias en el mismo bloque de 8 bytes: dos variables de 4 bytes (`int`,
   comparten el último bloque de 8 B (offsets `-16`/`-14`). Sin bin
   packing (un slot de 8 B por variable, 5 variables) el frame habría
   necesitado 40 bytes crudos (48 alineados a 16) en vez de los 24 crudos
-  (32 alineados) que efectivamente usa. `bench_stackframe` (2.2) escala
-  este mismo caso a 12 `int` + 12 `char`: frame real de 96 bytes contra
-  208 bytes que necesitaría sin bin packing (~2.2× más chico).
+  (32 alineados) que efectivamente usa.
 - **Qué no hace**: no reordena variables para minimizar *padding* entre
   bloques de distinto tamaño más allá de la agrupación por clase, ni
   reutiliza el espacio de variables cuyo *lifetime* ya terminó (cada
@@ -209,9 +207,8 @@ y `benchmarks_c/*.c`):
 | bench_mixed | Struct con int y float (n=150k) — tipos combinados |
 | bench_constfold | Expresión literal reevaluada 12M veces en un loop — mide constant folding (2.1) |
 | bench_conststore | 6 variables reseteadas a literales 15M veces en un loop — mide la mirilla de stores de constantes (2.1) |
-| bench_stackframe | 12 `int` + 12 `char` locales sumados en un loop de 1.5M — mide bin packing de offsets (2.1) |
 
-Los últimos tres son microbenchmarks dirigidos: cada uno satura el
+Los últimos dos son microbenchmarks dirigidos: cada uno satura el
 patrón de código que explota una optimización específica de 2.1, en vez
 de representar una carga de trabajo general como los primeros seis.
 
@@ -225,64 +222,61 @@ de representar una carga de trabajo general como los primeros seis.
 | Compilación Clang | `clang` con `-O0` y `-O2` hasta binario |
 | Ejecución | Mediana de **7 ejecuciones** (timeout 120 s por run) |
 | Tamaño | Bytes del ejecutable en disco |
-| Stack frame de `main` | Bytes de `subq $N, %rsp` en el prólogo (`./c-- -c`), solo `C--` — refleja el bin packing de offsets; no comparable 1:1 con GCC/Clang |
 
 **Entorno**: GCC 16.1.1 (20260625), Clang 22.1.6, Python 3.14.6,
 7 repeticiones por medición, timeout de ejecución de 120 s (fecha de la
-medición: 2026-07-03 14:43 -05:00). La comparación es a tres vías
+medición: 2026-07-03 21:50 -05:00). La comparación es a tres vías
 (`C--` / GCC / Clang).
 
 **Limitaciones**: mediciones realizadas en un entorno Linux nativo. Las
 tres rutas de compilación (`C--`, GCC, Clang) comparten el mismo costo
 de *spawn* de proceso del sistema operativo, por lo que las diferencias
 de tiempo de compilación reflejan directamente el trabajo de cada
-compilador. `C--` solo aplica constant folding (ver 2.1), mientras GCC
--O2 y Clang -O2 aplican decenas de passes de optimización (vectorización,
-inlining, desenrollado de loops, eliminación de código muerto, etc.).
-Mediciones en una sola máquina, sin normalizar por frecuencia de CPU.
-
-> **Nota:** las tablas de 2.3–2.5 de abajo todavía corresponden solo a
-> los 6 benchmarks generales (la última corrida "final" registrada).
-> `bench_constfold`, `bench_conststore`, `bench_stackframe` y la métrica
-> de stack frame ya están integrados en `run_benchmarks.py` /
-> `analyze_results.py` (ver [`comparativa/`](comparativa/comparativa.md)),
-> pero falta volver a correr la medición en el entorno de referencia
-> para que estas tablas y las gráficas reflejen los 9 benchmarks.
+compilador. `C--` aplica constant folding, mirilla de stores de
+constantes y bin packing de offsets (ver 2.1), mientras GCC -O2 y
+Clang -O2 aplican decenas de passes de optimización (vectorización,
+inlining, desenrollado de loops, eliminación de código muerto,
+razonamiento sobre loops completos, etc.). Mediciones en una sola
+máquina, sin normalizar por frecuencia de CPU.
 
 ### 2.3 Tiempos de compilación
 
 | Benchmark | C-- codegen | C-- full | GCC -O0 | GCC -O2 | Clang -O0 | Clang -O2 |
 |-----------|------------:|---------:|--------:|--------:|----------:|----------:|
-| bench_fib | 4.3 ms | 45.2 ms | 50.9 ms | 95.3 ms | 100.3 ms | 125.4 ms |
-| bench_matmul | 2.8 ms | 29.6 ms | 51.9 ms | 72.3 ms | 74.8 ms | 121.4 ms |
-| bench_float | 2.6 ms | 29.4 ms | 51.6 ms | 56.0 ms | 69.8 ms | 73.4 ms |
-| bench_struct | 2.7 ms | 29.2 ms | 67.0 ms | 72.3 ms | 69.2 ms | 89.7 ms |
-| bench_prime | 3.2 ms | 28.9 ms | 50.8 ms | 65.4 ms | 75.2 ms | 87.3 ms |
-| bench_mixed | 3.1 ms | 32.0 ms | 50.0 ms | 56.1 ms | 69.9 ms | 72.1 ms |
+| bench_fib | 4.6 ms | 49.3 ms | 53.7 ms | 101.3 ms | 74.6 ms | 82.4 ms |
+| bench_matmul | 2.9 ms | 32.4 ms | 54.2 ms | 77.2 ms | 77.4 ms | 93.3 ms |
+| bench_float | 3.5 ms | 31.5 ms | 55.4 ms | 63.5 ms | 74.3 ms | 82.4 ms |
+| bench_struct | 3.2 ms | 31.6 ms | 54.8 ms | 62.8 ms | 74.1 ms | 78.7 ms |
+| bench_prime | 3.1 ms | 33.4 ms | 53.7 ms | 65.1 ms | 75.8 ms | 81.6 ms |
+| bench_mixed | 3.2 ms | 32.7 ms | 54.3 ms | 60.5 ms | 72.7 ms | 81.9 ms |
+| bench_constfold | 3.0 ms | 31.0 ms | 54.0 ms | 58.5 ms | 72.1 ms | 77.2 ms |
+| bench_conststore | 3.1 ms | 31.9 ms | 52.5 ms | 58.3 ms | 70.5 ms | 80.6 ms |
 
 ![Tiempos de compilación](comparativa/results/charts/compilation_times.svg)
 
 En modo `c-- -c` (solo parseo + typecheck + codegen), `C--` toma
-consistentemente ~2.6–4.3 ms — entre 15 y 30 veces menos tiempo que su
+consistentemente ~2.9–4.6 ms — entre 10 y 16 veces menos tiempo que su
 propio pipeline completo (es decir, si el pipeline completo tarda, por
-ejemplo, 30 ms, el modo codegen puro tarda entre 1 y 2 ms sobre el mismo
+ejemplo, 30 ms, el modo codegen puro tarda entre 2 y 3 ms sobre el mismo
 programa). El pipeline completo (`--exec`) delega en `gcc` para
-ensamblar/enlazar, y en esta medición resultó más rápido (~28.9–45.2 ms)
-que `GCC -O0`/`-O2` (~50.0–95.3 ms) y que `Clang -O0`/`-O2`
-(~69.2–125.4 ms) en los seis benchmarks — una ventaja real del pipeline
+ensamblar/enlazar, y en esta medición resultó más rápido (~31.0–49.3 ms)
+que `GCC -O0`/`-O2` (~52.5–101.3 ms) y que `Clang -O0`/`-O2`
+(~70.5–93.3 ms) en los ocho benchmarks — una ventaja real del pipeline
 completo de `C--` en este entorno, consistente con que `C--` no corre
-ningún análisis pesado (solo constant folding) antes de invocar a `gcc`.
+ningún análisis pesado antes de invocar a `gcc`.
 
 ### 2.4 Tiempos de ejecución
 
 | Benchmark | C-- | GCC -O0 | GCC -O2 | Clang -O0 | Clang -O2 |
 |-----------|----:|--------:|--------:|----------:|----------:|
-| bench_fib | 129.5 ms | 100.6 ms | 24.8 ms | 90.0 ms | 50.2 ms |
-| bench_matmul | 7.2 ms | 3.7 ms | 1.2 ms | 3.1 ms | 1.4 ms |
-| bench_float | 14.0 ms | 4.5 ms | 1.9 ms | 7.7 ms | 1.7 ms |
-| bench_struct | 6.3 ms | 3.7 ms | 1.7 ms | 3.1 ms | 1.0 ms |
-| bench_prime | 6.9 ms | 5.0 ms | 6.2 ms | 6.5 ms | 5.3 ms |
-| bench_mixed | 4.4 ms | 2.5 ms | 1.1 ms | 2.9 ms | 1.0 ms |
+| bench_fib | 127.8 ms | 107.9 ms | 24.3 ms | 93.0 ms | 48.2 ms |
+| bench_matmul | 7.3 ms | 3.9 ms | 1.4 ms | 3.3 ms | 2.0 ms |
+| bench_float | 14.3 ms | 4.2 ms | 1.8 ms | 7.7 ms | 1.8 ms |
+| bench_struct | 5.4 ms | 3.6 ms | 1.6 ms | 3.3 ms | 1.0 ms |
+| bench_prime | 7.4 ms | 4.9 ms | 4.6 ms | 4.7 ms | 4.5 ms |
+| bench_mixed | 4.4 ms | 2.7 ms | 1.0 ms | 3.0 ms | 1.0 ms |
+| bench_constfold | 45.0 ms | 17.7 ms | 1.0 ms | 17.7 ms | 0.9 ms |
+| bench_conststore | 94.3 ms | 50.4 ms | 1.1 ms | 50.7 ms | 1.1 ms |
 
 ![Tiempos de ejecución](comparativa/results/charts/execution_times.svg)
 
@@ -290,26 +284,28 @@ ningún análisis pesado (solo constant folding) antes de invocar a `gcc`.
 
 | Benchmark | GCC -O0 | GCC -O2 | Clang -O0 | Clang -O2 |
 |-----------|--------:|--------:|----------:|----------:|
-| bench_fib | 1.29× | 5.21× | 1.44× | 2.58× |
-| bench_matmul | 1.96× | 5.86× | 2.30× | 5.23× |
-| bench_float | 3.11× | 7.54× | 1.81× | 8.36× |
-| bench_struct | 1.68× | 3.62× | 2.00× | 6.30× |
-| bench_prime | 1.39× | 1.12× | 1.07× | 1.30× |
-| bench_mixed | 1.72× | 3.87× | 1.50× | 4.23× |
+| bench_fib | 1.19× | 5.25× | 1.37× | 2.65× |
+| bench_matmul | 1.88× | 5.37× | 2.18× | 3.70× |
+| bench_float | 3.38× | 8.04× | 1.84× | 7.99× |
+| bench_struct | 1.51× | 3.31× | 1.65× | 5.48× |
+| bench_prime | 1.51× | 1.61× | 1.59× | 1.67× |
+| bench_mixed | 1.64× | 4.41× | 1.48× | 4.44× |
+| bench_constfold | 2.54× | 44.42× | 2.54× | 47.77× |
+| bench_conststore | 1.87× | 82.11× | 1.86× | 85.22× |
 
-> **Comentario:** un valor de `5.21×` en la columna
-> `GCC -O2`, fila `bench_fib`, significa que `C--` tardó **5.21 veces
+> **Comentario:** un valor de `5.25×` en la columna
+> `GCC -O2`, fila `bench_fib`, significa que `C--` tardó **5.25 veces
 > más tiempo** en ejecutar ese programa que el binario compilado con
-> `gcc -O2` — si GCC -O2 tarda 1.0 segundo, `C--` tarda 5.21 segundos en
-> completar el mismo trabajo. 
+> `gcc -O2` — si GCC -O2 tarda 1.0 segundo, `C--` tarda 5.25 segundos en
+> completar el mismo trabajo.
 
-La mediana de speedup de GCC -O2 sobre `C--` es **~4.54×** (en la
-mediana de los seis benchmarks, `C--` tarda 4.54 veces más que GCC -O2);
-la de Clang -O2 es **~4.73×**. Las brechas más grandes se dan en:
+La mediana de speedup de GCC -O2 sobre `C--` es **~5.31×** (contando los
+ocho benchmarks); la de Clang -O2 es **~4.96×**. Entre los seis
+benchmarks generales, las brechas más grandes se dan en:
 
-- **bench_float**: GCC (7.54×) y sobre todo Clang (8.36×) vectorizan con SSE/AVX; `C--` usa SSE escalar.
-- **bench_struct (6.30× Clang)** y **bench_matmul (5.86× GCC, 5.23× Clang)**: desenrollado de loops y reutilización de registros que `C--` no hace (spillea todo al stack).
-- **bench_fib (5.21× GCC)** y **bench_mixed (3.87–4.23×)**: mezcla de aritmética y recursión/tipos donde GCC/Clang reutilizan registros.
+- **bench_float**: GCC (8.04×) y sobre todo Clang (7.99×) vectorizan con SSE/AVX; `C--` usa SSE escalar.
+- **bench_struct (5.48× Clang)** y **bench_matmul (5.37× GCC)**: desenrollado de loops y reutilización de registros que `C--` no hace (spillea todo al stack).
+- **bench_fib (5.25× GCC)** y **bench_mixed (4.41–4.44×)**: mezcla de aritmética y recursión/tipos donde GCC/Clang reutilizan registros.
 
 Para entender **por qué** cada benchmark abre una brecha distinta, vale
 la pena mirar qué domina su tiempo de ejecución y qué palanca de
@@ -317,21 +313,29 @@ optimización explota GCC/Clang ahí:
 
 | Benchmark | Qué domina el tiempo de ejecución | Por qué la brecha es grande o chica |
 |---|---|---|
-| bench_float | Aritmética float en un loop de 500k iteraciones | GCC/Clang vectorizan con SSE/AVX (varias operaciones float por instrucción); `C--` emite una instrucción escalar por operación → la brecha **más grande** de la tabla (7.54×–8.36×) |
-| bench_matmul | Loops anidados 80×80 con acceso a arreglos 2D | GCC/Clang desenrollan los loops internos y mantienen índices en registros; `C--` recalcula direcciones y recarga desde el stack en cada iteración → brecha grande (5.23×–5.86×) |
-| bench_struct | Acceso a campos de struct vía puntero en un loop de 500k | Mismo patrón que matmul, agravado por la indirección del puntero → brecha grande, sobre todo en Clang (6.30×) |
-| bench_fib | Recursión (`fib(35)`) con muchas llamadas a función | GCC reutiliza registros entre llamadas; `C--` respeta la convención de llamada al pie de la letra en cada frame, sin inlining → brecha considerable (5.21× GCC) |
-| bench_mixed | Struct con campos `int` y `float` combinados (150k) | Combina los costos de bench_float y bench_struct pero a menor escala → brecha intermedia (3.87×–4.23×) |
-| bench_prime | Criba de primos con módulo (40k) | Dominado por enteros y control de flujo, con poco margen de vectorización incluso para GCC/Clang → la brecha **más chica** de la tabla (1.12×–1.39×), con ruido de medición notable |
+| bench_float | Aritmética float en un loop de 500k iteraciones | GCC/Clang vectorizan con SSE/AVX (varias operaciones float por instrucción); `C--` emite una instrucción escalar por operación → brecha grande (7.99×–8.04×) |
+| bench_matmul | Loops anidados 80×80 con acceso a arreglos 2D | GCC/Clang desenrollan los loops internos y mantienen índices en registros; `C--` recalcula direcciones y recarga desde el stack en cada iteración → brecha grande (3.70×–5.37×) |
+| bench_struct | Acceso a campos de struct vía puntero en un loop de 500k | Mismo patrón que matmul, agravado por la indirección del puntero → brecha grande, sobre todo en Clang (5.48×) |
+| bench_fib | Recursión (`fib(35)`) con muchas llamadas a función | GCC reutiliza registros entre llamadas; `C--` respeta la convención de llamada al pie de la letra en cada frame, sin inlining → brecha considerable (5.25× GCC) |
+| bench_mixed | Struct con campos `int` y `float` combinados (150k) | Combina los costos de bench_float y bench_struct pero a menor escala → brecha intermedia (4.41×–4.44×) |
+| bench_prime | Criba de primos con módulo (40k) | Dominado por enteros y control de flujo, con poco margen de vectorización incluso para GCC/Clang → la brecha **más chica** entre los seis generales (1.51×–1.67×) |
 
-En **bench_prime** la brecha es la más chica de la tabla y con una
-anomalía: GCC -O2 (6.2 ms) midió más lento que GCC -O0 (5.0 ms) — un
-ratio de solo 1.12× (es decir, `-O2` fue apenas un 12% más rápido que
-`-O0`, cuando lo normal sería que `-O2` ganara por más margen). Con
-cargas de ~5–6 ms y 7 repeticiones, el ruido de scheduling del sistema
-operativo pesa más que el efecto real de `-O2` sobre este patrón de
-loops/módulo; no debe sobre-interpretarse ese resultado puntual como una
-regresión real de `-O2`.
+`bench_constfold` (44.42×–47.77×) y `bench_conststore` (82.11×–85.22×)
+quedan muy por encima de todo lo anterior, y por una razón distinta a
+"GCC genera mejor código": inspeccionando `gcc -O2 -S` sobre ambos
+fuentes, el `main` generado no tiene **ningún** salto (`jmp`/`jne`/`jl`)
+— GCC prueba que el resultado final del loop es una expresión cerrada en
+tiempo de compilación (constante de inducción más la suma aritmética de
+`i` sobre un rango conocido) y lo reemplaza directo por un
+`movabsq $73359558000000, %rdx` seguido del `printf`, sin ejecutar ni una
+iteración. `C--` sí aplica constant folding y mirilla de stores (2.1) —
+por eso sigue siendo más rápido que sus propias compilaciones sin esas
+optimizaciones — pero ninguna de las dos razona sobre el loop *completo*:
+cada una de las 12–15 millones de iteraciones de `C--` se sigue
+ejecutando en runtime. Estos dos microbenchmarks miden exactamente el
+techo que las optimizaciones actuales de `C--` no cruzan (folding local
+de una subexpresión vs. razonamiento sobre la recurrencia entera de un
+loop), así que sus ratios no son comparables 1:1 con los otros seis.
 
 ### 2.5 Tamaño de binario
 
@@ -343,6 +347,8 @@ regresión real de `-O2`.
 | bench_struct | 15.7 KB | 15.7 KB | 15.6 KB | 15.7 KB | 15.6 KB |
 | bench_prime | 15.9 KB | 15.6 KB | 15.6 KB | 15.6 KB | 15.6 KB |
 | bench_mixed | 15.7 KB | 15.6 KB | 15.6 KB | 15.6 KB | 15.6 KB |
+| bench_constfold | 15.7 KB | 15.6 KB | 15.6 KB | 15.6 KB | 15.6 KB |
+| bench_conststore | 15.7 KB | 15.6 KB | 15.6 KB | 15.6 KB | 15.6 KB |
 
 ![Tamaños de binario](comparativa/results/charts/binary_sizes.svg)
 
@@ -354,7 +360,7 @@ pasada general de eliminación de código muerto (ver 2.6).
 ### 2.6 Fortalezas y debilidades observadas
 
 **Fortalezas de `C--`:**
-- Compilación (parseo + typecheck + codegen) extremadamente rápida (~2.6–4.3 ms)
+- Compilación (parseo + typecheck + codegen) extremadamente rápida (~2.9–4.6 ms)
 - Código generado claro, legible y didáctico
 - Constant folding reduce expresiones constantes y ramas muertas en tiempo de compilación (ver 2.1)
 - Mirilla local para stores de constantes evita el paso redundante por `%rax` en asignaciones/inicializaciones (ver 2.1)
@@ -382,6 +388,11 @@ pasada general de eliminación de código muerto (ver 2.6).
   `if`/`while`/`for` con condición constante (ver 2.1); código
   inalcanzable después de un `return`, variables no usadas o funciones
   no llamadas no se detectan ni se eliminan
+- Sin razonamiento sobre la recurrencia completa de un loop — el constant
+  folding de `C--` es local a una subexpresión por iteración; no prueba
+  que un loop entero sea reducible a un resultado cerrado y lo reemplace,
+  como sí hacen GCC/Clang -O2 (ver `bench_constfold`/`bench_conststore`
+  en 2.4)
 - Sin inlining de funciones
 
 ## 3. Descripción del lenguaje
@@ -672,17 +683,23 @@ int main() {
   y `unsigned` — a código ensamblador nativo funcional.
 - Las optimizaciones implementadas (constant folding, mirilla para
   stores de constantes y bin packing de offsets, ver 2.1) son correctas
-  y baratas, pero no inciden en el rendimiento de los benchmarks
-  medidos porque estos operan sobre variables en runtime, no sobre
-  literales ni sobre el tamaño del stack frame.
+  y baratas, y `bench_constfold`/`bench_conststore` (2.2) confirman que
+  sí se activan en la práctica — pero son locales (una subexpresión o un
+  store por vez) y no reemplazan el rendimiento de un análisis que razone
+  sobre el loop completo, como sí hacen GCC/Clang -O2 en esos mismos dos
+  benchmarks (ver 2.4).
 - El costo de no tener asignación de registros, vectorización, inlining
   ni eliminación de código muerto se paga en tiempo de ejecución: el
-  código generado por `C--` es, en la mediana de los seis benchmarks,
-  **4.54 veces más lento** que el de GCC -O2 y **4.73 veces más lento**
-  que el de Clang -O2 (es decir, tarda entre ~4.5 y ~4.7 veces más para
-  el mismo trabajo). La brecha es más amplia en cargas aritméticas
-  vectorizables (`bench_float`) y más estrecha en cargas dominadas por
-  enteros y control de flujo (`bench_prime`).
+  código generado por `C--` es, en la mediana de los ocho benchmarks,
+  **5.31 veces más lento** que el de GCC -O2 y **4.96 veces más lento**
+  que el de Clang -O2 (es decir, tarda entre ~5 y ~5.3 veces más para
+  el mismo trabajo). Entre los seis benchmarks generales, la brecha es
+  más amplia en cargas aritméticas vectorizables (`bench_float`) y más
+  estrecha en cargas dominadas por enteros y control de flujo
+  (`bench_prime`); `bench_constfold` y `bench_conststore` abren una
+  brecha muchísimo mayor (44×–85×) porque GCC/Clang prueban que el loop
+  completo es reducible a un valor constante y lo reemplazan sin
+  ejecutarlo (ver 2.4).
 - El tamaño de binario es prácticamente idéntico al de GCC y Clang en
   esta corrida, por lo que la ausencia de eliminación de código muerto
   no representa hoy un costo significativo en los programas de prueba.

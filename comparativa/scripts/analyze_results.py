@@ -122,8 +122,7 @@ def plot_grouped_bars(path, title, labels, series, y_label, log_scale=False):
     plt.close(fig)
 
 
-def generate_charts(exec_cols, exec_rows, size_cols, size_rows, comp_cols, comp_rows,
-                     frame_cols=None, frame_rows=None):
+def generate_charts(exec_cols, exec_rows, size_cols, size_rows, comp_cols, comp_rows):
     CHARTS_DIR.mkdir(parents=True, exist_ok=True)
     labels = [r["Benchmark"] for r in exec_rows]
 
@@ -165,16 +164,6 @@ def generate_charts(exec_cols, exec_rows, size_cols, size_rows, comp_cols, comp_
         )
         print(f"Gráfico: {CHARTS_DIR / 'binary_sizes.svg'}")
 
-    if frame_rows:
-        series = [(c, col_values(frame_rows, c)) for c in (frame_cols or [])]
-        plot_grouped_bars(
-            CHARTS_DIR / "stack_frame_sizes.svg",
-            "Tamaño de stack frame de main() (C--)",
-            [r["Benchmark"] for r in frame_rows],
-            series, "bytes",
-        )
-        print(f"Gráfico: {CHARTS_DIR / 'stack_frame_sizes.svg'}")
-
 
 def print_speedup_table(title, rows, baseline, targets):
     print(f"\n{title}")
@@ -198,7 +187,6 @@ def main():
     comp_cols, comp_rows = read_csv("compilation_times.csv")
     exec_cols, exec_rows = read_csv("execution_times.csv")
     size_cols, size_rows = read_csv("binary_sizes.csv")
-    frame_cols, frame_rows = read_csv("stack_frame_sizes.csv")
 
     if comp_cols and comp_rows:
         print_table("Tiempos de compilación", comp_cols, comp_rows, format_time)
@@ -206,8 +194,6 @@ def main():
         print_table("Tiempos de ejecución", exec_cols, exec_rows, format_time)
     if size_cols and size_rows:
         print_table("Tamaños de binario", size_cols, size_rows, format_size)
-    if frame_cols and frame_rows:
-        print_table("Tamaño de stack frame de main() (C--)", frame_cols, frame_rows, format_size)
 
     if exec_cols and exec_rows and "C--_Compiler" in exec_cols:
         print_speedup_table(
@@ -218,7 +204,7 @@ def main():
         )
 
     generate_charts(exec_cols or [], exec_rows or [], size_cols or [], size_rows or [],
-                    comp_cols or [], comp_rows or [], frame_cols or [], frame_rows or [])
+                    comp_cols or [], comp_rows or [])
 
 
 
