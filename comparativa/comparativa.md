@@ -15,8 +15,15 @@ compilación, tiempo de ejecución y tamaño de binario.
 | bench_struct | Struct + puntero en loop (n=500k) — structs, punteros y `->` |
 | bench_prime | Criba de primos hasta 40k — loops, módulo, condicionales |
 | bench_mixed | Struct con int y float (n=150k) — tipos combinados |
+| bench_constfold | Expresión literal reevaluada 12M veces en un loop — mide **constant folding** (2.1) |
+| bench_conststore | 6 variables reseteadas a literales 15M veces en un loop — mide la **mirilla de stores de constantes** (2.1) |
+| bench_stackframe | 12 `int` + 12 `char` locales sumados en un loop de 1.5M — mide **bin packing** de offsets (2.1) |
 
 Cada benchmark existe en par equivalente: `benchmarks_cnn/*.cnn` y `benchmarks_c/*.c`.
+Los últimos tres (`bench_constfold`, `bench_conststore`, `bench_stackframe`)
+son microbenchmarks dirigidos: cada uno satura el patrón de código que
+explota una de las optimizaciones documentadas en la sección 2.1 del
+informe, en vez de representar una carga de trabajo general.
 
 ### Métricas
 
@@ -28,6 +35,7 @@ Cada benchmark existe en par equivalente: `benchmarks_cnn/*.cnn` y `benchmarks_c
 | Compilación Clang | `clang` con `-O0` y `-O2` hasta binario |
 | Ejecución | Mediana de **7 ejecuciones** (timeout 120 s por run) |
 | Tamaño | Bytes del ejecutable en disco |
+| Stack frame de `main` | Bytes reservados por `subq $N, %rsp` en el prólogo (`./c-- -c`), solo para `C--` — refleja directamente el resultado del bin packing de offsets (2.1); no es comparable 1:1 con GCC/Clang, que gestionan su propio layout de stack de forma distinta |
 
 ### Limitaciones
 
@@ -163,6 +171,19 @@ relevante.
 - Sin desenrollado de loops
 - Sin eliminación de código muerto
 - Sin inlining de funciones
+
+> **Nota sobre los datos de esta página.** Las tablas y gráficas de la
+> sección [Resultados](#resultados) de este archivo (y las de la sección
+> "2. Análisis" del README) corresponden a la corrida con
+> `bench_fib`...`bench_mixed` (los 6 benchmarks generales) — es la
+> última corrida "final" registrada. Los tres microbenchmarks nuevos
+> (`bench_constfold`, `bench_conststore`, `bench_stackframe`) y la
+> métrica de stack frame ya están integrados en `run_benchmarks.py` /
+> `analyze_results.py`, pero **falta volver a ejecutar la corrida** en el
+> entorno de referencia (GCC 16.1.1, Clang 22.1.6) para que
+> `comparativa/results/*.csv` y las gráficas reflejen los 9 benchmarks.
+> Hasta entonces, corran los pasos de abajo para generar y revisar los
+> nuevos datos localmente.
 
 ## Cómo reproducir
 
