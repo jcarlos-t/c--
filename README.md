@@ -168,7 +168,9 @@ varias en el mismo bloque de 8 bytes: dos variables de 4 bytes (`int`,
   comparten el último bloque de 8 B (offsets `-16`/`-14`). Sin bin
   packing (un slot de 8 B por variable, 5 variables) el frame habría
   necesitado 40 bytes crudos (48 alineados a 16) en vez de los 24 crudos
-  (32 alineados) que efectivamente usa.
+  (32 alineados) que efectivamente usa. `bench_stackframe` (2.2) escala
+  este mismo caso a 12 `int` + 12 `char`: frame real de 96 bytes contra
+  208 bytes que necesitaría sin bin packing (~2.2× más chico).
 - **Qué no hace**: no reordena variables para minimizar *padding* entre
   bloques de distinto tamaño más allá de la agrupación por clase, ni
   reutiliza el espacio de variables cuyo *lifetime* ya terminó (cada
@@ -205,6 +207,13 @@ y `benchmarks_c/*.c`):
 | bench_struct | Struct + puntero en loop (n=500k) — structs, punteros y `->` |
 | bench_prime | Criba de primos hasta 40k — loops, módulo, condicionales |
 | bench_mixed | Struct con int y float (n=150k) — tipos combinados |
+| bench_constfold | Expresión literal reevaluada 12M veces en un loop — mide constant folding (2.1) |
+| bench_conststore | 6 variables reseteadas a literales 15M veces en un loop — mide la mirilla de stores de constantes (2.1) |
+| bench_stackframe | 12 `int` + 12 `char` locales sumados en un loop de 1.5M — mide bin packing de offsets (2.1) |
+
+Los últimos tres son microbenchmarks dirigidos: cada uno satura el
+patrón de código que explota una optimización específica de 2.1, en vez
+de representar una carga de trabajo general como los primeros seis.
 
 **Métricas**:
 
@@ -216,6 +225,7 @@ y `benchmarks_c/*.c`):
 | Compilación Clang | `clang` con `-O0` y `-O2` hasta binario |
 | Ejecución | Mediana de **7 ejecuciones** (timeout 120 s por run) |
 | Tamaño | Bytes del ejecutable en disco |
+| Stack frame de `main` | Bytes de `subq $N, %rsp` en el prólogo (`./c-- -c`), solo `C--` — refleja el bin packing de offsets; no comparable 1:1 con GCC/Clang |
 
 **Entorno**: GCC 16.1.1 (20260625), Clang 22.1.6, Python 3.14.6,
 7 repeticiones por medición, timeout de ejecución de 120 s (fecha de la
@@ -230,6 +240,14 @@ compilador. `C--` solo aplica constant folding (ver 2.1), mientras GCC
 -O2 y Clang -O2 aplican decenas de passes de optimización (vectorización,
 inlining, desenrollado de loops, eliminación de código muerto, etc.).
 Mediciones en una sola máquina, sin normalizar por frecuencia de CPU.
+
+> **Nota:** las tablas de 2.3–2.5 de abajo todavía corresponden solo a
+> los 6 benchmarks generales (la última corrida "final" registrada).
+> `bench_constfold`, `bench_conststore`, `bench_stackframe` y la métrica
+> de stack frame ya están integrados en `run_benchmarks.py` /
+> `analyze_results.py` (ver [`comparativa/`](comparativa/comparativa.md)),
+> pero falta volver a correr la medición en el entorno de referencia
+> para que estas tablas y las gráficas reflejen los 9 benchmarks.
 
 ### 2.3 Tiempos de compilación
 
