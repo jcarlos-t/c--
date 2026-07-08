@@ -1,1067 +1,354 @@
-# Guía de Implementación: Características de C--
+# Guía de Implementación: Punteros, Promoción de Tipos, float/double y Matrices
 
-Esta guía explica cómo se implementaron las siguientes características en el compilador C--, usando ejemplos del código fuente y justificando las elecciones de diseño.
-
-## Contenido
-
-1. [Arquitectura de tipos: TypeNode vs Type*](#1-arquitectura-de-tipos-typenode-vs-type)
-2. [Punteros explícitos (*, &, ->)](#2-punteros-explícitos---)
-3. [Promoción/conversión automática de tipos](#3-promociónconversión-automática-de-tipos)
-4. [float y double](#4-float-y-double)
-5. [Matrices (arreglos multidimensionales)](#5-matrices-arreglos-multidimensionales)
-6. [const](#6-const)
-7. [void](#7-void)
+Este documento describe el flujo de cada característica a través de las tres fases principales del compilador `c--`:
+**AST → TypeChecker → Code Generation (Gencode)**.
 
 ---
 
-## 1. Arquitectura de tipos: TypeNode vs Type*
+## 1. Punteros Explícitos (`*`, `&`, `->`)
 
-### Descripción general
+### AST
 
-El compilador C-- utiliza **dos jerarquías de tipos** separadas para evitar casteo innecesario en el TypeChecker y GenCode:
+| Nodo AST | Archivo | Rol |
+|---|---|---|
+| `UnaryOpNode(ADDR)` | `ast.h:111` | Operador `&expr` — obtiene dirección |
+| `UnaryOpNode(DEREF)` | `ast.h:111` | Operador `*expr` — desreferencia |
+| `PointerTypeNode` | `ast.h:62` | Nodo de tipo `T*` — `TypeNode* base` |
+| `ArrowAccessNode` | `ast.h:172` | `ptr->member` — acceso por puntero a struct |
+| `PointerType` (semántico) | `semantic_types.h:56` | `Type* base`, `size() = 8` |
 
-1. **TypeNode (ast.h):** Nodos del AST que representan tipos en el código fuente
-   - `PrimitiveTypeNode`: int, char, float, double, bool, void, long
-   - `PointerTypeNode`: T* (punteros)
-   - `StructTypeNode`: struct Nombre
+**Parser** (`parser.cpp`):
+- `parse_type()` (L144): consume `*` tras un tipo base → anida `PointerTypeNode`.
+- `parse_unary()` (L690): `&` → `UnaryOpNode(ADDR)`; `*` → `UnaryOpNode(DEREF)`.
+- `parse_postfix()` (L718): `->` → `ArrowAccessNode`.
 
-2. **Type* (semantic_types.h):** Tipos semánticos resueltos después del análisis
-   - `Type`: Base para tipos primitivos (con discriminante `ttype`)
-   - `PointerType`: Punteros con tipo base resuelto
-   - `ArrayType`: Arreglos con dimensiones y tipo base
-   - `StructType`: Structs con tabla de miembros
+### TypeChecker
 
-**Flujo de conversión:**
-```
-Parser → TypeNode (AST) → TypeChecker::type_from_ast() → Type* (semántico)
-                                                    ↓
-                                            Exp::resolvedType
-                                            VarDecl::resolvedType
-```
+**`type_from_ast()`** (`TypeChecker.cpp:128`): `PointerTypeNode` → crea `PointerType(tipo_base)` y lo guarda en `typeCache`.
 
-### Implementación en el AST
+**`visit(UnaryOpNode)`** (`TypeChecker.cpp:846`):
 
-**ast.h - TypeNode y sus subclases:**
-```cpp
-// Clase base para nodos de tipo en el AST
-class TypeNode {
-public:
-    Location loc;
-    bool isConst = false;
-    virtual ~TypeNode() {}
-    virtual void accept(Visitor* visitor) = 0;
-};
+| Caso | Comportamiento |
+|---|---|
+| `ADDR` (L877) | `resolvedType = new PointerType(t)` — envuelve el tipo del operando |
+| `DEREF` (L884) | Si el operando es `PointerType`, `resolvedType = pt->base` (desenvuelve). Error si no es puntero |
 
-// Tipo primitivo: int, char, float, double, bool, void, long
-class PrimitiveTypeNode : public TypeNode {
-public:
-    enum Prim { VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, LONG };
-    Prim prim;
-    bool isUnsigned = false;
-    // ...
-};
+**`visit(ArrowAccessNode)`** (`TypeChecker.cpp:1029`):
+- Verifica que `ptrType->ttype == POINTER`
+- Verifica que `pt->base->ttype == STRUCT`
+- Busca el miembro en el `StructType`
+- `resolvedType = tipo_del_miembro`
 
-// Tipo puntero: T*
-class PointerTypeNode : public TypeNode {
-public:
-    TypeNode* base;  // Tipo base (otro TypeNode)
-    PointerTypeNode(TypeNode* b);
-    // ...
-};
+**Aritmética de punteros** en `visit(BinaryOpNode)` (L773–780):
+- `ptr + int` o `int + ptr` → resultado es el tipo puntero
+- `ptr - ptr` → resultado es `int`
+- `ptr - int` → resultado es el tipo puntero
 
-// Tipo struct por nombre
-class StructTypeNode : public TypeNode {
-public:
-    string name;
-    StructTypeNode(const string& n);
-    // ...
-};
-```
+**Array-to-pointer decay** en `visit(IdNode)` (L1067): en contexto rvalue, si la variable es `ARRAY`, `resolvedType` se convierte a `PointerType(at->base)`.
 
-**ast.h - Exp y VarDecl con resolvedType:**
-```cpp
-// Expresión con tipo semántico resuelto
-class Exp {
-public:
-    Type* resolvedType = nullptr;  // Tipo semántico (Type*)
-    bool isConstant = false;
-    double constantValue = 0.0;
-    // ...
-};
+**Asignación** (`check_assign()`, L173): cualquier puntero → cualquier puntero es válido (coerción laxa).
 
-// Declaración de variable con tipo resuelto
-class VarDecl : public Stm {
-public:
-    TypeNode* type;         // Tipo del AST (sintaxis)
-    Type* resolvedType;      // Tipo semántico (Type*)
-    int offset = 0;         // Offset en stack frame
-    int memSize = 0;        // Tamaño en bytes
-    // ...
-};
-```
+### Code Generation (Gencode)
 
-### Implementación en semantic_types.h
+**`computeAddress`** (`Gencode.cpp:2099`):
 
-**semantic_types.h - Jerarquía de tipos semánticos:**
-```cpp
-// Tipo base con discriminante
-class Type {
-public:
-    enum TType { NOTYPE, VOID, INT, CHAR, BOOL, FLOAT, DOUBLE, LONG, POINTER, ARRAY, STRUCT };
-    TType ttype;           // Discriminante: qué subclase es
-    bool isUnsigned = false;
-    bool isConst = false;
+| Nodo | Comportamiento |
+|---|---|
+| `UnaryOpNode(ADDR)` | Delega a `e->operand->accept(this)` (carga normal del operando) |
+| `IdNode` | `leaq offset(%rbp), %rax` |
+| `IndexNode` | `emitIndexedAddress()` — calcula dirección lineal |
+| `MemberAccessNode` | `leaq` + `addq` del field offset |
+| `ArrowAccessNode` | `loadBinding()` + `addq` del field offset |
 
-    virtual bool match(Type* t) const {
-        return this->ttype == t->ttype && this->isUnsigned == t->isUnsigned;
-    }
+**`visit(UnaryOpNode)` para DEREF** (`Gencode.cpp:1265`):
+- En modo l-value (`lvalTarget` activo, L1167): guarda `kind = Deref`, hace `pushq %rax` con la dirección del puntero para que `storeTarget` escriba ahí.
+- En modo r-value (L1265): `mov[sz] (%rax), %rax` — carga desde la dirección apuntada.
 
-    virtual int size() const {
-        switch (ttype) {
-            case VOID:   return 0;
-            case INT:    return 4;
-            case CHAR:   return 1;
-            case BOOL:   return 1;
-            case FLOAT:  return 4;
-            case DOUBLE: return 8;
-            case LONG:   return 8;
-            case POINTER: return 8;
-            default:     return 8;
-        }
-    }
-};
+**Aritmética de punteros** en `visit(BinaryOpNode)` (L989): `ptr ± int` escala el entero por `elemSize` (tamaño del tipo apuntado) usando `imulq` y luego `addq`.
 
-// Puntero semántico
-class PointerType : public Type {
-public:
-    Type* base;  // Tipo apuntado (Type*, no TypeNode)
-    PointerType(Type* b) : Type(POINTER), base(b) {}
-
-    bool match(Type* t) const override {
-        if (t->ttype != POINTER) return false;
-        PointerType* pt = (PointerType*)t;
-        return base->match(pt->base);
-    }
-
-    string str() const override {
-        return base->str() + "*";
-    }
-};
-
-// Arreglo semántico (puede ser multidimensional)
-class ArrayType : public Type {
-public:
-    Type* base;
-    int length;  // -1 si tamaño desconocido
-
-    ArrayType(Type* b, int l = -1) : Type(ARRAY), base(b), length(l) {}
-
-    bool match(Type* t) const override {
-        if (t->ttype != ARRAY) return false;
-        ArrayType* at = (ArrayType*)t;
-        return base->match(at->base);  // Ignora length
-    }
-
-    int size() const override {
-        if (length >= 0) return base->size() * length;
-        return 8;  // Arreglo sin tamaño → como puntero
-    }
-};
-
-// Struct semántico
-class StructType : public Type {
-public:
-    string name;
-    unordered_map<string, Type*> members;  // nombre → Type*
-
-    StructType(const string& n) : Type(STRUCT), name(n) {}
-
-    bool match(Type* t) const override {
-        if (t->ttype != STRUCT) return false;
-        StructType* st = (StructType*)t;
-        return name == st->name;  // Equivalencia nominal
-    }
-
-    int size() const override {
-        int total = 0;
-        for (auto& pair : members) {
-            total += pair.second->size();
-        }
-        return total;
-    }
-};
-```
-
-### Implementación en TypeChecker
-
-**TypeChecker.cpp - type_from_ast (conversión TypeNode → Type*):**
-```cpp
-Type* TypeChecker::type_from_ast(TypeNode* t) {
-    // 1. Tipos primitivos → singletons
-    if (auto* pt = dynamic_cast<PrimitiveTypeNode*>(t)) {
-        switch (pt->prim) {
-            case PrimitiveTypeNode::VOID:   res = voidType; break;
-            case PrimitiveTypeNode::INT:    res = intType; break;
-            case PrimitiveTypeNode::CHAR:   res = charType; break;
-            case PrimitiveTypeNode::FLOAT:  res = floatType; break;
-            case PrimitiveTypeNode::DOUBLE: res = doubleType; break;
-            case PrimitiveTypeNode::BOOL:   res = boolType; break;
-            case PrimitiveTypeNode::LONG:   res = longType; break;
-        }
-        // Clonar si tiene modificadores (unsigned/const)
-        if (res && (pt->isUnsigned || pt->isConst)) {
-            Type* clone = new Type(res->ttype);
-            clone->isUnsigned = pt->isUnsigned;
-            clone->isConst = pt->isConst;
-            typeCache.push_back(clone);
-            res = clone;
-        }
-        return res;
-    }
-
-    // 2. Punteros → PointerType recursivo
-    if (auto* pt = dynamic_cast<PointerTypeNode*>(t)) {
-        Type* base = type_from_ast(pt->base);  // Recursión
-        PointerType* ptr = new PointerType(base);
-        ptr->isConst = pt->isConst;
-        typeCache.push_back(ptr);
-        return ptr;
-    }
-
-    // 3. Structs → StructType por nombre
-    if (auto* st = dynamic_cast<StructTypeNode*>(t)) {
-        auto it = struct_types.find(st->name);
-        if (it != struct_types.end()) {
-            res = it->second;
-            if (st->isConst) {
-                StructType* clone = new StructType(st->name);
-                clone->members = ((StructType*)res)->members;
-                clone->isConst = true;
-                typeCache.push_back(clone);
-                res = clone;
-            }
-            return res;
-        }
-        error("struct '" + st->name + "' no declarado.");
-        return intType;
-    }
-
-    return intType;  // Fallback
-}
-```
-
-**TypeChecker.cpp - Asignación de resolvedType:**
-```cpp
-// En visit(VarDecl):
-Type* t = type_from_ast(v->type);  // TypeNode → Type*
-
-// Wrap en ArrayType si tiene dimensiones
-for (int idx = (int)v->array_sizes.size() - 1; idx >= 0; idx--) {
-    int dim = -1;
-    if (auto* il = dynamic_cast<IntegerLiteralNode*>(v->array_sizes[idx]))
-        dim = (int)il->value;
-    ArrayType* at = new ArrayType(t, dim);
-    typeCache.push_back(at);
-    t = at;
-}
-
-v->resolvedType = t;  // Guardar Type* en el nodo
-v->memSize = t->size();
-```
-
-### Implementación en GenCodeVisitor
-
-**Gencode.cpp - Uso de resolvedType (sin casteo de TypeNode):**
-```cpp
-// Cargar variable: usa resolvedType para determinar instrucción
-void GenCodeVisitor::loadBinding(VarDecl* vd) {
-    int size = vd->memSize > 0 ? vd->memSize : 8;
-    Type* type = vd->resolvedType;  // Type*, no TypeNode
-
-    if (isFloatSemanticType(type)) {
-        if (type->ttype == Type::DOUBLE) {
-            out << "  movsd " << bindingMem(vd) << ", %xmm7\n";
-            out << "  movq %xmm7, %rax\n";
-        } else {  // FLOAT
-            out << "  movss " << bindingMem(vd) << ", %xmm7\n";
-            out << "  movd %xmm7, %eax\n";
-            out << "  movslq %eax, %rax\n";
-        }
-        return;
-    }
-    out << "  " << loadInstr(size) << " " << bindingMem(vd) << ", %rax\n";
-}
-
-// Discriminar tipo usando ttype (no dynamic_cast de TypeNode)
-if (type->ttype == Type::ARRAY) {
-    ArrayType* at = (ArrayType*)type;  // Casteo de Type* a ArrayType*
-    // ...
-} else if (type->ttype == Type::POINTER) {
-    PointerType* pt = (PointerType*)type;  // Casteo de Type* a PointerType*
-    // ...
-}
-```
-
-### Ventajas de esta arquitectura
-
-1. **Separación de responsabilidades:**
-   - `TypeNode`: Representación sintáctica (lo que escribe el usuario)
-   - `Type*`: Representación semántica (lo que entiende el compilador)
-
-2. **Evita casteo repetitivo:**
-   - TypeChecker convierte una vez: `TypeNode → Type*`
-   - GenCode usa directamente `Type*` sin necesidad de `dynamic_cast<TypeNode*>`
-
-3. **Singletons para primitivos:**
-   - `intType`, `charType`, etc. se crean una vez en el constructor
-   - Ahorra memoria y simplifica comparaciones
-
-4. **Cache de tipos compuestos:**
-   - `typeCache` almacena PointerType, ArrayType, StructType creados dinámicamente
-   - El destructor de TypeChecker los libera automáticamente
-
-5. **Información de tamaño en Type*:**
-   - `Type::size()` calcula el tamaño en bytes
-   - GenCode usa esto para elegir `movb`/`movl`/`movq`
-
-### Ciclo de vida de los tipos
-
-```
-1. Constructor TypeChecker:
-   - Crea singletons (intType, charType, floatType, etc.)
-
-2. type_from_ast(TypeNode*):
-   - Primitivos → retorna singleton (o clon con modificadores)
-   - Compuestos → new PointerType/ArrayType/StructType → typeCache
-
-3. Durante typecheck:
-   - resolvedType se asigna a Exp, VarDecl, etc.
-   - Se usa para verificación de tipos (match(), check_assign())
-
-4. Destructor TypeChecker:
-   - delete todos los elementos de typeCache
-   - delete todos los struct_types
-   - delete singletons
-```
-
-### Ejemplo completo
-
-```cpp
-// Código fuente:
-int x = 5;
-int* p = &x;
-int arr[3][2];
-
-// AST (Parser):
-VarDecl { type: PrimitiveTypeNode(INT), name: "x", initializer: IntegerLiteralNode(5) }
-VarDecl { type: PointerTypeNode(PrimitiveTypeNode(INT)), name: "p", initializer: UnaryOpNode(ADDR, IdentifierNode("x")) }
-VarDecl { type: PrimitiveTypeNode(INT), name: "arr", array_sizes: [3, 2] }
-
-// TypeChecker (type_from_ast):
-x.resolvedType = intType (singleton)
-p.resolvedType = PointerType(intType) (nuevo en typeCache)
-arr.resolvedType = ArrayType(ArrayType(intType, 2), 3) (nuevos en typeCache)
-
-// GenCode (usa resolvedType):
-loadBinding(x) → type->ttype == INT → movslq
-loadBinding(p) → type->ttype == POINTER → movq
-loadBinding(arr[1][0]) → type->ttype == ARRAY → cálculo de índice lineal
-```
-
-### Justificación de diseño
-
-- **Clean separation:** Sintaxis vs semántica claramente separadas
-- **Performance:** Una conversión TypeNode→Type*, luego solo uso de Type*
-- **Type safety:** Casteo solo entre subclases de Type* (ArrayType*, PointerType*, etc.)
-- **Memory management:** typeCache centraliza la gestión de memoria de tipos dinámicos
-- **Extensibilidad:** Fácil agregar nuevos tipos semánticos (ej. FunctionType)
+**`captureLVal` / `storeTarget`** (L493): protocolo para asignaciones. `storeTarget` escribe `%rax` en la ubicación descrita por `LVal` (Id, Index, Member, o Deref).
 
 ---
 
-## 2. Punteros explícitos (*, &, ->)
+## 2. Promoción/Conversión Automática de Tipos
 
-### Descripción general
+### AST
 
-Los punteros permiten manipular direcciones de memoria directamente. C-- soporta:
+No hay nodos AST específicos para promoción — es una operación semántica y de generación de código. Los nodos involucrados son `BinaryOpNode`, `AssignmentNode`, `VarDecl` (con initializer), `ReturnStmt` y `FcallNode`.
 
-- `&` para obtener la dirección de una variable
-- `*` para desreferenciar un puntero
-- `->` para acceder a miembros de structs a través de punteros
+### TypeChecker
 
-### Implementación en el Scanner
+**Jerarquía de promoción** en `visit(BinaryOpNode)` (L781–797):
 
-Primero, el Scanner (lexer) reconoce estos tokens:
-
-**Token.h (implícito en Scanner):**
-- `*` reconocido como token operador
-- `&` reconocido como token operador
-- `->` reconocido como token operador
-
-### Implementación en el Parser
-
-El Parser usa recursión descendente para construir el AST. Los punteros se representan en tres nodos principales:
-
-**ast.h - Nodos del AST para punteros:**
-```cpp
-// 1. Tipo puntero: int*
-class PointerTypeNode : public TypeNode {
-public:
-    TypeNode* base;
-    PointerTypeNode(TypeNode* b);
-    // ...
-};
-
-// 2. Operador unario * (desreferencia) y & (dirección)
-enum class UnaryOp {
-    ADDR,    // &x
-    DEREF,   // *p
-    // ... otros unarios
-};
-
-class UnaryOpNode : public Exp {
-public:
-    UnaryOp op;
-    Exp* operand;
-    // ...
-};
-
-// 3. Acceso -> a struct
-class ArrowAccessNode : public Exp {
-public:
-    Exp* pointer;
-    string member;
-    ArrowAccessNode(Exp* p, const string& m);
-    // ...
-};
+```
+double > float > long > int/char/bool
 ```
 
-**Parser.cpp (parse_unary y parse_postfix):**
-- `parse_unary()` reconoce `&` y `*` como operadores unarios y crea `UnaryOpNode` con `ADDR` o `DEREF`
-- `parse_postfix()` reconoce `->` y crea `ArrowAccessNode`
-
-### Implementación en el TypeChecker
-
-**semantic_types.h - PointerType:**
+Para operaciones aritméticas mixtas, el resultado se promueve al tipo más grande:
 ```cpp
-class PointerType : public Type {
-public:
-    Type* base;  // tipo al que apunta
-    PointerType(Type* b) : Type(POINTER), base(b) {}
-
-    // Igualdad de punteros: int* == int* (mismo base)
-    bool match(Type* t) const override {
-        if (t->ttype != POINTER) return false;
-        PointerType* pt = (PointerType*)t;
-        return base->match(pt->base);
-    }
-
-    string str() const override {
-        return base->str() + "*";
-    }
-};
+if (left->ttype == Type::DOUBLE || right->ttype == Type::DOUBLE)
+    resultType = doubleType;
+else if (left->ttype == Type::FLOAT || right->ttype == Type::FLOAT)
+    resultType = floatType;
+else if (left->ttype == Type::LONG || right->ttype == Type::LONG)
+    resultType = longType;
+else if (left->isUnsigned || right->isUnsigned)
+    resultType = uintType;
+else
+    resultType = intType;
 ```
 
-**TypeChecker.cpp - visit(UnaryOpNode):**
-```cpp
-case UnaryOp::ADDR: {
-    // &x: devuelve PointerType(tipo_de_x)
-    PointerType* ptr = new PointerType(t);
-    typeCache.push_back(ptr);
-    resultType = ptr;
-    break;
-}
-case UnaryOp::DEREF:
-    // *p: devuelve el tipo base del puntero
-    if (t->ttype == Type::POINTER) {
-        PointerType* pt = (PointerType*)t;
-        resultType = pt->base;
-    } else {
-        error("operando de * debe ser puntero.");
-    }
-    break;
-```
+**`check_assign()`** (`TypeChecker.cpp:173`) — tabla de conversiones implícitas en asignación:
 
-### Implementación en el GenCodeVisitor
+| Destino | Origen | Comportamiento |
+|---|---|---|
+| `T` | `T` | Match exacto |
+| `T*` | `U*` | Coerción laxa (cualquier puntero) |
+| `int` | `char`, `long` | Promoción/truncamiento |
+| `long` | `int`, `char`, `bool` | Promoción |
+| `float`/`double` | `int`, `char`, `long` | Promoción entero → punto flotante |
+| `double` | `float` | Widening |
+| `float` | `double` | Narrowing |
+| `int`/`char`/`long` | `float`/`double` | Truncamiento |
+| `bool` | `int`/`char`/`long` | Cero → false, no-cero → true |
+| `int`/`char`/`long` | `bool` | Booleano a entero |
 
-Para la generación de código x86-64:
+### Code Generation
 
-**Gencode.cpp - Operador & (ADDR):**
-```cpp
-// &x → leaq x(%rbp), %rax  (carga la dirección efectiva)
-void GenCodeVisitor::leaBinding(VarDecl* vd) {
-    out << "  leaq " << bindingMem(vd) << ", %rax\n";
-}
-```
+**Conversiones en asignación** (`visit(AssignmentNode)`, L1293–1349):
 
-**Gencode.cpp - Operador * (DEREF):**
-```cpp
-// Para *p:
-// 1. Cargar p en %rax
-// 2. Cargar el valor desde (%rax)
-// Ejemplo: *p = 5 → movq p(%rbp), %rbx; movl $5, (%rbx)
-```
+| De | A | Instrucción |
+|---|---|---|
+| `float` | `double` | `cvtss2sd` |
+| `int`/`char` | `double` | `cvtsi2sd` |
+| `double` | `float` | `cvtsd2ss` |
+| `int`/`char` | `float` | `cvtsi2ss` |
+| `float` | `int` | `cvtss2si` |
+| `float` | `long` | `cvtss2siq` |
+| `double` | `int` | `cvtsd2si` |
+| `double` | `long` | `cvtsd2siq` |
 
-**Gencode.cpp - Operador -> (ArrowAccessNode):**
-```cpp
-// p->x es equivalente a (*p).x
-// 1. Obtener la dirección del struct (*p)
-// 2. Sumar el offset del miembro x
-// 3. Cargar/almacenar desde esa dirección
-```
+**Conversiones en operaciones binarias** (`visit(BinaryOpNode)`, L893–981):
+- Si algún operando es `float`/`double`, ambos operandos se convierten al formato más ancho usando `cvtsi2sd`/`cvtss2sd`/`cvtsi2ss`, se opera con instrucciones SSE (`addss`/`addsd`, etc.), y el resultado se deja en `%xmm0` (reempaquetado a `%rax`).
+- Si ningún operando es float: se opera con instrucciones enteras.
 
-### Ejemplo de uso (test11_pointers.cnn):
-
-```cpp
-int x;
-int* p;
-x = 100;
-p = &x;
-*p = 200;  // modifica x a través de p
-printf(x);  // 200
-
-// Puntero a struct
-struct Point pt;
-struct Point* ptPtr;
-ptPtr = &pt;
-ptPtr->x = 10;  // equivalente a (*ptPtr).x = 10
-```
-
-### Justificación de diseño
-
-- **Sintaxis similar a C:** Familiar para programadores C, reduciendo la curva de aprendizaje
-- **PointerType separado:** Permite manejar punteros de cualquier tipo base (int*, char*, etc.)
-- **ArrowAccessNode como sintaxis sugar:** Simplifica la escritura de `(*p).x` como `p->x`
+**Conversiones en paso de argumentos a `printf`** (L1409): los `float` se convierten a `double` con `cvtss2sd` (ABI variádica).
 
 ---
 
-## 2. Promoción/conversión automática de tipos
+## 3. `float` / `double`
 
-### Descripción general
+### AST
 
-C-- promueve tipos automáticamente según reglas de promoción aritmética, similar a C:
+| Nodo AST | Archivo | Rol |
+|---|---|---|
+| `PrimitiveTypeNode::FLOAT` / `DOUBLE` | `ast.h:52` | Tipo primitivo en declaraciones |
+| `FloatLiteralNode` | `ast.h:232` | Literal flotante (`3.14`, `1e-5`), con `literalSuffix` (`SUF_F` → float, `SUF_NONE` → double) |
 
-- **Aritmética:** Si algún operando es `double` → `double`; si no, si alguno es `float` → `float`; si no → `int`
-- **Asignación:** Conversión implícita entre tipos compatibles (int ↔ float, int ↔ char, etc.)
+**Parser**: `Token::FLOAT` y `Token::DOUBLE` en `parse_basic_type()`. `Token::FNUM` → `FloatLiteralNode`.
 
-### Implementación en el TypeChecker
+### TypeChecker
 
-**TypeChecker.cpp - Funciones auxiliares:**
+**Singletons**: `floatType`, `doubleType` creados en constructor (L72–73).
+
+**`type_from_ast()`** (`TypeChecker.cpp:113–114`): `PrimitiveTypeNode::FLOAT` → `floatType`, `PrimitiveTypeNode::DOUBLE` → `doubleType`.
+
+**`visit(FloatLiteralNode)`** (`TypeChecker.cpp:1110`):
 ```cpp
-// true para int, char, long (tipos enteros)
-bool is_integral_type(Type* t) {
-    return t->ttype == Type::INT || t->ttype == Type::CHAR || t->ttype == Type::LONG;
-}
-
-// true para tipos aritméticos (int, char, float, double)
-bool is_arithmetic_type(Type* t) {
-    return is_integral_type(t) || t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE;
-}
+e->resolvedType = (e->literalSuffix == Token::LiteralSuffix::SUF_F)
+                  ? floatType : doubleType;
 ```
 
-**TypeChecker.cpp - check_assign (asignación):**
-```cpp
-bool TypeChecker::check_assign(Type* target, Type* value) {
-    // 1. Tipos exactos
-    if (target->ttype == value->ttype && target->isUnsigned == value->isUnsigned) 
-        return true;
-    
-    // 2. Cualquier puntero ↔ cualquier puntero (coerción laxa)
-    if (target->ttype == Type::POINTER && value->ttype == Type::POINTER) 
-        return true;
-    
-    // 3. char ↔ int ↔ long
-    if (target->ttype == Type::CHAR && (value->ttype == Type::INT || value->ttype == Type::LONG)) 
-        return true;
-    if (target->ttype == Type::INT && (value->ttype == Type::CHAR || value->ttype == Type::LONG)) 
-        return true;
-    if (target->ttype == Type::LONG && is_integral_type(value)) 
-        return true;
-    
-    // 4. int/char/long → float/double
-    if ((target->ttype == Type::FLOAT || target->ttype == Type::DOUBLE) && is_integral_type(value)) 
-        return true;
-    
-    // 5. float → double
-    if (target->ttype == Type::DOUBLE && value->ttype == Type::FLOAT) 
-        return true;
-    
-    // 6. double → float (narrowing, como en C)
-    if (target->ttype == Type::FLOAT && value->ttype == Type::DOUBLE) 
-        return true;
-    
-    return false;
-}
-```
+**Operaciones unarias** (`visit(UnaryOpNode)`, L851): `-float` → `float`, `-double` → `double` (no promueve a `double` como los enteros).
 
-**TypeChecker.cpp - visit(BinaryOpNode) (promoción aritmética):**
-```cpp
-// Operaciones aritméticas:
-if (is_arithmetic_type(left) && is_arithmetic_type(right)) {
-    // Si alguno es double → resultado double
-    if (left->ttype == Type::DOUBLE || right->ttype == Type::DOUBLE)
-        resultType = doubleType;
-    // Si alguno es float → resultado float
-    else if (left->ttype == Type::FLOAT || right->ttype == Type::FLOAT)
-        resultType = floatType;
-    // Si no → int (char promueve a int)
-    else
-        resultType = intType;
-}
-```
+**Promoción binaria** (L781): `double > float > otros`.
 
-### Ejemplo de uso (test18_type_promotion.cnn):
+### Code Generation
 
-```cpp
-float y;
-int x = 5;
-y = x + 0.5;  // x (int) se promueve a float → 5.0 + 0.5 = 5.5
+**`isFloatSemanticType()`** (`Gencode.cpp:54`): helper que detecta `FLOAT` o `DOUBLE`.
 
-int a = 10;
-float b;
-b = a;  // int → float (10.0)
+**Carga/almacenamiento** (`loadBinding`/`storeBinding`, L278–304):
+- `double`: `movsd`/`movq` entre memoria y `%xmm7`/`%rax`
+- `float`: `movss`/`movd` entre memoria y `%xmm7`/`%eax`
 
-bool ok;
-ok = (2 + 1.0) == 3.0;  // 2 → double, suma → 3.0
-```
+**Operaciones aritméticas SSE** (`visit(BinaryOpNode)` L924–971):
 
-### Justificación de diseño
+| Operación | float | double |
+|---|---|---|
+| `+` | `addss` | `addsd` |
+| `-` | `subss` | `subsd` |
+| `*` | `mulss` | `mulsd` |
+| `/` | `divss` | `divsd` |
+| `==` | `ucomiss` + `sete` | `ucomisd` + `sete` |
+| `<` | `ucomiss` + `setb` | `ucomisd` + `setb` |
+| `>` | `ucomiss` + `seta` | `ucomisd` + `seta` |
 
-- **Reglas de C:** Familiar para programadores, predecibles
-- **Promoción de char a int:** Evita problemas de desbordamiento en operaciones
-- **Narrowing permitido en asignación:** Como en C, permite expresividad aunque puede perder precisión
-- **Coerción de punteros laxa:** Simplifica manejo de memoria dinámica (void* → int*)
+**Negación unaria** (`visit(UnaryOpNode)`, L1208): XOR del bit de signo:
+- `double`: `xorpd` con `0x8000000000000000`
+- `float`: `xorps` con `0x80000000`
+
+**Literales flotantes** (`visit(FloatLiteralNode)`, en el handler de constantes L1176–1192): emisión del patrón IEEE-754 como inmediato:
+- `double`: `movq $0x<hex64>, %rax`
+- `float`: `movl $0x<hex32>, %eax` + `movslq %eax, %rax`
+
+**Inicialización de globales** (`generate()`, L83–92):
+- `double`: `.quad 0x<hex64>`
+- `float`: `.long 0x<hex32>`
 
 ---
 
-## 3. float y double
+## 4. Matrices (Arreglos Multidimensionales)
 
-### Descripción general
+### AST
 
-C-- soporta:
-- `float`: 32 bits (precisión simple)
-- `double`: 64 bits (precisión doble)
+| Nodo AST | Archivo | Rol |
+|---|---|---|
+| `VarDecl::array_sizes` | `ast.h:423` | `vector<Exp*>` con expresiones de cada `[dim]` |
+| `IndexNode` | `ast.h:148` | `base[index]` — acceso por índice |
+| `ArrayType` (semántico) | `semantic_types.h:70` | `Type* base`, `int length`, `size() = base * length` |
 
-Ambos siguen el estándar IEEE 754 y usan registros XMM de x86-64.
+**Parser** (`parse_array_suffix()`, L131): tras el nombre de la variable, consume `[expr]` repetidas veces y las agrega a `VarDecl::array_sizes`.
 
-### Implementación en el Scanner
+Ejemplo: `int m[2][3]` → `array_sizes = [2, 3]` (en orden de escritura).
 
-**Scanner.cpp - Tokens para literales de punto flotante:**
-```cpp
-// Literales como 3.14, 0.5, 2.0e-3
-// Generan FNUM token (literal de punto flotante)
-Token* Scanner::number() {
-    // Reconoce números con '.' o 'e'/'E' como float/double
-}
+### TypeChecker
+
+**Construcción del tipo array** en `visit(FunDecl)` (`TypeChecker.cpp:322–330`): Recorre `array_sizes` en **orden inverso**, anidando `ArrayType`:
+
+```
+array_sizes = [2, 3], base = int
+  → idx=1: ArrayType(int, 3)
+  → idx=0: ArrayType(ArrayType(int, 3), 2)
 ```
 
-### Implementación en el AST
+El resultado es `ArrayType(ArrayType(int, 3), 2)` — la dimensión más externa envuelve a la interna.
 
-**ast.h - FloatLiteralNode y tipos:**
-```cpp
-// Literal de punto flotante (almacenado como double)
-class FloatLiteralNode : public Exp {
-public:
-    double value;
-    FloatLiteralNode(double v);
-    // ...
-};
+**`visit(IndexNode)`** (`TypeChecker.cpp:984`):
+- Si la base es `ARRAY`: `resolvedType = at->base` (pela una dimensión)
+- Si la base es `POINTER`: `resolvedType = pt->base`
+- Verifica que el índice sea entero (`is_switch_index_type`)
 
-// Tipos primitivos
-class PrimitiveTypeNode : public TypeNode {
-public:
-    enum Prim { VOID, INT, CHAR, FLOAT, DOUBLE, BOOL, LONG };
-    Prim prim;
-    // ...
-};
+**Array-to-pointer decay** en `visit(IdNode)` (L1067): en rvalue, todo el arreglo decae a `PointerType(at->base)`. Así, pasar un arreglo a una función entrega un puntero al primer elemento.
+
+### Code Generation
+
+**Dimensiones** (`arrayDimsFor()` / `arrayDimsForType()`, L231–252): extrae vector de dimensiones desde el `ArrayType` anidado.
+
+**`array_elem_size()`** (L216): recorre el árbol de `ArrayType` hasta el tipo base y retorna su tamaño.
+
+**`collectIndices()`** (L259): recorre una cadena de `IndexNode`s como `a[i][j][k]` y recolecta `indices = [i, j, k]`, `base = a`.
+
+**`emitIndexedAddress()`** (L327): calcula la dirección de `arr[i][j]`:
+
+1. Carga dirección base del arreglo (`leaBinding`).
+2. Para cada índice, calcula el stride (producto de dimensiones siguientes).
+3. Acumula `offset = Σ (índice_d × stride_d)`.
+4. Escala por `elemSize` (`leaq (%rax,%r10,4)` o `imulq`).
+
+```
+Ejemplo: int m[2][3], acceder m[i][j]
+  → stride[0] = 3, stride[1] = 1
+  → offset_linear = i*3 + j
+  → dirección = base + offset_linear * 4
 ```
 
-### Implementación en el TypeChecker
+**`emitIndexedLoad()`** (L384): calcula dirección y carga el valor desde `(%rax)`.
 
-**semantic_types.h - Tipos float/double:**
-```cpp
-class Type {
-public:
-    enum TType { NOTYPE, VOID, INT, CHAR, BOOL, FLOAT, DOUBLE, LONG, POINTER, ARRAY, STRUCT };
-    TType ttype;
-    
-    int size() const {
-        switch (ttype) {
-            case FLOAT:  return 4;  // 32 bits
-            case DOUBLE: return 8;  // 64 bits
-            // ... otros
-        }
-    }
-};
-```
+**`emitIndexedStore()`** (L427): calcula dirección y escribe el valor en `(%rax)`.
 
-**TypeChecker.cpp - Constructor (singletons para tipos):**
-```cpp
-TypeChecker::TypeChecker() {
-    floatType = new Type(Type::FLOAT);    // 4 bytes
-    doubleType = new Type(Type::DOUBLE);  // 8 bytes
-    // ...
-}
-```
+**Protocolo con LVal** (`captureLVal` L493): cuando se asigna a `arr[i][j]`, `captureLVal` reconoce `IndexNode` y guarda los índices en `LVal::indices`. Luego `storeTarget` invoca `emitIndexedStore`.
 
-### Implementación en el GenCodeVisitor
-
-**Gencode.cpp - Funciones auxiliares para float/double:**
-```cpp
-// Detectar si es un tipo de punto flotante
-static bool isFloatSemanticType(Type* t) {
-    return t && (t->ttype == Type::FLOAT || t->ttype == Type::DOUBLE);
-}
-
-// Cargar float/double en %rax (vía registros XMM)
-void GenCodeVisitor::loadBinding(VarDecl* vd) {
-    Type* type = vd->resolvedType;
-    if (isFloatSemanticType(type)) {
-        if (type->ttype == Type::DOUBLE) {
-            out << "  movsd " << bindingMem(vd) << ", %xmm7\n";
-            out << "  movq %xmm7, %rax\n";
-        } else {  // FLOAT
-            out << "  movss " << bindingMem(vd) << ", %xmm7\n";
-            out << "  movd %xmm7, %eax\n";
-            out << "  movslq %eax, %rax\n";
-        }
-        return;
-    }
-    // ... carga enteros
-}
-
-// Almacenar float/double desde %rax
-void GenCodeVisitor::storeBinding(VarDecl* vd) {
-    Type* type = vd->resolvedType;
-    if (isFloatSemanticType(type)) {
-        if (type->ttype == Type::DOUBLE) {
-            out << "  movq %rax, %xmm7\n";
-            out << "  movsd %xmm7, " << bindingMem(vd) << "\n";
-        } else {  // FLOAT
-            out << "  movd %eax, %xmm7\n";
-            out << "  movss %xmm7, " << bindingMem(vd) << "\n";
-        }
-        return;
-    }
-    // ... almacenar enteros
-}
-```
-
-**Gencode.cpp - Formatos de printf en .data:**
-```cpp
-void GenCodeVisitor::generate(Program *p) {
-    out << ".data\n";
-    out << "print_fmt: .string \"%ld\\n\"\n";       // int/bool/ptr
-    out << "print_fmt_float: .string \"%f\\n\"\n";  // float/double
-    // ...
-}
-```
-
-### Ejemplo de uso (test20_float_double.cnn):
-
-```cpp
-float a = 2.5;
-float b = 1.5;
-float result = a + b;  // 4.0
-
-double x = 10.0;
-double y = 3.0;
-double z = x / y;  // ~3.3333333
-```
-
-### Justificación de diseño
-
-- **IEEE 754:** Estándar de facto para punto flotante
-- **Registros XMM:** x86-64 standard para operaciones de punto flotante
-- **Literales como double:** Mayor precisión durante la compilación
-- **Convención %rax para resultados:** Todas las expresiones dejan su resultado en %rax, incluso float/double (movsd/movq)
+**Structs con arreglos como miembros** (`storeTarget` L512–594): caso especial donde se computa la dirección base del struct, se suman offsets de campos, y luego se aplica el indexado multidimensional.
 
 ---
 
-## 4. Matrices (arreglos multidimensionales)
+## 5. Benchmarks y Comparación de Rendimiento
 
-### Descripción general
+### Metodología
 
-Las matrices multidimensionales en C-- son arreglos de arreglos, almacenados contiguamente en memoria (fila mayor, row-major).
+Los benchmarks se ejecutan desde `comparativa/scripts/run_all.sh`, que orquesta dos scripts de Python:
 
-Ejemplo: `int m[2][3]` → 2 filas × 3 columnas = 6 elementos contiguos
+1. **`run_benchmarks.py`** — realiza las mediciones y genera CSVs.
+2. **`analyze_results.py`** — lee los CSVs, imprime tablas y genera gráficos SVG.
 
-### Implementación en el TypeChecker
+**Configuración de medición:**
+- **7 repeticiones** por medición, usando la **mediana** como métrica.
+- Timeout de **120 segundos** por ejecución.
+- 3 compiladores en 6 configuraciones:
 
-**semantic_types.h - ArrayType:**
-```cpp
-class ArrayType : public Type {
-public:
-    Type* base;
-    int length;  // -1 si tamaño desconocido
-    
-    ArrayType(Type* b, int l = -1) : Type(ARRAY), base(b), length(l) {}
-    
-    // Igualdad: int[5] == int[3] (mismo base, ignora length)
-    bool match(Type* t) const override {
-        if (t->ttype != ARRAY) return false;
-        ArrayType* at = (ArrayType*)t;
-        return base->match(at->base);
-    }
-    
-    // Tamaño total: base->size() * length
-    int size() const override {
-        if (length >= 0) return base->size() * length;
-        return 8;  // arreglo sin tamaño → tratado como puntero
-    }
-};
-```
+| Abreviatura | Compilador | Flags |
+|---|---|---|
+| `C--_Codegen` | `c--` | `-c` (solo frontend + codegen → `/dev/null`) |
+| `C--_Full` | `c--` | `--exec` (pipeline completo a binario) |
+| `GCC_O0` | GCC 16.1.1 | `-O0` |
+| `GCC_O2` | GCC 16.1.1 | `-O2` |
+| `Clang_O0` | Clang 22.1.6 | `-O0` |
+| `Clang_O2` | Clang 22.1.6 | `-O2` |
 
-**TypeChecker.cpp - visit(VarDecl) (creación de arreglos):**
-```cpp
-// Para int m[2][3] (array_sizes = [2, 3]):
-for (int idx = (int)vd->array_sizes.size() - 1; idx >= 0; idx--) {
-    // Empezar por la dimensión más interna!
-    int dim = -1;
-    if (auto* il = dynamic_cast<IntegerLiteralNode*>(vd->array_sizes[idx]))
-        dim = (int)il->value;
-    ArrayType* at = new ArrayType(t, dim);  // t empieza siendo int
-    typeCache.push_back(at);
-    t = at;  // t pasa a ser int[3], luego int[2][3]
-}
-vd->resolvedType = t;  // ArrayType(ArrayType(IntType, 3), 2)
-```
+**9 programas de benchmark**, divididos en:
 
-### Implementación en el GenCodeVisitor
+| Benchmark | Descripción | Carga | Característica ejercitada |
+|---|---|---|---|
+| `bench_fib` | Fibonacci recursivo | n=35 | Recursión, llamadas, flujo de control |
+| `bench_matmul` | Multiplicación de matrices 80×80 | 80×80 | Arrays 2D, loops anidados, aritmética |
+| `bench_float` | Suma de cuadrados float | 500,000 iters | Aritmética float, loops |
+| `bench_struct` | Struct + punteros | 500,000 iters | Structs, `->`, punteros |
+| `bench_prime` | Criba de primos | hasta 40,000 | Bucles, módulo, condicionales, `break` |
+| `bench_mixed` | Struct mixto int + float | 150,000 iters | Tipos combinados |
+| `bench_constfold` | Expresión constante en loop | 12M iters | Constant folding |
+| `bench_conststore` | 6 vars con literales en loop | 15M iters | Constant store peephole |
+| `bench_stackframe` | 12 int + 12 char sumados | 1.5M iters | Offset bin packing |
 
-**Gencode.cpp - arrayDimsFor (extraer dimensiones):**
-```cpp
-// Para int m[2][3] → ArrayType(ArrayType(IntType, 3), 2)
-// → arrayDimsFor(m) = [2, 3]
-static vector<int> arrayDimsFor(VarDecl* vd) {
-    vector<int> dims;
-    Type* t = vd->resolvedType;
-    while (t && t->ttype == Type::ARRAY) {
-        ArrayType* at = (ArrayType*)t;
-        if (at->length > 0) dims.push_back(at->length);
-        t = at->base;
-    }
-    return dims;
-}
-```
+Para cada benchmark existen archivos fuente equivalentes en `benchmarks_cnn/` (C--) y `benchmarks_c/` (C), asegurando una comparación justa.
 
-**Gencode.cpp - Acceso a arreglos (IndexNode):**
-```cpp
-// Para m[i][j]:
-// 1. Cálculo de offset: (i * ncols + j) * sizeof(int)
-// 2. Dirección: base + offset
-// 3. Cargar/almacenar desde esa dirección
-```
+### Resultados Relevantes
 
-### Ejemplo de uso (test17_multidim_arrays.cnn):
+#### Tiempos de Compilación (mediana en segundos)
 
-```cpp
-int m[2][3];
-m[0][0] = 1; m[0][1] = 2; m[0][2] = 3;
-m[1][0] = 4; m[1][1] = 5; m[1][2] = 6;
+| Benchmark | C-- Codegen | C-- Full | GCC -O0 | GCC -O2 | Clang -O0 | Clang -O2 |
+|---|---|---|---|---|---|---|
+| bench_fib | **0.0043** | 0.0452 | 0.0509 | 0.0953 | 0.1003 | 0.1254 |
+| bench_matmul | **0.0028** | 0.0296 | 0.0519 | 0.0723 | 0.0748 | 0.1214 |
+| bench_float | **0.0026** | 0.0294 | 0.0516 | 0.0560 | 0.0698 | 0.0734 |
+| bench_prime | **0.0032** | 0.0289 | 0.0508 | 0.0654 | 0.0752 | 0.0873 |
 
-int sum = m[0][0] + m[1][2];  // 1 + 6 = 7
-```
+C-- es **~15–40× más rápido** que GCC/Clang en compilación.
 
-### Layout en memoria
+#### Tiempos de Ejecución (mediana en segundos)
 
-```
-m[0][0]  m[0][1]  m[0][2]  m[1][0]  m[1][1]  m[1][2]
-┌────────┬────────┬────────┬────────┬────────┬────────┐
-│  1     │  2     │  3     │  4     │  5     │  6     │
-└────────┴────────┴────────┴────────┴────────┴────────┘
-```
+| Benchmark | C-- | GCC -O0 | GCC -O2 | Clang -O0 | Clang -O2 |
+|---|---|---|---|---|---|
+| bench_fib | 0.1295 | 0.1006 | 0.0248 | 0.0900 | **0.0502** |
+| bench_matmul | 0.0072 | 0.0037 | **0.0012** | 0.0031 | 0.0014 |
+| bench_float | 0.0140 | 0.0045 | 0.0019 | 0.0077 | **0.0017** |
+| bench_prime | 0.0069 | 0.0050 | 0.0062 | 0.0065 | **0.0053** |
 
-### Justificación de diseño
+- **C-- es ~1.3–5.9× más lento** que GCC -O2 en ejecución.
+- La brecha más grande está en `bench_float` (8.4×, Clang -O2 vectoriza con SSE/AVX).
+- La brecha más pequeña está en `bench_prime` (1.12×, limitado por el algoritmo, no por el compilador).
 
-- **Arreglos de arreglos:** Compatible con C, simplifica la implementación
-- **Row-major:** Same as C, optimiza locality de caché (accesos consecutivos a filas)
-- **ArrayType anidado:** Representación clara de dimensiones múltiples
-- **match() ignora length:** Permite pasar int[5] a función que espera int[]
+#### Tamaño de Binarios (bytes en disco)
 
----
+| Benchmark | C-- | GCC -O0 | GCC -O2 | Clang -O0 | Clang -O2 |
+|---|---|---|---|---|---|
+| bench_fib | 16112 | **16000** | **16000** | 16016 | 16016 |
+| bench_matmul | 16288 | 16032 | 16088 | 16048 | 16104 |
+| bench_float | 16056 | **15976** | **15976** | 15992 | 15992 |
+| bench_prime | 16240 | **15976** | **15976** | 15992 | 15992 |
 
-## 5. const
+Los binarios de C-- son comparables a GCC/Clang (~100–300 bytes de diferencia, atribuibles a secciones fijas de runtime/printf).
 
-### Descripción general
+### Análisis
 
-El modificador `const` declara variables de solo lectura que no se pueden modificar después de la inicialización.
+**Fortalezas de C--:**
+- Compilación extremadamente rápida (2.6–4.3 ms para parse + typecheck + codegen).
+- Tamaño de binarios competitivo (diferencia marginal con GCC/Clang).
+- Código generado claro y didáctico (útil para enseñanza).
 
-### Implementación en el AST
+**Debilidades de C-- frente a GCC/Clang:**
+- Sin asignación de registros (todo viaja por el stack).
+- Sin vectorización SIMD (especialmente crítico en código float).
+- Sin desenrollamiento de loops, eliminación de código muerto ni inlineo.
+- `bench_fib` se ve especialmente afectado por la ausencia de optimización en llamadas recursivas.
 
-**ast.h - VarDecl y TypeNode con const:**
-```cpp
-class VarDecl : public Stm {
-public:
-    bool isConst;  // true si la variable es const
-    // ...
-};
-
-class TypeNode : public Exp {
-public:
-    bool isConst;  // modificador const en el tipo (const int)
-    // ...
-};
-```
-
-### Implementación en el Parser
-
-**Parser.cpp - parse_type() reconoce `const`:**
-```cpp
-TypeNode* Parser::parse_type() {
-    bool isConst = false;
-    if (match(CONST)) {
-        isConst = true;
-    }
-    // ... parsear el tipo base
-    type->isConst = isConst;
-    return type;
-}
-```
-
-### Implementación en el TypeChecker
-
-**semantic_types.h - Type con isConst:**
-```cpp
-class Type {
-public:
-    bool isConst;  // flag para const
-    // ...
-};
-```
-
-**TypeChecker.cpp - check_assign y visit(AssignmentNode):**
-```cpp
-void TypeChecker::visit(AssignmentNode* e) {
-    // ...
-    Type* targetType = e->target->resolvedType;
-    if (targetType->isConst) {
-        error("no se puede asignar a una variable declarada como const.");
-    }
-    // ...
-}
-```
-
-### Ejemplo de uso (test23_const_void.cnn):
-
-```cpp
-const int a = 5;  // ok: inicializado
-int b = a;        // ok: leer const
-// a = 10;        // error: no se puede modificar const
-
-const long long ll = 1000000;
-const char c = 'Z';
-const unsigned u = 255;
-```
-
-### Justificación de diseño
-
-- **const como flag booleano:** Simple de implementar
-- **Verificación en asignación:** Captura intentos de modificar const en tiempo de compilación
-- **Inicialización obligatoria:** Como en C, garantiza que la variable const tenga un valor
-- **Propagación de const en tipos:** const int* y int* const son manejables con TypeNode::isConst
-
----
-
-## 6. void
-
-### Descripción general
-
-`void` es un tipo que representa la ausencia de valor. Se usa principalmente como:
-- Tipo de retorno de funciones sin retorno
-- Tipo base de punteros genéricos (void*)
-
-### Implementación en el TypeChecker
-
-**semantic_types.h - Tipo VOID:**
-```cpp
-class Type {
-public:
-    enum TType { NOTYPE, VOID, INT, ... };
-    // ...
-    int size() const {
-        case VOID: return 0;  // void no tiene tamaño
-    }
-};
-```
-
-**TypeChecker.cpp - visit(FunDecl):**
-```cpp
-void TypeChecker::visit(FunDecl* f) {
-    Type* returnType = type_from_ast(f->return_type);
-    // ... verificaciones de retorno
-}
-```
-
-**TypeChecker.cpp - visit(ReturnStmt):**
-```cpp
-void TypeChecker::visit(ReturnStmt* e) {
-    if (retornodefuncion->match(voidType) && e->expr) {
-        error("función void no debe retornar valor.");
-        return;
-    }
-    if (!retornodefuncion->match(voidType) && !e->expr) {
-        error("función no-void debe retornar un valor.");
-        return;
-    }
-    // ...
-}
-```
-
-**TypeChecker.cpp - visit(VarDecl):**
-```cpp
-void TypeChecker::visit(VarDecl* vd) {
-    Type* t = type_from_ast(vd->type);
-    if (t->match(voidType)) {
-        error("no se puede declarar variable de tipo void.");
-        return;
-    }
-    // ...
-}
-```
-
-### Ejemplo de uso (test23_const_void.cnn):
-
-```cpp
-// Función void no retorna valor
-void print_three() {
-    printf(3);
-}
-
-int main() {
-    print_three();  // llamada a función void
-    
-    // void*: puntero genérico (soportado via PointerType con base void)
-    void* p = malloc(4);
-    int* q = p;  // coerción de void* a int* (como en C)
-    
-    return 0;
-}
-```
-
-### Justificación de diseño
-
-- **void como tipo singleton:** Un solo objeto representando void
-- **size() = 0:** Lógico, void no ocupa espacio
-- **Restricciones de uso:** No variables void, funciones void no retornan valor
-- **void* como puntero genérico:** Compatible con malloc()/free() y C
-
----
-
-## Resumen de Arquitectura
-
-Todas estas características se integran en el pipeline del compilador:
-
-1. **Scanner** → Tokeniza const, void, *, &, ->, literales de punto flotante
-2. **Parser** → Construye AST con TypeNode (PointerTypeNode, UnaryOpNode, ArrowAccessNode, FloatLiteralNode, etc.)
-3. **TypeChecker** → Convierte TypeNode → Type* (type_from_ast), verifica tipos, resuelve PointerType/ArrayType, verifica const, realiza promoción
-4. **GenCodeVisitor** → Emite código x86-64 usando Type* (resolvedType), registros XMM para float/double, operaciones de punteros, accesos a arreglos
-
----
-
-## Referencias al código fuente
-
-- **ast.h**: Definición de nodos del AST (PointerTypeNode, UnaryOpNode, ArrowAccessNode, etc.)
-- **semantic_types.h**: Type, PointerType, ArrayType con lógica de igualdad y tamaños
-- **TypeChecker.cpp**: Verificación de tipos, promoción, check_assign
-- **Gencode.cpp**: Generación de código x86-64, manejo de float/double en registros XMM
-- **tests/integracion/**: Tests para cada característica (test11, test17, test18, test20, test23)
+**Conclusión:** C-- prioriza simplicidad y velocidad de compilación sobre optimización de ejecución, comportándose como un compilador didáctico ideal para entender el pipeline de compilación, pero sin competir con GCC/Clang en rendimiento de código generado (factor esperado de 4–5× en el estado actual).

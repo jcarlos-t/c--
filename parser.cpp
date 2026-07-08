@@ -141,10 +141,18 @@ void Parser::parse_array_suffix(VarDecl* vd) {
 // ============================================================
 
 // parse_type — parsea tipo básico + cero o más '*' + const opcional.
+// Nota: '**' es tokenizado como POW por el scanner (operador potencia),
+// pero en contexto de tipo significa "puntero a puntero".
 TypeNode* Parser::parse_type() {
     TypeNode* base = parse_basic_type();
-    while (match(Token::STAR)) {
-        base = new PointerTypeNode(base);
+    while (true) {
+        if (match(Token::STAR)) {
+            base = new PointerTypeNode(base);
+        } else if (match(Token::POW)) {
+            base = new PointerTypeNode(new PointerTypeNode(base));
+        } else {
+            break;
+        }
     }
     if (match(Token::CONST)) {
         base->isConst = true;
@@ -703,6 +711,12 @@ Exp* Parser::parse_unary() {
     if (match(Token::STAR)) {
         Exp* operand = parse_unary();
         return new UnaryOpNode(operand, UnaryOp::DEREF);
+    }
+    // '**' es tokenizado como POW por el scanner, pero en prefijo
+    // significa dos desreferencias: **p → *( *p)
+    if (match(Token::POW)) {
+        Exp* operand = parse_unary();
+        return new UnaryOpNode(new UnaryOpNode(operand, UnaryOp::DEREF), UnaryOp::DEREF);
     }
     if (match(Token::MINUS)) {
         Exp* operand = parse_unary();
